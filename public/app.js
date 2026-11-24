@@ -3421,13 +3421,14 @@
   }
 
   // The preview's Night 1. The same vaults and the same rules as the real one, with made-up choices for the others.
-  var DEMO_GOLD = [0, 10, 5, 0, 2, 0];
+  // Sample contents for the preview only. The real vaults are held by the server and are different.
+  var DEMO_GOLD = [5, 0, 0, 10, 0, 2];
   var DEMO_RULES = { vaults: 6, open: 2, amounts: [10, 5, 2], cluePrice: 1, prizes: [5, 3, 1], throws: 5 };
   var DEMO_PLAYS = { 2: [2, 3, "rpsrp"], 3: [2, 3, "srpps"], 5: [2, 5, "prsrs"], 6: [1, 2, "ssrpr"], 8: [3, 5, "rrpsp"], 9: [2, 3, "psrrs"], 12: [2, 6, "rspsr"], 13: [1, 4, "rpsrp"], 14: [2, 3, "sprsp"], 16: [4, 6, "prrsp"] };
 
   function demoNightStart() {
     var d = demoHallStore();
-    d.night = { status: "open", endsAt: new Date(Date.now() + (5 * 60 + 12) * 60000).toISOString(), clue: "Exactly one of Vault 1 and Vault 5 is empty.", bought: "", opened: null, throws: null, result: null, seen: false };
+    d.night = { status: "open", endsAt: new Date(Date.now() + (5 * 60 + 12) * 60000).toISOString(), clue: "Exactly one of Vault 1 and Vault 2 is empty.", bought: "", opened: null, throws: null, result: null, seen: false };
   }
 
   function demoDuel(tied, throws) {
@@ -3487,7 +3488,7 @@
     var nt = d.night;
     var coins = me.phase === "revealed" ? me.coins + d.extra : null;
     if (!nt) return { on: false, rules: DEMO_RULES, coins: coins, out: 0 };
-    if (path === "/api/night/buy" && !nt.bought) { nt.bought = "Exactly two of Vaults 1, 3 and 6 are empty."; d.extra -= 1; coins -= 1; }
+    if (path === "/api/night/buy" && !nt.bought) { nt.bought = "Exactly two of Vaults 2, 3 and 6 are empty."; d.extra -= 1; coins -= 1; }
     if (path === "/api/night/open" && !nt.opened) { nt.opened = body.vaults.slice().sort(function (x, y) { return x - y; }); nt.throws = body.throws; }
     if (path === "/api/night/seen") nt.seen = true;
     var out = nt.result && nt.result.out === me.number ? 1 : 0;

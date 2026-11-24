@@ -1,5 +1,12 @@
 # Dark Post
 
+## Live board and hardening, 24 Nov 2026, night (done outside this agent)
+
+- **The GM's live board** is the first panel of the host console: every room from above with each player's face where they stand, gold ring if connected. Data comes from `/api/host/activity` (`board`), host only. `host.html` now loads `world.js` for the room sizes.
+- **Security headers**: a Content-Security-Policy that allows scripts only from the site itself, plus no-sniff, no-frame and no-referrer. In `public/_headers` for static files and `SECURITY_HEADERS` in `src/worker.js` for invitation links. **No inline `<script>` and no `on...=` attributes may be added to any page**: they will not run.
+- **Wrong passphrases lock out the address they came from** for fifteen minutes after five tries, not the whole console.
+- **The preview's vault contents and clues are sample data** and differ from the real ones. The real vault contents were in `public/app.js` as preview data before this change. Never put real answers in anything under `public/`.
+
 ## House staff and closed rooms, 24 Nov 2026, evening (the GM's instructions, done outside this agent)
 
 - **House staff** stand in four rooms: a dealer (betting room), an attendant (puzzle room), an attendant (arena) and a shopkeeper (shop). Same avatar art as players, but no number, an ivory name plate, and they never move (`STAFF`, `staffHTML` in `public/app.js`). They speak in a card at the bottom of the screen when a player walks in, and again when tapped.

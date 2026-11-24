@@ -14,7 +14,14 @@ const SEAT_COOKIE = "dp_seat";
 const HOST_COOKIE = "dp_host";
 const COOKIE_AGE = 60 * 60 * 24 * 120;
 const MAX_LOGIN_FAILS = 5;
-const LOCK_MS = 60 * 1000;
+const LOCK_MS = 15 * 60 * 1000;
+// The same rules are in public/_headers for the files Cloudflare serves without the Worker.
+const SECURITY_HEADERS = {
+  "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "no-referrer",
+};
 const MESSAGE_MAX = 600;
 const MESSAGE_GAP_MS = 700;
 const AVATAR_LIMITS = { s: 6, h: 24, c: 9, g: 4, b: 5, m: 4, o: 9, t: 4, x: 9, e: 2, f: 2 };
@@ -57,7 +64,7 @@ export default {
       const html = (await page.text()).replace('content="/card.png"', `content="${url.origin}/card.png"`);
       const res = new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
       res.headers.set("Cache-Control", "no-store");
-      res.headers.set("Referrer-Policy", "no-referrer");
+      for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.headers.set(name, value);
       if (token) res.headers.append("Set-Cookie", cookie(SEAT_COOKIE, token, COOKIE_AGE, url));
       return res;
     }
@@ -439,7 +446,7 @@ export class Game extends DurableObject {
     const inv = this.seat(request);
     if (!inv || inv.status !== "accepted") return json({ error: "Accept the invitation first." }, 403);
     const phase = this.phase();
-    if (phase !== "revealed" && inv.bag == null) return json({ error: "Seal a bag first." }, 409);
+    if (phase !== "revealed" && inv.bag == null) return json({ error: "Take a bag first." }, 409);
     if (phase === "revealed" && inv.avatar) return json({ error: "Faces are fixed once the bags are open." }, 409);
     const body = await readJson(request);
     const avatar = cleanAvatar(body.avatar);
@@ -1239,6 +1246,9 @@ export class Game extends DurableObject {
     const body = await readJson(request);
     const pass = String(body.passphrase || "");
     const existing = this.get("host_hash");
+    // Counted for each address, so a player guessing passphrases locks out themselves and not the GM.
+    const who = (request.headers.get("CF-Connecting-IP") || "local").replace(/[^0-9A-Fa-f:.]/g, "").slice(0, 45) || "local";
+    const failsKey = "login_fails:" + who, lockKey = "login_locked_until:" + who;
 
     if (!existing) {
       if (pass.length < 8) return json({ error: "Choose a passphrase of at least 8 characters." }, 400);
@@ -1246,22 +1256,22 @@ export class Game extends DurableObject {
       this.set("host_salt", salt);
       this.set("host_hash", await hashPass(pass, salt));
     } else {
-      const lockedUntil = Number(this.get("login_locked_until", "0"));
+      const lockedUntil = Number(this.get(lockKey, "0"));
       if (Date.now() < lockedUntil) {
-        return json({ error: "Too many wrong attempts. Wait a minute and try again." }, 429);
+        return json({ error: "Too many wrong attempts. Wait fifteen minutes and try again." }, 429);
       }
       const hash = await hashPass(pass, this.get("host_salt", ""));
       if (hash !== existing) {
-        const fails = Number(this.get("login_fails", "0")) + 1;
+        const fails = Number(this.get(failsKey, "0")) + 1;
         if (fails >= MAX_LOGIN_FAILS) {
-          this.set("login_fails", 0);
-          this.set("login_locked_until", Date.now() + LOCK_MS);
+          this.set(failsKey, 0);
+          this.set(lockKey, Date.now() + LOCK_MS);
         } else {
-          this.set("login_fails", fails);
+          this.set(failsKey, fails);
         }
         return json({ error: "That passphrase is not correct." }, 401);
       }
-      this.set("login_fails", 0);
+      this.set(failsKey, 0);
     }
 
     const id = randomToken(24);
@@ -1359,6 +1369,12 @@ export class Game extends DurableObject {
         .map((d) => ({ id: d.id, a: d.a, b: d.b, aChoice: d.a_choice, bChoice: d.b_choice, aNet: d.a_net, bNet: d.b_net, status: d.status, at: d.settled_at || d.created_at })),
       doors: this.sql.exec(`SELECT number, cell, at FROM doorlog ORDER BY id DESC LIMIT 80`).toArray().map((e) => ({ n: e.number, cell: e.cell, at: e.at })),
       cells,
+      board: {
+        pos: this.positions(),
+        online: this.onlineNumbers(),
+        players: this.sql.exec(`SELECT number, name, avatar, out FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL ORDER BY number`).toArray()
+          .map((r) => ({ n: r.number, name: r.name, avatar: parseAvatar(r.avatar), out: r.out || 0 })),
+      },
       night: this.hostNightView(),
     });
   }
@@ -1587,7 +1603,7 @@ export class Game extends DurableObject {
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...extraHeaders },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...extraHeaders },
   });
 }
 

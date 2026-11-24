@@ -36,6 +36,12 @@
 
   <section id="summary" class="summary" aria-label="Where things stand"></section>
 
+  <section class="panel" id="board-panel">
+    <h2>Live board</h2>
+    <p class="help">Where every player stands right now. A gold ring means connected at this moment; dim means away. It refreshes every few seconds while this page is open. Players cannot see this page.</p>
+    <div id="board" class="board"></div>
+  </section>
+
   <section class="panel" id="messages-panel">
     <h2>Messages</h2>
     <p class="help">Ask the GM is private between one player and you. Only you write on the notice board. Broadcasts are what players say to everyone from the broadcast room, and you can broadcast too. You can read every private message, and players are told that you can.</p>
@@ -156,6 +162,7 @@
 
 <script src="/shared.js"></script>
 <script src="/avatar.js"></script>
+<script src="/world.js"></script>
 <script src="/host.js"></script>
 </body>
 </html>

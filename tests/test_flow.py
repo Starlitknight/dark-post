@@ -431,6 +431,7 @@ check("the coins on every card follow the deals", [seat_of(G, n)["coins"] for n 
 check("players cannot see the host's record of the rooms", call("GET", "/api/host/activity", cookies=seat(A))[0] == 401)
 act = call("GET", "/api/host/activity", cookies=host)[1]
 check("the host sees every deal, with both choices", [d["status"] for d in act["deals"]] == ["cancelled", "done", "done", "declined", "cancelled", "done"] and (act["deals"][-1]["a"], act["deals"][-1]["aChoice"], act["deals"][-1]["bChoice"], act["deals"][-1]["aNet"], act["deals"][-1]["bNet"]) == (nA, "c", "b", -2, 2))
+check("the GM's live board has every arrived player, where they stand and who is connected", len(act["board"]["players"]) >= 10 and all(k in act["board"] for k in ("pos", "online")) and all("avatar" in p and "name" in p for p in act["board"]["players"]))
 rowB = [p for p in act["puzzle"]["players"] if p["n"] == nB][0]
 rowC = [p for p in act["puzzle"]["players"] if p["n"] == nC][0]
 check("and every player's puzzle, with its answer", len(act["puzzle"]["players"]) == 14 and rowB["solved"] is True and rowB["answer"] == solve(pz) and rowC["solved"] is False and rowC["tries"] == 3)
@@ -580,7 +581,8 @@ check("invitation link remembers the seat on the device", ("dp_seat=" + tokens[0
 for _ in range(5):
     status, body, _ = call("POST", "/api/host/login", {"passphrase": "wrong passphrase"})
 status, body, _ = call("POST", "/api/host/login", {"passphrase": "correct horse battery"})
-check("five wrong passphrases lock sign-in for a minute", status == 429)
+check("five wrong passphrases lock sign-in from that address", status == 429)
+check("a player cannot read the board, the answers or the console", call("GET", "/api/host/activity", cookies=seat(A))[0] == 401 and call("GET", "/api/host/state", cookies=seat(A))[1].get("invites") is None and call("POST", "/api/host/reveal", {}, seat(A))[0] == 401 and call("GET", "/api/host/messages?room=whispers", cookies=seat(A))[0] == 401)
 
 print()
 print("ALL PASSED" if not check.failed else f"{check.failed} FAILED")

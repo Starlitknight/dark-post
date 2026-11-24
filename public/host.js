@@ -94,7 +94,10 @@
       draw();
       loadView(false);
       loadActivity();
-      if (!refresher) refresher = setInterval(function () { if (!document.hidden) refresh().catch(function () {}); }, 15000);
+      if (!refresher) {
+        refresher = setInterval(function () { if (!document.hidden) refresh().catch(function () {}); }, 15000);
+        setInterval(function () { if (!document.hidden && $("board")) api("GET", "/api/host/activity").then(function (a) { drawBoard(a.board); }).catch(function () {}); }, 4000);
+      }
     });
   }
 
@@ -533,8 +536,36 @@
           }).join("") + "</tbody></table>";
       }
       $("activity").innerHTML = out;
+      drawBoard(a.board);
       drawNight1(a.night);
     }).catch(function () {});
+  }
+
+  // ---------- the live board: every room from above, with each player where they stand ----------
+
+  var BOARD_ROOMS = ["hall", "arena", "puzzle", "betting", "studio", "gallery", "shop"];
+  function drawBoard(b) {
+    var box = $("board");
+    if (!box || !b || !window.DP_WORLD) return;
+    var W = window.DP_WORLD, online = {}, inRoom = {};
+    b.online.forEach(function (n) { online[n] = true; });
+    b.players.forEach(function (p) {
+      var at = b.pos[p.n] || ["hall"].concat(W.marker(p.n));
+      if (BOARD_ROOMS.indexOf(at[0]) < 0) at = ["hall"].concat(W.marker(p.n));
+      (inRoom[at[0]] = inRoom[at[0]] || []).push({ p: p, x: at[1], y: at[2] });
+    });
+    var here = b.players.length, live = b.players.filter(function (p) { return online[p.n]; }).length;
+    var out = '<p class="board-sum"><b>' + here + "</b> in the house · <b>" + live + "</b> connected now</p><div class=\"board-grid\">";
+    BOARD_ROOMS.forEach(function (id) {
+      var R = W.ROOMS[id], list = inRoom[id] || [];
+      out += '<div class="board-room' + (id === "hall" ? " wide" : "") + '"><div class="board-map" style="aspect-ratio: ' + R.w + " / " + R.h + "; background-image: url(/art/rooms/" + id + '.webp)">' +
+        list.map(function (e) {
+          return '<span class="board-pin' + (online[e.p.n] ? " on" : "") + (e.p.out ? " out" : "") + '" style="left: ' + (e.x / R.w * 100).toFixed(1) + "%; top: " + (e.y / R.h * 100).toFixed(1) + '%" title="' + esc(e.p.name) + '">' +
+            window.DP_AVATAR.draw(e.p.avatar) + "<b>" + e.p.n + "</b></span>";
+        }).join("") +
+        '</div><p class="board-name"><b>' + esc(R.name) + "</b>" + (list.length ? list.map(function (e) { return "Player " + e.p.n + " (" + esc(e.p.name) + ")" + (online[e.p.n] ? "" : ", away"); }).join(" · ") : "Nobody") + "</p></div>";
+    });
+    box.innerHTML = out + "</div>";
   }
 
   // ---------- Night 1: Six Vaults ----------
