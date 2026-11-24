@@ -289,7 +289,7 @@ status, pz, _ = call("GET", "/api/puzzle", cookies=seat(B))
 check("a player gets today's puzzle, three tries, and no answer", status == 200 and pz["type"] in ["code", "sums", "cipher", "sequence"] and pz["left"] == 3 and "answer" not in pz and pz["solved"] is False)
 check("the same player sees the same puzzle again", call("GET", "/api/puzzle", cookies=seat(B))[1]["data"] == pz["data"])
 others = [call("GET", "/api/puzzle", cookies=seat(t))[1] for t in tokens[2:8]]
-check("other players get the same kind of puzzle with different numbers", all(o["type"] == pz["type"] for o in others) and sum(1 for o in others if o["data"] != pz["data"]) >= 5)
+check("every player gets the same puzzle, and the first one is the three-digit code", pz["type"] == "code" and all(o["type"] == pz["type"] and o["data"] == pz["data"] for o in others))
 status, body, _ = call("POST", "/api/puzzle", {"answer": "  "}, seat(B))
 check("an empty answer is not counted", status == 400 and call("GET", "/api/puzzle", cookies=seat(B))[1]["left"] == 3)
 status, body, _ = call("POST", "/api/puzzle", {"answer": "zzzz"}, seat(B))
@@ -298,7 +298,7 @@ status, body, _ = call("POST", "/api/puzzle", {"answer": " " + solve(pz).lower()
 check("the right answer solves it", status == 200 and body["right"] is True and body["solved"] is True and body["paid"] is False)
 status, body, _ = call("POST", "/api/puzzle", {"answer": solve(pz)}, seat(B))
 check("it cannot be solved twice", status == 409)
-check("someone else's answer is worth nothing", solve(others[5]) == solve(pz) or call("POST", "/api/puzzle", {"answer": solve(pz)}, seat(tokens[7]))[1]["right"] is False)
+check("the answer is the same for everyone, and still hidden from a player who has not solved it", solve(others[5]) == solve(pz) and "answer" not in call("GET", "/api/puzzle", cookies=seat(tokens[7]))[1])
 for _ in range(3):
     status, body, _ = call("POST", "/api/puzzle", {"answer": "0"}, seat(C))
 check("after three wrong tries the answer is shown", body["left"] == 0 and body["solved"] is False and body.get("answer") == solve(others[0]))
@@ -431,6 +431,7 @@ check("the coins on every card follow the deals", [seat_of(G, n)["coins"] for n 
 check("players cannot see the host's record of the rooms", call("GET", "/api/host/activity", cookies=seat(A))[0] == 401)
 act = call("GET", "/api/host/activity", cookies=host)[1]
 check("the host sees every deal, with both choices", [d["status"] for d in act["deals"]] == ["cancelled", "done", "done", "declined", "cancelled", "done"] and (act["deals"][-1]["a"], act["deals"][-1]["aChoice"], act["deals"][-1]["bChoice"], act["deals"][-1]["aNet"], act["deals"][-1]["bNet"]) == (nA, "c", "b", -2, 2))
+check("the GM's live board counts all sixteen places", act["board"]["seats"] == 16 and isinstance(act["board"]["arriving"], list))
 check("the GM's live board has every arrived player, where they stand and who is connected", len(act["board"]["players"]) >= 10 and all(k in act["board"] for k in ("pos", "online")) and all("avatar" in p and "name" in p for p in act["board"]["players"]))
 rowB = [p for p in act["puzzle"]["players"] if p["n"] == nB][0]
 rowC = [p for p in act["puzzle"]["players"] if p["n"] == nC][0]

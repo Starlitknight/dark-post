@@ -121,10 +121,15 @@ for (const [id, title] of [["arena", "The arena"], ["puzzle", "Puzzle room"], ["
     await tryClick('.npc-talk [data-scene="puzzle"]'); await sleep(1400);
     await snap("puzzle");
     await page.type("#pz-answer", String(answer)); await tryClick("#pz-send"); await sleep(1600);
-    const solved = (await text()).includes("Solved.");
+    const shown = await page.evaluate(() => { const r = document.querySelector("#pz-result.win"); return r ? r.innerText.replace(/\s+/g, " ").toUpperCase() : ""; });
+    await snap("puzzle-solved");
+    await tryClick('[data-act="pzDone"]'); await sleep(400);
+    const solved = shown.includes("PUZZLE SOLVED") && shown.includes("+1 COIN") && (await page.$("#pz-result")) === null && (await text()).includes("Solved.");
+    ok("a second answer the same day is refused by the server", (await call("POST", "/api/puzzle", { answer: String(answer) }, seat(0))).status === 409);
     const now = (await call("GET", "/api/hall", null, seat(0))).coins;
     ok("the attendant offers today's puzzle, and solving it pays one coin (" + before + " to " + now + ")", offer.includes("haven’t done today’s puzzle") && solved && now === before + 1);
     await tryClick('[data-act="hall"], [data-act="go"][data-scene="hall"]'); await sleep(1500);
+    ok("the game clock at the top shows Eastern time", /^\d{1,2}:\d\d [AP]M E[SD]T$/.test(await page.$eval("#top-clock", (el) => el.textContent)));
     ok("the coin shows at once, and the attendant says the puzzle is done", (await page.$eval("#top-coins", (el) => el.textContent)) === now + " coins" && (await talk()).includes("have done today’s puzzle"));
     await tryClick('[data-act="talkClose"]'); await sleep(300);
   } else {

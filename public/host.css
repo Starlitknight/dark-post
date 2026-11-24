@@ -187,3 +187,5 @@ body.host { display: block; }
 .board-name { margin: 6px 0 0; font-size: 12.5px; line-height: 1.4; color: #BDBDBD; }
 .board-name b { display: block; color: #fff; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; }
 @media (max-width: 700px) { .board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .board-room.wide { grid-column: span 2; } }
+.board-pin.ghost { opacity: 0.85; box-shadow: none; }
+.board-pin.ghost b { background: none; color: #9aa2a1; }

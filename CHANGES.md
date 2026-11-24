@@ -1,5 +1,14 @@
 # Dark Post
 
+## One puzzle for all, result screens, game clock, 24 Nov 2026, night (the GM's instructions, done outside this agent)
+
+- **Every player gets the same puzzle each day.** The kinds take turns from the first day: code, sums, cipher, sequence (`puzzleFor` in `src/worker.js`). One puzzle a day, three tries; the server refuses anything more.
+- **The game's day runs midnight to midnight EST** (`GAME_DAY_STARTS_UTC_MS`), no longer from the bag-opening time of day.
+- **Puzzle solved / Puzzle failed** screens (`pzResult` in `public/app.js`, styles at the end of `app.css`). The coin is in the balance at once.
+- **A game clock on Eastern time** sits at the top right of the room view (`#top-clock`, `gameTime`).
+- **The status ribbon** reads Current / Next: "Player onboarding", then "Bag choice reveal" with a countdown, or TBD when no time is set.
+- **The live board shows all sixteen places**: faces for players in the house (faded when away), silhouettes on the hall's marks for places not yet taken.
+
 ## Live board and hardening, 24 Nov 2026, night (done outside this agent)
 
 - **The GM's live board** is the first panel of the host console: every room from above with each player's face where they stand, gold ring if connected. Data comes from `/api/host/activity` (`board`), host only. `host.html` now loads `world.js` for the room sizes.

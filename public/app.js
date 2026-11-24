@@ -772,9 +772,9 @@
           '<div class="world" id="world"></div>' +
           '<div class="room-name" id="room-name" aria-live="polite"></div>' +
           '<div class="hud-top">' +
-          '<div class="hud-chips"><div class="hud-brand">' + ART.wordmark() + '</div><span class="chip gold">Player ' + esc(me.number) + '</span>' + walletMarkup("top-coins") + '<span class="chip here" id="top-room"></span></div>' +
-          '<button type="button" class="now" id="now" data-act="go" data-scene="tonight" aria-label="What is happening now, and what is next">' +
-          '<span class="now-row"><i>Now</i><b id="now-a"></b></span>' +
+          '<div class="hud-chips"><div class="hud-brand">' + ART.wordmark() + '</div><span class="chip gold">Player ' + esc(me.number) + '</span>' + walletMarkup("top-coins") + '<span class="chip here" id="top-room"></span><span class="chip clock" id="top-clock" title="Game time. Every time in the game is on this clock."></span></div>' +
+          '<button type="button" class="now" id="now" data-act="go" data-scene="tonight" aria-label="The current stage, and what is next">' +
+          '<span class="now-row"><i>Current</i><b id="now-a"></b></span>' +
           '<span class="now-row"><i>Next</i><b id="now-b"></b><em id="now-t"></em></span>' +
           '<span class="now-do" id="now-do"></span></button>' +
           "</div>" +
@@ -1687,18 +1687,30 @@
       };
     }
     var revealed = hall.phase === "revealed";
-    var name = revealed ? hall.nextName || "The first game" : "The bags open";
+    var name = revealed ? hall.nextName || "The first game" : "Bag choice reveal";
     var at = new Date(revealed ? hall.nextAt : hall.opensAt).getTime();
     var left = at - Date.now();
-    var count = isNaN(at) ? (revealed ? "To be announced" : "Soon") : left <= 0 ? (revealed ? "Starting" : "Any moment") : span(left);
+    var count = isNaN(at) ? "TBD" : left <= 0 ? (revealed ? "Starting" : "Any moment") : span(left);
     return {
       revealed: revealed,
-      now: revealed ? "The bags are open" : "Opening night",
+      now: revealed ? "The bags are open" : "Player onboarding",
       next: name,
       at: at,
       count: count,
       todo: hall.out ? "You are out of the game. You can still watch." : revealed ? (hall.bettingOpen ? "Solve today’s puzzle or make a deal." : "Solve today’s puzzle. Talk to the other players.") : "You have taken your bag. Try the daily puzzle while you wait.",
     };
+  }
+
+  // The game's clock: Eastern time, whatever zone the player is in.
+  var clockFormat = null;
+  function gameTime() {
+    try {
+      clockFormat = clockFormat || new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+      return clockFormat.format(new Date());
+    } catch (err) {
+      var d = new Date(Date.now() - 5 * 3600000), h = d.getUTCHours(), m = d.getUTCMinutes();
+      return ((h + 11) % 12 + 1) + ":" + (m < 10 ? "0" : "") + m + " " + (h < 12 ? "AM" : "PM") + " EST";
+    }
   }
 
   var nowSeen = "", nowTimer = null;
@@ -1713,7 +1725,7 @@
   function menuNowHTML() {
     var s = nowNext();
     return '<button type="button" class="menu-now" data-act="go" data-scene="tonight">' +
-      '<span class="now-row"><i>Now</i><b>' + esc(s.now) + '</b></span>' +
+      '<span class="now-row"><i>Current</i><b>' + esc(s.now) + '</b></span>' +
       '<span class="now-row"><i>Next</i><b>' + esc(s.next) + '</b><em id="menu-count">' + esc(s.count) + '</em></span>' +
       (s.todo ? '<span class="now-do">' + esc(s.todo) + '</span>' : '') + '</button>';
   }
@@ -1733,6 +1745,8 @@
     }
     var count = $("menu-count");
     if (count) count.textContent = s.count;
+    var ck = $("top-clock");
+    if (ck) { var t = gameTime(); if (ck.textContent !== t) ck.textContent = t; }
     var wall = $("world-clock");
     if (wall) wall.innerHTML = "<span>Next · " + esc(s.next) + "</span><b>" + esc(s.count) + "</b>";
     syncWallet();
@@ -1749,7 +1763,7 @@
       box.setAttribute("data-sig", sig);
       var later = hall.nextAt ? DP.when(hall.nextAt, true) + ", your time" : "Begins after the bags open.";
       box.innerHTML =
-        '<div class="s-card now"><i>Now</i><h2>' + esc(s.now) + "</h2><p>" +
+        '<div class="s-card now"><i>Current</i><h2>' + esc(s.now) + "</h2><p>" +
         (s.revealed
           ? (hall.coins != null ? "You hold " + plural(hall.coins, "coin", "coins") + "." : "The coins have been counted.")
           : "Two bags. Every player secretly takes one." + (me.bag ? " You took Bag " + me.bag + "." : "")) +
@@ -2363,15 +2377,15 @@
       body = '<div class="pz-tiles wide">' + p.data.terms.map(function (t) { return "<b>" + t + "</b>"; }).join("") + '<b class="q">?</b></div>';
     }
     var end = p.solved
-      ? '<div class="pz-done ok"><b>Solved.</b> +' + plural(p.reward, "coin", "coins") + "." + (p.paid ? "" : " It’s in your balance now. You can spend it after the bags open.") + "</div>"
+      ? '<div class="pz-done ok"><b>Solved.</b> +' + plural(p.reward, "coin", "coins") + ", paid into your balance. One puzzle a day.</div>"
       : p.left <= 0
-        ? '<div class="pz-done"><b>No tries left.</b> The answer was ' + esc(p.answer) + ".</div>"
+        ? '<div class="pz-done"><b>No tries left.</b> The answer was ' + esc(p.answer) + ". One puzzle a day.</div>"
         : '<div class="composer pz-form" id="pz-form"><input type="text" id="pz-answer" maxlength="24" autocomplete="off" autocapitalize="characters" enterkeyhint="send" inputmode="' + (p.type === "cipher" ? "text" : "numeric") + '" placeholder="Your answer" aria-label="Your answer">' +
           '<button type="button" class="btn send" id="pz-send">Try</button></div><p class="pz-left">' + plural(p.left, "try", "tries") + " left today</p>";
     box.innerHTML =
       '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + '</h2><div class="pz-body">' + body + "</div><p>" + esc(p.ask) + "</p>" + end + "</div>" +
-      '<div class="s-card"><i>Next puzzle in</i><b class="s-count small" id="pz-reset">' + span(Math.max(0, p.resetAt - Date.now())) + "</b><p>Every player gets different numbers, so an answer cannot be passed on.</p>" +
-      (demo ? '<button type="button" class="link" data-act="pzNext">Preview: show another kind of puzzle</button>' : "") + "</div>";
+      '<div class="s-card"><i>Next puzzle in</i><b class="s-count small" id="pz-reset">' + span(Math.max(0, p.resetAt - Date.now())) + "</b><p>Every player gets the same puzzle.</p>" +
+"</div>";
     var form = $("pz-form");
     if (form) {
       var tryNow = function () {
@@ -2382,8 +2396,15 @@
           .then(function (res) {
             ui.pz = res;
             drawPuzzle();
-            loadHall().catch(function () {});
-            if (!res.right && res.left > 0) toast("Not that. " + plural(res.left, "try", "tries") + " left.");
+            if (res.right) pzResult("win", res);
+            else if (res.left <= 0) pzResult("lose", res);
+            else toast("Not that. " + plural(res.left, "try", "tries") + " left.");
+            // the coin is in the balance at once
+            loadHall().then(function () {
+              syncWallet();
+              var bal = $("pz-bal");
+              if (bal) bal.textContent = "Your balance: " + plural(balance(), "coin", "coins") + ".";
+            }).catch(function () {});
           })
           .catch(function (err) { toast(err.message); })
           .then(function () { ui.busy = false; });
@@ -2393,6 +2414,24 @@
         if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); tryNow(); }
       });
     }
+  }
+
+  // The moment a puzzle is settled: solved, with the coin; or failed, with the answer.
+  function pzResult(kind, p) {
+    var old = $("pz-result");
+    if (old) old.remove();
+    var el = document.createElement("div");
+    el.className = "pz-result " + kind;
+    el.id = "pz-result";
+    el.setAttribute("role", "alertdialog");
+    el.innerHTML = kind === "win"
+      ? '<div class="pz-burst" aria-hidden="true"></div><div class="pz-coin">' + ART.bigCoin() + "</div><h2>Puzzle solved</h2>" +
+        '<p class="pz-plus">+' + plural(p.reward, "coin", "coins") + '</p><p class="pz-note" id="pz-bal">Paid into your balance.</p>' +
+        '<button type="button" class="btn narrow" data-act="pzDone">Continue</button>'
+      : '<div class="pz-x" aria-hidden="true"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="#ff5a4d" stroke-width="7"/><path d="M41 41l38 38M79 41 41 79" stroke="#ff5a4d" stroke-width="9" stroke-linecap="round"/></svg></div>' +
+        "<h2>Puzzle failed</h2><p class=\"pz-plus\">The answer was " + esc(p.answer) + '</p><p class="pz-note">No coin today. A new puzzle arrives at midnight EST.</p>' +
+        '<button type="button" class="btn narrow" data-act="pzDone">Continue</button>';
+    (root.firstElementChild || root).appendChild(el);
   }
 
   // ----- the night's match: Six Vaults -----
@@ -3090,6 +3129,7 @@
     else if (name === "hall") go("hall");
     else if (name === "go") go(el.getAttribute("data-scene"));
     else if (name === "seat") { ui.withN = Number(el.getAttribute("data-n")); ui.card = 0; go("whisper"); }
+    else if (name === "pzDone") { var done = $("pz-result"); if (done) done.remove(); }
     else if (name === "npc") { if (stage && STAFF[stage.room]) openTalk(stage.room); }
     else if (name === "talkClose") closeTalk();
     else if (name === "actor") {

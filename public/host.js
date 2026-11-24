@@ -516,12 +516,12 @@
       var out = "<h3>Today’s puzzle" + (a.puzzle.title ? ": " + esc(a.puzzle.title) : "") + "</h3>";
       if (!a.puzzle.players.length) out += '<p class="table-empty">Nobody has entered yet.</p>';
       else {
-        out += '<table class="table"><thead><tr><th>Player</th><th>Today</th><th>Their answer is</th><th>Solved in all</th></tr></thead><tbody>' +
+        out += '<table class="table"><thead><tr><th>Player</th><th>Today</th><th>The answer is</th><th>Solved in all</th></tr></thead><tbody>' +
           a.puzzle.players.map(function (p) {
             return "<tr><td>" + esc(hwho(p.n)) + "</td><td>" + (p.solved ? '<span class="chip gold">Solved</span>' : p.tries >= 3 ? '<span class="chip red">Out of tries</span>' : p.tries ? p.tries + " of 3 tries used" : "Not tried") +
               '</td><td class="num">' + esc(p.answer) + '</td><td class="num">' + p.total + "</td></tr>";
           }).join("") + "</tbody></table>" +
-          '<p class="help">A new puzzle arrives ' + esc(htime(a.resetAt)) + ", your time. Each player’s numbers are different, so each answer is different.</p>";
+          '<p class="help">A new puzzle arrives ' + esc(htime(a.resetAt)) + ", your time (midnight EST). Every player gets the same puzzle, so the answer is the same for all of them. One puzzle a day, three tries.</p>";
       }
       out += "<h3>Deals</h3>";
       if (!a.deals.length) out += '<p class="table-empty">No deals yet. The betting room opens when the bags open.</p>';
@@ -554,11 +554,22 @@
       if (BOARD_ROOMS.indexOf(at[0]) < 0) at = ["hall"].concat(W.marker(p.n));
       (inRoom[at[0]] = inRoom[at[0]] || []).push({ p: p, x: at[1], y: at[2] });
     });
+    // every place is shown: a face for a player in the house (faded when away), a silhouette for a place nobody stands in yet
+    var taken = {}, arriving = {};
+    b.players.forEach(function (p) { taken[p.n] = true; });
+    (b.arriving || []).forEach(function (p) { arriving[p.n] = p.name; });
+    var ghosts = [];
+    for (var n = 1; n <= (b.seats || 16); n++) if (!taken[n]) ghosts.push(n);
     var here = b.players.length, live = b.players.filter(function (p) { return online[p.n]; }).length;
-    var out = '<p class="board-sum"><b>' + here + "</b> in the house · <b>" + live + "</b> connected now</p><div class=\"board-grid\">";
+    var out = '<p class="board-sum"><b>' + here + "</b> in the house · <b>" + live + "</b> connected now · <b>" + ghosts.length + '</b> not here yet</p><div class="board-grid">';
     BOARD_ROOMS.forEach(function (id) {
       var R = W.ROOMS[id], list = inRoom[id] || [];
       out += '<div class="board-room' + (id === "hall" ? " wide" : "") + '"><div class="board-map" style="aspect-ratio: ' + R.w + " / " + R.h + "; background-image: url(/art/rooms/" + id + '.webp)">' +
+        (id !== "hall" ? "" : ghosts.map(function (n) {
+          var m = W.marker(n);
+          return '<span class="board-pin ghost" style="left: ' + (m[0] / R.w * 100).toFixed(1) + "%; top: " + (m[1] / R.h * 100).toFixed(1) + '%" title="' + (arriving[n] ? esc(arriving[n]) + ", still in the opening" : "Nobody has this place yet") + '">' +
+            window.DP_AVATAR.silhouette() + "<b>" + n + "</b></span>";
+        }).join("")) +
         list.map(function (e) {
           return '<span class="board-pin' + (online[e.p.n] ? " on" : "") + (e.p.out ? " out" : "") + '" style="left: ' + (e.x / R.w * 100).toFixed(1) + "%; top: " + (e.y / R.h * 100).toFixed(1) + '%" title="' + esc(e.p.name) + '">' +
             window.DP_AVATAR.draw(e.p.avatar) + "<b>" + e.p.n + "</b></span>";

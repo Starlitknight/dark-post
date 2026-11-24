@@ -29,6 +29,7 @@ const WORLD_ROOMS = ["hall", "arena", "puzzle", "betting", "studio", "sky", "dun
 // The three cells in the dungeon, as rectangles of its floor. public/world.js draws the same ones.
 const CELLS = [[90, 162, 470, 462], [560, 162, 940, 462], [1030, 162, 1410, 462]];
 const DAY_MS = 24 * 60 * 60 * 1000;
+const GAME_DAY_STARTS_UTC_MS = 5 * 60 * 60 * 1000; // midnight EST is 05:00 UTC
 const PUZZLE_TRIES = 3;
 const PUZZLE_REWARD = 1;
 // A deal: each player stakes this many coins and seals Cooperate (c) or Betray (b).
@@ -628,9 +629,9 @@ export class Game extends DurableObject {
   // ---------- days, coins, and where a player stands ----------
 
   // The game's day turns over at the hour the bags open, so "today" is the same for every time zone.
+  // The game's day runs midnight to midnight, Eastern Standard Time (UTC-5): the same clock the players see.
   dayAnchor() {
-    const t = Date.parse(this.get("opens_at", ""));
-    return Number.isFinite(t) ? t % DAY_MS : 0;
+    return GAME_DAY_STARTS_UTC_MS;
   }
 
   today() {
@@ -672,13 +673,22 @@ export class Game extends DurableObject {
 
   // ---------- the puzzle room ----------
 
+  // Every player gets the same puzzle each day, so nobody draws an easier one.
+  // The kinds take turns from the first day a puzzle is asked for: code, sums, cipher, sequence.
   puzzleFor(number, day) {
     let salt = this.get("puzzle_salt", "");
     if (!salt) {
       salt = randomToken(12);
       this.set("puzzle_salt", salt);
     }
-    return makePuzzle(salt + ":" + day + ":" + number, day);
+    const start = day * DAY_MS + this.dayAnchor();
+    let first = Number(this.get("puzzle_first", ""));
+    if (!first) {
+      first = start;
+      this.set("puzzle_first", first);
+    }
+    const turn = Math.max(0, Math.round((start - first) / DAY_MS));
+    return makePuzzle(salt + ":" + day, turn);
   }
 
   puzzleRow(number, day) {
@@ -1374,6 +1384,10 @@ export class Game extends DurableObject {
         online: this.onlineNumbers(),
         players: this.sql.exec(`SELECT number, name, avatar, out FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL ORDER BY number`).toArray()
           .map((r) => ({ n: r.number, name: r.name, avatar: parseAvatar(r.avatar), out: r.out || 0 })),
+        // accepted and numbered, but still in the opening
+        arriving: this.sql.exec(`SELECT number, name FROM invites WHERE status = 'accepted' AND avatar IS NULL AND number IS NOT NULL ORDER BY number`).toArray()
+          .map((r) => ({ n: r.number, name: r.name })),
+        seats: SEATS,
       },
       night: this.hostNightView(),
     });
