@@ -1421,9 +1421,8 @@ button { font: inherit; color: inherit; }
 .sprite { display: block; width: 100%; height: auto; overflow: visible; }
 .sprite .leg, .sprite .arm, .sprite .torso { transform-box: fill-box; }
 .sprite .arm { transform-origin: 50% 8%; }
-/* a figure turns to face the way it walks; the number on its chest must still read the right way round */
-.sprite .num { transform-box: fill-box; transform-origin: center; }
-.actor.flip .sprite .num { transform: scaleX(-1); }
+/* a figure turns to face the way it walks; the number on its chest is mirrored back in app.js (setWalking),
+   with an SVG attribute. No CSS transform here: Safari on iPhone misplaces a CSS mirror of SVG text. */
 
 .actor.walking .leg-a { animation: step 0.34s linear infinite; }
 .actor.walking .leg-b { animation: step 0.34s linear infinite; animation-delay: -0.17s; }
@@ -2602,6 +2601,8 @@ body.desk .slip h1 { font: 700 clamp(26px,5vw,46px)/1 var(--serif); letter-spaci
 .world-clock { flex-direction:column; gap:0; justify-content:center; }
 .world-clock span { max-width:100%; line-height:1.15; }
 .world-clock b { font-size:27px; }
+/* words on the wall, not a countdown: a little smaller so the longest status fits the display */
+.world-clock b.words { font-size:25px; letter-spacing:.08em; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
 .set-back-icon svg { width:22px; height:22px; }
 .set-back .set-back-icon { padding:0; }
 #app .mark { min-width:58px; min-height:58px; }
@@ -2764,7 +2765,7 @@ button.throw { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 
 /* ----- the game clock, top right ----- */
 .hud-chips { flex-wrap: wrap; }
-.hud-chips .chip.clock { flex: 0 0 100%; justify-content: flex-end; margin: -3px 0 0; padding: 0; border: 0; background: none; font-size: 12.5px; letter-spacing: 0.08em; color: #d7bf8f; font-variant-numeric: tabular-nums; }
+.hud-chips .chip.clock { flex: 0 0 100%; justify-content: flex-end; margin: -4px 0 7px; padding: 0; border: 0; background: none; font-size: 12.5px; letter-spacing: 0.08em; color: #d7bf8f; font-variant-numeric: tabular-nums; }
 @media (min-width: 900px) {
   .hud-chips { flex-wrap: nowrap; }
   .hud-chips .chip.clock { flex: none; margin: 0; padding-left: 16px; border-left: 1px solid #ffffff25; font-size: 17px; }

@@ -1567,6 +1567,13 @@
     if (a.flipped !== a.flip) {
       a.flipped = a.flip;
       a.el.classList.toggle("flip", !!a.flip);
+      // The figure is mirrored to face the way it walks, so the number on its chest is mirrored back.
+      // This is a plain SVG attribute, not CSS: Safari on iPhone puts a CSS mirror of SVG text in the wrong place.
+      var num = a.el.querySelector(".sprite .num");
+      if (num) {
+        if (a.flip) num.setAttribute("transform", "translate(" + (2 * Number(num.getAttribute("x"))).toFixed(1) + " 0) scale(-1 1)");
+        else num.removeAttribute("transform");
+      }
     }
   }
 
@@ -1751,7 +1758,9 @@
     }
     var revealed = hall.phase === "revealed";
     var name = revealed ? hall.nextName || "The first game" : "Bag choice reveal";
-    var at = new Date(revealed ? hall.nextAt : hall.opensAt).getTime();
+    // Before the bags open, a time is shown only when the bags will open by themselves at that time.
+    // Otherwise the GM opens them when he chooses, and a countdown would be a promise nobody made.
+    var at = new Date(revealed ? hall.nextAt : hall.autoOpen ? hall.opensAt : "").getTime();
     var left = at - Date.now();
     var count = isNaN(at) ? "TBD" : left <= 0 ? (revealed ? "Starting" : "Any moment") : span(left);
     return {
@@ -1815,7 +1824,11 @@
     var ck = $("top-clock");
     if (ck) { var t = gameTime(); if (ck.textContent !== t) ck.textContent = t; }
     var wall = $("world-clock");
-    if (wall) wall.innerHTML = "<span>Next · " + esc(s.next) + "</span><b>" + esc(s.count) + "</b>";
+    // The wall says what is happening now. Once the bags are open it counts down to the next round.
+    if (wall) {
+      var lit = s.revealed ? "<span>Next · " + esc(s.next) + "</span><b>" + esc(s.count) + "</b>" : '<span>Current</span><b class="words">' + esc(s.now) + "</b>";
+      if (wall.getAttribute("data-lit") !== lit) { wall.setAttribute("data-lit", lit); wall.innerHTML = lit; }
+    }
     syncWallet();
   }
 
@@ -3420,6 +3433,7 @@
       you: me.number,
       phase: me.phase,
       opensAt: me.opensAt,
+      autoOpen: !!query.get("auto"),
       nextAt: query.get("next") === "0" ? "" : new Date((revealed ? Date.now() : new Date(me.opensAt).getTime()) + (26 * 60 + 40) * 60000).toISOString(),
       nextName: "Night 1",
       canEditFace: !revealed,

@@ -579,6 +579,8 @@ export class Game extends DurableObject {
       you: inv.number,
       phase,
       opensAt: this.get("opens_at", ""),
+      // true only when the bags will open by themselves at that time; the game shows a countdown only then
+      autoOpen: this.get("auto_open", "0") === "1",
       nextAt: this.get("next_at", ""),
       nextName: this.get("next_name", NEXT_NAME),
       canEditFace: phase !== "revealed",

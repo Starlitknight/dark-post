@@ -383,6 +383,7 @@ check("a solved puzzle is paid when the bags open", hall_of(B)["coins"] == 7 and
 # --- the betting room: two players, two sealed choices ---
 D, E, F, G = tokens[3], tokens[4], tokens[5], tokens[6]
 nD, nE, nF, nG = numbers[3], numbers[4], numbers[5], numbers[6]
+check("players are told the bags open by themselves only when the GM has set that", hall_of(A)["autoOpen"] is False)
 check("the betting room stays shut until the GM opens it", call("GET", "/api/deals", cookies=seat(A))[1]["open"] is False and call("POST", "/api/deal", {"to": nB, "choice": "c"}, seat(A))[0] == 409 and hall_of(A)["bettingOpen"] is False)
 check("a player cannot open it", call("POST", "/api/host/settings", {"bettingOpen": True}, seat(A))[0] in (401, 403) and hall_of(A)["bettingOpen"] is False)
 status, body, _ = call("POST", "/api/host/settings", {"bettingOpen": True}, host)

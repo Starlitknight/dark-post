@@ -69,6 +69,8 @@ await tryClick('[data-act="commitBack"]'); await sleep(300);
 await tryClick('[data-act="commitYes"]'); await sleep(1500);
 ok("confirming closes the question and the server remembers it", (await page.$eval("#commit", (el) => el.hidden)) && (await call("GET", "/api/hall", null, seat(0))).needsCommit === false);
 ok("the hall has the player and the clock", (await page.$$(".actor")).length >= 4 && (await page.$eval("#now-a", (el) => el.textContent)).length > 3);
+ok("the wall board says what is happening now, not a countdown", /^current\s*player onboarding$/i.test((await page.$eval("#world-clock", (el) => el.innerText)).replace(/\n/g, " ").trim()));
+ok("an opening time is set, but the GM opens the bags by hand, so players see no countdown", (await page.$eval("#now-b", (el) => el.textContent)) === "Bag choice reveal" && (await page.$eval("#now-t", (el) => el.textContent)) === "TBD");
 const me = await call("GET", "/api/me", null, seat(0));
 ok("the server has the bag sealed and a character saved", me.state === "hall" && !!me.avatar && (me.bag === 1 || me.sealed === true || me.choice === 1 || me.bag != null));
 

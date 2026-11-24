@@ -1,5 +1,12 @@
 # Dark Post
 
+## The wall board, 24 Nov 2026, night (the GM's instructions, done outside this agent)
+
+- **The board on the hall's back wall says what is happening now** before the bags open: "Current / Player onboarding" (`drawStatus` in `public/app.js`, `.world-clock b.words` in `public/app.css`). After the bags open it goes back to "Next" and a countdown.
+- **No countdown to the bag reveal unless the bags open by themselves.** `hall()` in `src/worker.js` now sends `autoOpen`. With it off, the GM opens the bags by hand, so players see "Next: Bag choice reveal, TBD" (`nowNext`). With it on, they see the countdown to the opening time.
+- **The number on a figure's chest is mirrored back with an SVG attribute** (`setWalking`), not CSS. Safari on iPhone drew the CSS mirror of SVG text beside the figure when it faced left. Do not put `transform-box` or a CSS `transform` on `.sprite .num` again.
+- The phone top bar has room under the clock.
+
 ## Play or resign, 24 Nov 2026, night (the GM's instructions, done outside this agent)
 
 - **The first time a player stands in the hall they are asked once**: "Will you play?" with "Confirm. I'll play." and "Resign my spot and spectate instead" (`drawCommit` in `public/app.js`, `commit` in `src/worker.js`, `needsCommit` on the hall). Resigning asks once more before it is final.
