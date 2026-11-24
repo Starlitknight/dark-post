@@ -267,7 +267,7 @@ window.DP_ART = (function () {
     if (kind === "sixteen") kind = "group";
     if (kind === "exit") kind = "door";
     var scene = scenes[kind] || scenes.invitation;
-    return svg("briefing-art w-pic",scene.label,"0 0 360 240",scene.paints,function (fill) { return scene.draw(fill,value); });
+    return svg("briefing-art w-pic",scene.label,"48 32 264 176",scene.paints,function (fill) { return scene.draw(fill,value); });
   }
 
   return { bag:bag, bigCoin:bigCoin, wordmark:wordmark, imprint:imprint, briefing:briefing };

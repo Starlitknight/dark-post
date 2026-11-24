@@ -1,5 +1,13 @@
 # Dark Post
 
+## Opening pictures, 24 Nov 2026, later (the GM's instructions, done outside this agent)
+
+- **The number draw is the ring again**: sixteen numbered discs with one large number in the middle that runs with the light and lands on the player's number. The badge picture is no longer used.
+- **The sixteen players are silhouettes again** (hatted figures in two rows). Yours turns gold, five fade for elimination, then only yours is left. The card-file picture and the door picture are no longer used.
+- "Mr. Crane has set multiple tests" has its own picture: a card with a question mark and a clock, in bold gold line. The identity line shows a ring of sixteen around a question mark.
+- **Every opening picture is larger**: `--brief-art` is raised, the envelope is drawn closer in, coin and bags take more of the width. The rules are at the end of `briefing.css`.
+- `briefs/002-night1-assets.md` asks the art agent for Night 1 picture files.
+
 ## Opening rewrite, 24 Nov 2026 (the GM's instructions, done outside this agent)
 
 - **An unopened envelope is the first screen.** A tap opens the letter (`envelope` scene, styles at the end of `briefing.css`).

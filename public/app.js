@@ -539,7 +539,7 @@
             onStart: function (i) {
               var art = $("w-art");
               if (!art || !i) return;
-              art.innerHTML = ART.briefing("draw", null);
+              art.innerHTML = numberArt();
 
             },
             onEnd: function () { show("go"); },
@@ -559,7 +559,7 @@
       },
       mount: function () {
         if (ui.drawn) return landDraw(true);
-        narrate(["One of sixteen numbers is waiting in this envelope."], { onEnd: function () { show("draw-btn"); } });
+        narrate(["One of these sixteen numbers is yours."], { onEnd: function () { show("draw-btn"); } });
       },
     },
 
@@ -568,10 +568,14 @@
       tap: true,
       next: "title",
       html: function () {
-        return '<section class="screen scene">' + steps(2) +
-          '<div class="scene-art"><div class="w-art" id="crowd">' +
-          ART.briefing("group", {number: me.number, step: 1}) + '</div></div>' +
-          sayHTML() + '<p class="tap-hint later" id="hint">Tap to continue</p></section>';
+        var out = '<section class="screen scene">' + steps(2) + '<div class="scene-art"><div class="crowd b1" id="crowd">';
+        var gone = [3, 5, 8, 11, 14].map(function (d) { return ((me.number - 1 + d) % me.seats) + 1; });
+        for (var n = 1; n <= me.seats; n++) {
+          out +=
+            '<span class="pawn' + (n === me.number ? " me" : gone.indexOf(n) >= 0 ? " out" : "") + '" style="animation-delay: ' + (n * 0.04).toFixed(2) + 's">' +
+            '<svg viewBox="0 0 40 60" aria-hidden="true"><path d="M11.4 12.6 13 5.6C13.3 4 14.6 3 16.2 3h7.6c1.6 0 2.9 1 3.2 2.6l1.6 7z"/><ellipse cx="20" cy="13.2" rx="15.5" ry="3.1"/><circle cx="20" cy="19.6" r="7.2"/><path d="M3.5 59C3.5 42 9 31 20 31s16.5 11 16.5 28z"/></svg><b>' + (n === me.number ? "You" : n) + "</b></span>";
+        }
+        return out + '</div><div class="w-art" id="tests-art" hidden>' + testsArt() + "</div></div>" + sayHTML() + '<p class="tap-hint later" id="hint">Tap to continue</p></section>';
       },
       mount: function () {
         narrate([
@@ -581,10 +585,13 @@
           "The last player in the house wins and will be the sole beneficiary of Mr. Crane’s substantial wealth.",
         ], {
           tap: true,
+          // the crowd: everyone, then some of them gone, then one left. The tests get their own picture.
           onStart: function (i) {
-            var c = $("crowd");
-            if (!c || !i) return;
-            c.innerHTML = i === 1 ? ART.briefing("match") : i === 2 ? ART.briefing("door") : ART.briefing("group", {number: me.number, step: 3});
+            var c = $("crowd"), t = $("tests-art");
+            if (!c || !t) return;
+            c.hidden = i === 1;
+            t.hidden = i !== 1;
+            if (i !== 1) c.className = "crowd b" + (i === 0 ? 1 : i);
           },
           onLine: function (i) { if (i === 0) show("hint"); },
         });
@@ -1245,43 +1252,84 @@
     return ART.briefing("welcome", index);
   }
 
+  // Sixteen numbered discs in a ring, with one large number in the middle.
   function ringHTML() {
-    var badge = ART.briefing("draw", ui.drawn ? me.number : null)
-      .replace("data-brief-number", 'id="ring-mid" data-brief-number');
-    return '<div class="ring ballot' + (ui.drawn ? ' done' : '') + '" id="ring">' + badge + '</div>';
+    var out = '<div class="ring' + (ui.drawn ? " done" : "") + '" id="ring">';
+    for (var n = 1; n <= me.seats; n++) {
+      var a = (-90 + (n - 1) * (360 / me.seats)) * Math.PI / 180;
+      out += '<span class="disc' + (ui.drawn && n === me.number ? " mine" : "") + '" style="left: ' + (50 + Math.cos(a) * 43).toFixed(2) + "%; top: " + (50 + Math.sin(a) * 43).toFixed(2) + '%">' + n + "</span>";
+    }
+    return out + '<div class="ring-mid' + (String(me.number).length > 1 ? " two-digit" : "") + '" id="ring-mid">' + (ui.drawn ? esc(me.number) : "?") + "</div></div>";
   }
 
+  // The light has stopped on this player's number.
   function landDraw(quick) {
     var ring = $("ring");
     if (!ring) return;
     ui.drawn = true;
     ui.drawing = false;
+    Array.prototype.forEach.call(ring.querySelectorAll(".disc"), function (d, i) {
+      d.classList.remove("lit");
+      d.classList.toggle("mine", i + 1 === me.number);
+    });
     ring.classList.add("done");
     ring.classList.remove("spinning");
-    $("ring-mid").textContent = me.number;
+    var mid = $("ring-mid");
+    mid.textContent = me.number;
+    mid.classList.add("landed");
     $("draw-btn").classList.remove("on");
     $("draw-btn").inert = true;
-    narrate(["You’re Player " + me.number + ". This number is yours for the whole game."], {
-      quick: quick, onEnd: function () { show("go"); }
-    });
+    later(function () {
+      narrate(["You’re Player " + me.number + ". This number is yours for the whole game."], { quick: quick, onEnd: function () { show("go"); } });
+    }, quick ? 0 : 700);
   }
 
+  // The draw looks like chance: a light runs round the ring and the big number runs with it, slows, and
+  // stops. The number was fixed by the server when the invitation was accepted.
   function runDraw() {
-    if (!$("ring") || ui.drawing || ui.drawn) return;
+    var ring = $("ring");
+    if (!ring || ui.drawing || ui.drawn) return;
     ui.drawing = true;
     $("draw-btn").classList.remove("on");
     $("draw-btn").inert = true;
     stopNarration();
+    $("say").textContent = "";
     if (instant) return landDraw(true);
-    $("ring").classList.add("spinning");
-    var step = 0;
+    var discs = ring.querySelectorAll(".disc");
     var mid = $("ring-mid");
-    function turn() {
-      mid.textContent = (me.number + step * 7) % me.seats + 1;
-      if (++step < 7) later(turn, 62 + step * 12);
-      else later(function () { landDraw(false); }, 150);
+    var total = me.seats;
+    var from = Math.floor(Math.random() * total);
+    var hops = total * 2 + ((me.number - 1 - from) % total + total) % total;
+    var k = 0;
+    ring.classList.add("spinning");
+    (function hop() {
+      var at = (from + k) % total;
+      Array.prototype.forEach.call(discs, function (d, i) { d.classList.toggle("lit", i === at); });
+      mid.textContent = at + 1;
+      if (k >= hops) return later(function () { landDraw(false); }, 350);
+      k += 1;
+      var left = hops - k;
+      later(hop, left > 11 ? 55 : 55 + (11 - left) * (11 - left) * 3.4);
+    })();
+  }
+
+  // Two pictures drawn in bold gold line: a ring of sixteen around an unknown number, and an unknown test on a clock.
+  function goldPic(inner, box) {
+    return '<svg viewBox="' + (box || "0 0 240 200") + '" class="w-pic gold-pic" aria-hidden="true">' + inner + "</svg>";
+  }
+  function numberArt() {
+    var out = "";
+    for (var n = 0; n < 16; n++) {
+      var a = (-90 + n * 22.5) * Math.PI / 180;
+      out += '<circle cx="' + (120 + Math.cos(a) * 86).toFixed(1) + '" cy="' + (100 + Math.sin(a) * 86).toFixed(1) + '" r="8" fill="none" stroke="#ebd19a" stroke-width="3"/>';
     }
-    turn();
+    return goldPic(out + '<circle cx="120" cy="100" r="54" fill="#171a19" stroke="#ebd19a" stroke-width="5"/><text x="120" y="131" font-size="88" class="gold-q">?</text>');
+  }
+  function testsArt() {
+    return goldPic(
+      '<g transform="rotate(-7 80 100)"><rect x="20" y="40" width="120" height="120" rx="6" fill="#171a19" stroke="#ebd19a" stroke-width="5"/><text x="80" y="131" font-size="88" class="gold-q">?</text></g>' +
+      '<circle cx="190" cy="100" r="40" fill="#171a19" stroke="#ebd19a" stroke-width="5"/><path d="M190 100V66A34 34 0 0 1 219 83Z" fill="#ebd19a"/><circle cx="190" cy="100" r="4.5" fill="#ebd19a"/>' +
+      '<path d="M190 48v8M190 144v8M234 100h-8" stroke="#ebd19a" stroke-width="4" stroke-linecap="round"/>', "6 24 236 152");
   }
 
   var TOUR = [

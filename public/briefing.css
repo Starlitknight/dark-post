@@ -439,3 +439,29 @@ body.desk:has(.envelope-scene) { background: #1c1c1d; }
 #app .desk-pencil::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: clamp(18px, 2.6vw, 30px); background: #d2cdbf; clip-path: polygon(0 0, 100% 0, 50% 100%); }
 @media (max-width: 700px) { #app .desk-pencil { display: none; } #app .desk-ring { right: 6%; top: 5%; } }
 @media (prefers-reduced-motion: reduce) { #app .envelope-art, #app .env-seal, #app .envelope-line { transition: none; } }
+
+/* ---------- bigger, bolder pictures through the opening ---------- */
+#app .screen:is(.scene, .s-draw) { --brief-art: clamp(200px, 46svh, 520px); }
+@media (max-height: 530px) and (min-width: 600px) {
+  #app .screen:is(.scene, .s-draw) { --brief-art: min(44svh, 240px); }
+}
+#app .screen .scene-art [hidden] { display: none !important; }
+#app .screen .scene-art .briefing-art { overflow: visible; }
+#app .screen .scene-art .coin-spin { width: min(78%, var(--brief-art)); }
+#app .screen .scene-art.pair > .drop { width: min(49%, calc(var(--brief-art) * .95)); }
+#app .screen .scene-art.solo > .drop,
+#app .screen .scene-art > .sealed-art { width: min(86%, calc(var(--brief-art) * 1.2)); }
+#app .gold-pic { width: min(100%, calc(var(--brief-art) * 1.2)); height: auto; max-height: 100%; }
+#app .gold-pic .gold-q { font-family: var(--serif); font-weight: 700; text-anchor: middle; fill: #ebd19a; }
+/* the draw: the ring fills the picture slot, with the running number large in the middle */
+#app .screen.s-draw .scene-art .ring { width: min(var(--brief-art), 88vw); }
+#app .screen.s-draw .ring-mid { font-size: calc(min(var(--brief-art), 88vw) * 0.46); }
+#app .screen.s-draw .disc { font-size: calc(min(var(--brief-art), 88vw) * 0.045 + 5px); border-width: 2px; }
+/* sixteen silhouettes */
+#app .screen.scene .crowd { max-width: 760px; gap: clamp(14px, 3svh, 34px) clamp(4px, 1.2vw, 16px); }
+#app .screen.scene .pawn { color: #cfc9b8; gap: 7px; }
+#app .screen.scene .pawn svg { max-width: 72px; }
+#app .screen.scene .pawn b { font-size: clamp(13px, 1.5vw, 19px); }
+#app .screen.scene .crowd:not(.b0) .pawn.me { color: #f0d58f; filter: drop-shadow(0 0 12px rgba(235, 209, 154, 0.55)); }
+#app .screen.scene .crowd.b2 .pawn.out { opacity: 0.13; }
+#app .screen.scene .crowd.b3 .pawn:not(.me) { opacity: 0.1; }
