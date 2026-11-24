@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#000000">
+<title>Dark Post: host console</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/briefing.css">
+<link rel="stylesheet" href="/host.css">
+</head>
+<body class="host">
+
+<div id="gate" class="gate" hidden>
+  <div class="wordmark"><span>DARK</span><i aria-hidden="true"></i><span>POST</span></div>
+  <form id="gate-form" class="gate-form">
+    <h1 id="gate-title">Host console</h1>
+    <p id="gate-help" class="help"></p>
+    <label for="pass">Passphrase</label>
+    <input id="pass" type="password" autocomplete="current-password" required minlength="8">
+    <button class="btn" type="submit" id="gate-go">Sign in</button>
+    <p id="gate-error" class="error" role="alert"></p>
+  </form>
+</div>
+
+<div id="console" class="console" hidden>
+  <header class="bar">
+    <div class="wordmark small"><span>DARK</span><i aria-hidden="true"></i><span>POST</span></div>
+    <span class="bar-title">Host console</span>
+    <button type="button" class="link" id="signout">Sign out</button>
+  </header>
+
+  <section id="summary" class="summary" aria-label="Where things stand"></section>
+
+  <section class="panel" id="messages-panel">
+    <h2>Messages</h2>
+    <p class="help">Ask the GM is private between one player and you. Only you write on the notice board. Broadcasts are what players say to everyone from the broadcast room, and you can broadcast too. You can read every private message, and players are told that you can.</p>
+    <div class="mtabs" id="mtabs" role="tablist"></div>
+    <div id="mview" class="mview"></div>
+  </section>
+
+  <section class="panel" id="night-panel">
+    <h2>Night 1: Six Vaults</h2>
+    <p class="help">Three vaults are empty and three hold 10, 5 and 2 gold. Each player is dealt one true clue, can buy one more in the shop for 1 coin, and opens two vaults. The least gold is out, and a tie for last is played as Rock Paper Scissors from throws each player seals. Start it after the bags are open. The vaults close by themselves at the time you set, or when you press the button.</p>
+    <form id="night-form" class="row coins-form">
+      <div><label for="night-ends">The vaults close at (your time)</label><input type="datetime-local" id="night-ends"></div>
+      <button class="btn" type="submit">Start the night</button>
+    </form>
+    <div id="night-box"></div>
+  </section>
+
+  <section class="panel" id="rooms-panel">
+    <h2>Rooms</h2>
+    <p class="help">What players have done in the puzzle room and the betting room. Players never see each other's answers or deals. You see all of it.</p>
+    <div id="activity"><p class="table-empty">Loading.</p></div>
+    <form id="coins-form" class="row coins-form">
+      <div><label for="coins-n">Player</label><select id="coins-n"></select></div>
+      <div><label for="coins-amt">Coins to give, or take with a minus</label><input type="number" id="coins-amt" step="1" min="-999" max="999" placeholder="3 or -2"></div>
+      <button class="btn" type="submit">Apply</button>
+    </form>
+    <p class="help">Use this for prizes, penalties, or the result of a night you ran yourself. It works once the bags are open.</p>
+  </section>
+
+  <section class="panel">
+    <h2>1. Invitations</h2>
+    <p class="help">Each guest gets a private link. Whoever holds a link holds that seat, so send each one to one person only. The name is printed on their letter.</p>
+    <form id="add-form" class="add">
+      <label for="names">Names, one per line</label>
+      <textarea id="names" rows="4" placeholder="Maya&#10;Arjun&#10;Leila"></textarea>
+      <button class="btn" type="submit">Create invitations</button>
+    </form>
+    <div class="row-between">
+      <label class="check"><input type="checkbox" id="show-bags"> Show me the sealed choices</label>
+      <button type="button" class="link" id="copy-all">Copy every unanswered link</button>
+    </div>
+    <div id="invites"></div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Dates</h2>
+    <p class="help">Enter these in your own time. Every guest sees them converted to theirs.</p>
+    <form id="dates-form" class="grid-2">
+      <div>
+        <label for="opens">Doors open (the bags are opened)</label>
+        <input id="opens" type="datetime-local">
+      </div>
+      <div>
+        <label for="reply">Answer by</label>
+        <input id="reply" type="datetime-local">
+      </div>
+      <label class="check wide"><input type="checkbox" id="auto"> Open the bags by themselves at that time, so I do not have to be awake</label>
+      <div>
+        <label for="next-name">The next round is called</label>
+        <input id="next-name" type="text" maxlength="40" placeholder="Night 1">
+      </div>
+      <div>
+        <label for="next-at">It begins</label>
+        <input id="next-at" type="datetime-local">
+      </div>
+      <p class="help wide">After the bags open, every player's clock in the hall counts down to this. Leave the time empty and the clock says "time to be announced". Change both after each round.</p>
+      <div class="wide"><button class="btn" type="submit">Save the dates</button></div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>3. The letter</h2>
+    <p class="help">This is the first thing a guest sees. In the last line, <code>{opens}</code> and <code>{reply}</code> become your two dates. A sentence whose date is empty is left out.</p>
+    <div class="letter-edit">
+      <form id="letter-form">
+        <label for="l-kicker">Top-left label</label>
+        <input id="l-kicker" maxlength="40">
+        <label for="l-headline">Headline</label>
+        <input id="l-headline" maxlength="80">
+        <label for="l-body">Message (leave a blank line between paragraphs)</label>
+        <textarea id="l-body" rows="12"></textarea>
+        <label for="l-closing">Last line</label>
+        <input id="l-closing" maxlength="200">
+        <label for="l-signature">Signed</label>
+        <input id="l-signature" maxlength="40">
+        <div class="row">
+          <button class="btn" type="submit">Save the letter</button>
+          <button class="btn ghost" type="button" id="letter-reset">Restore the original</button>
+        </div>
+      </form>
+      <div class="letter-preview" aria-label="Preview of the letter">
+        <div class="preview-desk"><div id="preview"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>4. Opening night</h2>
+    <label class="check"><input type="checkbox" id="show-choices"> When the bags open, show every player which numbers took which bag</label>
+    <p class="help">Unticked, players only learn how many took each bag, and their own coins.</p>
+    <div id="night"></div>
+  </section>
+
+  <section class="panel">
+    <h2>5. See what guests see</h2>
+    <p class="help">These previews save nothing. They use your letter and dates.</p>
+    <div class="previews">
+      <a href="/?demo=letter" target="_blank" rel="noopener">The letter</a>
+      <a href="/?demo=number" target="_blank" rel="noopener">Their number</a>
+      <a href="/?demo=choose" target="_blank" rel="noopener">Opening night</a>
+      <a href="/?demo=avatar" target="_blank" rel="noopener">Their face</a>
+      <a href="/?demo=hall" target="_blank" rel="noopener">The hall and rooms</a>
+      <a href="/?demo=reveal" target="_blank" rel="noopener">The reveal</a>
+    </div>
+  </section>
+</div>
+
+<script src="/shared.js"></script>
+<script src="/avatar.js"></script>
+<script src="/host.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "dark-post",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dark Post: an invite-only, hosted elimination game for sixteen anonymous players.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "python3 tests/test_flow.py"
+  },
+  "devDependencies": {
+    "wrangler": "^4.167.0"
+  }
+}

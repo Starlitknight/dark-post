@@ -1,0 +1,1680 @@
+// Dark Post: game server.
+// One Durable Object holds the whole season: invitations, player numbers,
+// sealed bag choices, the opening-night reveal and the host's settings.
+
+import { DurableObject } from "cloudflare:workers";
+
+import { makePuzzle, sameAnswer } from "./puzzles.js";
+import { GOLD, RULES, clueText, dealClues, spareClue, shopClue, validThrows, settle } from "./vaults.js";
+
+const SEATS = 16;
+const BAG1_COINS = 5;
+const BAG2_POT = 40;
+const SEAT_COOKIE = "dp_seat";
+const HOST_COOKIE = "dp_host";
+const COOKIE_AGE = 60 * 60 * 24 * 120;
+const MAX_LOGIN_FAILS = 5;
+const LOCK_MS = 60 * 1000;
+const MESSAGE_MAX = 600;
+const MESSAGE_GAP_MS = 700;
+const AVATAR_LIMITS = { s: 6, h: 24, c: 9, g: 4, b: 5, m: 4, o: 9, t: 4, x: 9, e: 2, f: 2 };
+const WORLD_ROOMS = ["hall", "arena", "puzzle", "betting", "studio", "sky", "dungeon", "gallery", "shop"];
+// The three cells in the dungeon, as rectangles of its floor. public/world.js draws the same ones.
+const CELLS = [[90, 162, 470, 462], [560, 162, 940, 462], [1030, 162, 1410, 462]];
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PUZZLE_TRIES = 3;
+const PUZZLE_REWARD = 1;
+// A deal: each player stakes this many coins and seals Cooperate (c) or Betray (b).
+// The table gives what each one gains or loses, first player then second.
+const DEAL_STAKE = 2;
+const DEAL_PAY = { cc: [1, 1], cb: [-2, 2], bc: [2, -2], bb: [-1, -1] };
+const WORLD_MAX = 2000;
+const GM = 0; // the Gamemaster's number in messages
+
+const DEFAULT_LETTER = {
+  kicker: "Dark Post",
+  headline: "You have been chosen.",
+  body: [
+    "Your name appears in the will of A. Crane, along with fifteen others. He left the line for his heir blank. Whoever passes his test will inherit his entire estate, valued at $100 million.",
+    "I will send a car for you at dusk. If you accept, get in.",
+    "Bring nothing. Tell no one.",
+  ].join("\n\n"),
+  closing: "Doors open {opens}. Reply by {reply}.",
+  signature: "—GM",
+};
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    // An invitation link. Remember the seat on this device and show the site.
+    // The address keeps the token, so a bookmark or a reload always works.
+    if (url.pathname.startsWith("/i/")) {
+      const token = cleanToken(url.pathname.slice(3));
+      const page = await env.ASSETS.fetch(new Request(new URL("/", url)));
+      // Chat apps only show a preview image when its address is absolute.
+      const html = (await page.text()).replace('content="/card.png"', `content="${url.origin}/card.png"`);
+      const res = new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+      res.headers.set("Cache-Control", "no-store");
+      res.headers.set("Referrer-Policy", "no-referrer");
+      if (token) res.headers.append("Set-Cookie", cookie(SEAT_COOKIE, token, COOKIE_AGE, url));
+      return res;
+    }
+
+    if (url.pathname.startsWith("/api/")) {
+      const stub = env.GAME.get(env.GAME.idFromName("season-1"));
+      return stub.fetch(request);
+    }
+
+    return env.ASSETS.fetch(request);
+  },
+};
+
+export class Game extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS invites (
+      token TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'invited',
+      number INTEGER,
+      bag INTEGER,
+      coins INTEGER,
+      created_at INTEGER,
+      opened_at INTEGER,
+      responded_at INTEGER,
+      entered_at INTEGER,
+      sealed_at INTEGER,
+      seen_reveal INTEGER NOT NULL DEFAULT 0
+    )`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS host_sessions (id TEXT PRIMARY KEY, created_at INTEGER)`);
+    // Added after the first release: a portrait for each player, and the rooms' messages.
+    const columns = this.sql.exec(`PRAGMA table_info(invites)`).toArray().map((c) => c.name);
+    if (!columns.includes("avatar")) this.sql.exec(`ALTER TABLE invites ADD COLUMN avatar TEXT`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room TEXT NOT NULL,
+      from_n INTEGER NOT NULL,
+      to_n INTEGER,
+      parent INTEGER,
+      body TEXT NOT NULL,
+      at INTEGER NOT NULL,
+      removed INTEGER NOT NULL DEFAULT 0
+    )`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS messages_room ON messages (room, id)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS reads (
+      who TEXT NOT NULL,
+      key TEXT NOT NULL,
+      last_id INTEGER NOT NULL,
+      PRIMARY KEY (who, key)
+    )`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS places (number INTEGER PRIMARY KEY, room TEXT NOT NULL, x REAL NOT NULL, y REAL NOT NULL, at INTEGER NOT NULL)`);
+    // Coins won or lost after the bags (puzzles, deals), kept apart from the bag's own payout.
+    if (!columns.includes("extra")) this.sql.exec(`ALTER TABLE invites ADD COLUMN extra INTEGER NOT NULL DEFAULT 0`);
+    // Who was standing in the cell when a thing was said there. Only they may read it.
+    const messageColumns = this.sql.exec(`PRAGMA table_info(messages)`).toArray().map((c) => c.name);
+    if (!messageColumns.includes("heard")) this.sql.exec(`ALTER TABLE messages ADD COLUMN heard TEXT`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS puzzle_tries (number INTEGER NOT NULL, day INTEGER NOT NULL, tries INTEGER NOT NULL DEFAULT 0, solved INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (number, day))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS deals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      day INTEGER NOT NULL,
+      a INTEGER NOT NULL,
+      b INTEGER NOT NULL,
+      a_choice TEXT NOT NULL,
+      b_choice TEXT,
+      a_net INTEGER,
+      b_net INTEGER,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      settled_at INTEGER
+    )`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS doorlog (id INTEGER PRIMARY KEY AUTOINCREMENT, number INTEGER NOT NULL, cell INTEGER NOT NULL, at INTEGER NOT NULL)`);
+    // Night 1 and after: who is out, and what each player holds and did on the night being played.
+    if (!columns.includes("out")) this.sql.exec(`ALTER TABLE invites ADD COLUMN out INTEGER NOT NULL DEFAULT 0`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS night_plays (
+      number INTEGER PRIMARY KEY,
+      clue INTEGER NOT NULL,
+      bought INTEGER,
+      a INTEGER,
+      b INTEGER,
+      throws TEXT,
+      opened_at INTEGER,
+      seen INTEGER NOT NULL DEFAULT 0
+    )`);
+    this.lastPost = new Map();
+  }
+
+  // ---------- small helpers ----------
+
+  get(key, fallback = null) {
+    const rows = this.sql.exec(`SELECT value FROM settings WHERE key = ?`, key).toArray();
+    return rows.length ? rows[0].value : fallback;
+  }
+
+  set(key, value) {
+    this.sql.exec(
+      `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      key,
+      String(value),
+    );
+  }
+
+  letter() {
+    const saved = this.get("letter");
+    if (!saved) return { ...DEFAULT_LETTER };
+    try {
+      return { ...DEFAULT_LETTER, ...JSON.parse(saved) };
+    } catch {
+      return { ...DEFAULT_LETTER };
+    }
+  }
+
+  phase() {
+    return this.get("phase", "open");
+  }
+
+  showChoices() {
+    return this.get("show_choices", "1") === "1";
+  }
+
+  seat(request) {
+    const token =
+      cleanToken(request.headers.get("X-Seat") || "") ||
+      cleanToken(new URL(request.url).searchParams.get("s") || "") ||
+      cleanToken(readCookie(request, SEAT_COOKIE));
+    if (!token) return null;
+    const rows = this.sql.exec(`SELECT * FROM invites WHERE token = ?`, token).toArray();
+    return rows.length ? rows[0] : null;
+  }
+
+  inviteByToken(token) {
+    const rows = this.sql.exec(`SELECT * FROM invites WHERE token = ?`, cleanToken(token)).toArray();
+    return rows.length ? rows[0] : null;
+  }
+
+  acceptedCount() {
+    return this.sql.exec(`SELECT COUNT(*) AS n FROM invites WHERE status = 'accepted'`).one().n;
+  }
+
+  hostAuthed(request) {
+    const id = readCookie(request, HOST_COOKIE);
+    if (!id) return false;
+    return this.sql.exec(`SELECT id FROM host_sessions WHERE id = ?`, id).toArray().length > 0;
+  }
+
+  // If the host asked for it, the bags open by themselves at the opening time.
+  maybeAutoReveal() {
+    if (this.phase() !== "open" || this.get("auto_open", "0") !== "1") return;
+    const at = Date.parse(this.get("opens_at", "") || "");
+    if (!Number.isNaN(at) && Date.now() >= at) this.doReveal();
+  }
+
+  // ---------- routing ----------
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const method = request.method;
+    try {
+      // Take the whole body in now, so a route that ignores it leaves nothing unread behind.
+      if (method === "POST") {
+        const text = await request.text();
+        request = new Request(request.url, { method, headers: request.headers, body: text });
+      }
+      this.maybeAutoReveal();
+      this.maybeEndNight();
+
+      if (path === "/api/me" && method === "GET") return this.me(request);
+      if (path === "/api/respond" && method === "POST") return this.respond(request);
+      if (path === "/api/enter" && method === "POST") return this.enter(request);
+      if (path === "/api/seal" && method === "POST") return this.seal(request);
+      if (path === "/api/seen" && method === "POST") return this.seen(request);
+      if (path === "/api/avatar" && method === "POST") return this.saveAvatar(request);
+      if (path === "/api/hall" && method === "GET") return this.hall(request);
+      if (path === "/api/live") return this.live(request);
+      if (path === "/api/move" && method === "POST") return this.move(request);
+      if (path === "/api/messages" && method === "GET") return this.readMessages(request, url);
+      if (path === "/api/messages" && method === "POST") return this.postMessage(request);
+      if (path === "/api/puzzle" && method === "GET") return this.puzzle(request);
+      if (path === "/api/puzzle" && method === "POST") return this.puzzleAnswer(request);
+      if (path === "/api/deals" && method === "GET") return this.deals(request);
+      if (path === "/api/deal" && method === "POST") return this.dealOffer(request);
+      if (path === "/api/deal/answer" && method === "POST") return this.dealAnswer(request);
+      if (path === "/api/doorlog" && method === "GET") return this.doorLog(request);
+      if (path === "/api/night" && method === "GET") return this.nightGet(request);
+      if (path === "/api/night/buy" && method === "POST") return this.nightBuy(request);
+      if (path === "/api/night/open" && method === "POST") return this.nightOpen(request);
+      if (path === "/api/night/seen" && method === "POST") return this.nightSeen(request);
+
+      if (path === "/api/host/login" && method === "POST") return this.hostLogin(request, url);
+      if (path === "/api/host/logout" && method === "POST") return this.hostLogout(request, url);
+      if (path === "/api/host/state" && method === "GET") return this.hostState(request);
+      if (path.startsWith("/api/host/")) {
+        if (!this.hostAuthed(request)) return json({ error: "Sign in as host first." }, 401);
+        if (path === "/api/host/invites" && method === "POST") return this.hostCreateInvites(request);
+        if (path === "/api/host/invite/update" && method === "POST") return this.hostUpdateInvite(request);
+        if (path === "/api/host/invite/delete" && method === "POST") return this.hostDeleteInvite(request);
+        if (path === "/api/host/invite/reset" && method === "POST") return this.hostResetInvite(request);
+        if (path === "/api/host/settings" && method === "POST") return this.hostSettings(request);
+        if (path === "/api/host/reveal" && method === "POST") return this.hostReveal();
+        if (path === "/api/host/unreveal" && method === "POST") return this.hostUnreveal();
+        if (path === "/api/host/messages" && method === "GET") return this.hostReadMessages(url);
+        if (path === "/api/host/messages" && method === "POST") return this.hostPostMessage(request);
+        if (path === "/api/host/message/remove" && method === "POST") return this.hostRemoveMessage(request);
+        if (path === "/api/host/activity" && method === "GET") return this.hostActivity();
+        if (path === "/api/host/coins" && method === "POST") return this.hostCoins(request);
+        if (path === "/api/host/night/start" && method === "POST") return this.hostNightStart(request);
+        if (path === "/api/host/night/end" && method === "POST") return this.hostNightEnd();
+        if (path === "/api/host/night/reset" && method === "POST") return this.hostNightReset();
+        if (path === "/api/host/out" && method === "POST") return this.hostOut(request);
+      }
+      return json({ error: "Not found." }, 404);
+    } catch (err) {
+      return json({ error: "Something went wrong on the server.", detail: String(err && err.message) }, 500);
+    }
+  }
+
+  // ---------- guest ----------
+
+  me(request) {
+    const inv = this.seat(request);
+    if (!inv) return json({ state: "none" });
+
+    if (!inv.opened_at) {
+      this.sql.exec(`UPDATE invites SET opened_at = ? WHERE token = ?`, Date.now(), inv.token);
+    }
+
+    const phase = this.phase();
+    let state;
+    if (inv.status === "accepted") {
+      state = this.playerState(inv, phase);
+    } else if (phase === "revealed") {
+      state = "closed";
+    } else if (inv.status === "declined") {
+      state = "declined";
+    } else if (this.acceptedCount() >= SEATS) {
+      state = "full";
+    } else {
+      state = "letter";
+    }
+
+    const out = {
+      state,
+      phase,
+      name: inv.name,
+      number: inv.number,
+      bag: inv.bag,
+      coins: inv.coins,
+      extra: inv.extra || 0,
+      out: inv.out || 0,
+      avatar: parseAvatar(inv.avatar),
+      seats: SEATS,
+      bag1Coins: BAG1_COINS,
+      bag2Pot: BAG2_POT,
+      opensAt: this.get("opens_at", ""),
+      replyBy: this.get("reply_by", ""),
+      letter: this.letter(),
+    };
+    if (inv.status === "accepted" && phase === "revealed") out.reveal = this.publicReveal();
+    return json(out);
+  }
+
+  // Where an accepted player stands: door, bags, portrait, reveal, then the hall.
+  playerState(inv, phase) {
+    if (!inv.entered_at) return "number";
+    if (phase !== "revealed" && inv.bag == null) return "choose";
+    if (!inv.avatar) return "avatar";
+    if (phase === "revealed" && !inv.seen_reveal) return "reveal";
+    return "hall";
+  }
+
+  // A player who may walk the hall and use its rooms.
+  inHall(request) {
+    const inv = this.seat(request);
+    if (!inv || inv.status !== "accepted" || !inv.avatar || !inv.entered_at) return null;
+    if (this.phase() !== "revealed" && inv.bag == null) return null;
+    return inv;
+  }
+
+  // What players are allowed to see once the bags are open.
+  publicReveal() {
+    const full = JSON.parse(this.get("reveal", "null"));
+    if (!full) return null;
+    const out = {
+      at: full.at,
+      pot: full.pot,
+      bag1Coins: full.bag1Coins,
+      bag1Count: full.bag1Count,
+      bag2Count: full.bag2Count,
+      bag2Share: full.bag2Share,
+      leftover: full.leftover,
+      unsealedCount: full.unsealed.length,
+      showChoices: this.showChoices(),
+    };
+    if (out.showChoices) {
+      out.order = full.order;
+      out.unsealed = full.unsealed;
+      out.results = full.results;
+    }
+    return out;
+  }
+
+  async respond(request) {
+    const inv = this.seat(request);
+    if (!inv) return json({ error: "This invitation was not recognised." }, 403);
+    const body = await readJson(request);
+    if (this.phase() === "revealed") return json({ error: "The game has already begun." }, 409);
+
+    if (body.accept === false) {
+      if (inv.status === "accepted") return json({ error: "You have already entered." }, 409);
+      this.sql.exec(
+        `UPDATE invites SET status = 'declined', responded_at = ? WHERE token = ?`,
+        Date.now(),
+        inv.token,
+      );
+      return json({ ok: true });
+    }
+
+    if (inv.status === "accepted") return json({ ok: true, number: inv.number });
+    if (this.acceptedCount() >= SEATS) return json({ error: "Every seat has been taken." }, 409);
+
+    // Draw a number at random from the ones nobody holds yet.
+    const used = new Set(
+      this.sql.exec(`SELECT number FROM invites WHERE number IS NOT NULL`).toArray().map((r) => r.number),
+    );
+    const free = [];
+    for (let n = 1; n <= SEATS; n++) if (!used.has(n)) free.push(n);
+    const number = free[randomInt(free.length)];
+    this.sql.exec(
+      `UPDATE invites SET status = 'accepted', number = ?, responded_at = ? WHERE token = ?`,
+      number,
+      Date.now(),
+      inv.token,
+    );
+    return json({ ok: true, number });
+  }
+
+  enter(request) {
+    const inv = this.seat(request);
+    if (!inv || inv.status !== "accepted") return json({ error: "Accept the invitation first." }, 403);
+    if (!inv.entered_at) {
+      this.sql.exec(`UPDATE invites SET entered_at = ? WHERE token = ?`, Date.now(), inv.token);
+    }
+    return json({ ok: true });
+  }
+
+  async seal(request) {
+    const inv = this.seat(request);
+    if (!inv || inv.status !== "accepted") return json({ error: "Accept the invitation first." }, 403);
+    if (this.phase() === "revealed") return json({ error: "The bags are already open." }, 409);
+    if (inv.bag != null) return json({ error: "Your choice is already sealed." }, 409);
+    const body = await readJson(request);
+    const bag = Number(body.bag);
+    if (bag !== 1 && bag !== 2) return json({ error: "Choose Bag 1 or Bag 2." }, 400);
+    const now = Date.now();
+    this.sql.exec(
+      `UPDATE invites SET bag = ?, sealed_at = ?, entered_at = COALESCE(entered_at, ?) WHERE token = ?`,
+      bag,
+      now,
+      now,
+      inv.token,
+    );
+    return json({ ok: true });
+  }
+
+  seen(request) {
+    const inv = this.seat(request);
+    if (!inv) return json({ error: "This invitation was not recognised." }, 403);
+    if (this.phase() === "revealed") {
+      this.sql.exec(`UPDATE invites SET seen_reveal = 1 WHERE token = ?`, inv.token);
+    }
+    return json({ ok: true });
+  }
+
+  async saveAvatar(request) {
+    const inv = this.seat(request);
+    if (!inv || inv.status !== "accepted") return json({ error: "Accept the invitation first." }, 403);
+    const phase = this.phase();
+    if (phase !== "revealed" && inv.bag == null) return json({ error: "Seal a bag first." }, 409);
+    if (phase === "revealed" && inv.avatar) return json({ error: "Faces are fixed once the bags are open." }, 409);
+    const body = await readJson(request);
+    const avatar = cleanAvatar(body.avatar);
+    if (!avatar) return json({ error: "That face could not be read." }, 400);
+    this.sql.exec(`UPDATE invites SET avatar = ? WHERE token = ?`, JSON.stringify(avatar), inv.token);
+    this.broadcast({ t: "news" });
+    return json({ ok: true });
+  }
+
+  hall(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const phase = this.phase();
+    const reveal = phase === "revealed" ? this.publicReveal() : null;
+    const showCoins = !!(reveal && reveal.showChoices);
+    this.expireDeals();
+    const players = this.sql
+      .exec(`SELECT number, avatar, coins, extra, sealed_at, out FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL`)
+      .toArray();
+    const byNumber = new Map(players.map((p) => [p.number, p]));
+    const tally = (query) => new Map(this.sql.exec(query).toArray().map((r) => [r.n, r.c]));
+    const solved = tally(`SELECT number AS n, COUNT(*) AS c FROM puzzle_tries WHERE solved = 1 GROUP BY number`);
+    const dealsA = tally(`SELECT a AS n, COUNT(*) AS c FROM deals WHERE status = 'done' GROUP BY a`);
+    const dealsB = tally(`SELECT b AS n, COUNT(*) AS c FROM deals WHERE status = 'done' GROUP BY b`);
+    const lastSeen = tally(`SELECT number AS n, at AS c FROM places`);
+    const seats = [];
+    for (let n = 1; n <= SEATS; n++) {
+      const p = byNumber.get(n);
+      const seat = { number: n, avatar: p ? parseAvatar(p.avatar) : null };
+      if (p) {
+        // the card behind each portrait in the gallery
+        seat.since = p.sealed_at;
+        seat.seen = lastSeen.get(n) || p.sealed_at;
+        seat.solved = solved.get(n) || 0;
+        seat.deals = (dealsA.get(n) || 0) + (dealsB.get(n) || 0);
+        if (p.out) seat.out = p.out;
+        if ((showCoins || n === inv.number) && phase === "revealed") seat.coins = (p.coins || 0) + (p.extra || 0);
+      }
+      seats.push(seat);
+    }
+    const casts = this.sql.exec(`SELECT id, from_n, body, at FROM messages WHERE room = 'table' AND removed = 0 ORDER BY id DESC LIMIT 1`).toArray();
+
+    const who = "p" + inv.number;
+    const marks = new Map(
+      this.sql.exec(`SELECT key, last_id FROM reads WHERE who = ?`, who).toArray().map((r) => [r.key, r.last_id]),
+    );
+    const mark = (key) => marks.get(key) || 0;
+    const count = (query, ...args) => this.sql.exec(query, ...args).one().n;
+    const unread = {
+      table: count(`SELECT COUNT(*) AS n FROM messages WHERE room = 'table' AND id > ? AND from_n != ?`, mark("table"), inv.number),
+      study: count(`SELECT COUNT(*) AS n FROM messages WHERE room = 'study' AND to_n = ? AND from_n = ? AND id > ?`, inv.number, GM, mark("study")),
+      board: count(`SELECT COUNT(*) AS n FROM messages WHERE room = 'board' AND id > ? AND from_n != ?`, mark("board"), inv.number),
+      whispers: 0,
+      deals: count(`SELECT COUNT(*) AS n FROM deals WHERE status = 'open' AND b = ? AND day = ?`, inv.number, this.today()),
+    };
+
+    // One line per whisper thread: who it is with, the last words, and what is unread.
+    const threads = new Map();
+    const rows = this.sql
+      .exec(`SELECT id, from_n, to_n, body, at, removed FROM messages WHERE room = 'whisper' AND (from_n = ? OR to_n = ?) ORDER BY id ASC`, inv.number, inv.number)
+      .toArray();
+    for (const m of rows) {
+      const other = m.from_n === inv.number ? m.to_n : m.from_n;
+      const t = threads.get(other) || { with: other, last: "", at: 0, unread: 0 };
+      t.last = m.removed ? "" : m.body.slice(0, 80);
+      t.at = m.at;
+      if (m.from_n === other && m.id > mark("w:" + other)) t.unread += 1;
+      threads.set(other, t);
+    }
+    const whispers = [...threads.values()].sort((a, b) => b.at - a.at);
+    unread.whispers = whispers.reduce((sum, t) => sum + t.unread, 0);
+
+    return json({
+      you: inv.number,
+      phase,
+      opensAt: this.get("opens_at", ""),
+      nextAt: this.get("next_at", ""),
+      nextName: this.get("next_name", "Night 1"),
+      canEditFace: phase !== "revealed",
+      pos: this.positions(),
+      online: this.onlineNumbers(),
+      seats,
+      unread,
+      whispers,
+      coins: this.balance(inv),
+      banked: inv.extra || 0,
+      lastCast: casts.length ? { id: casts[0].id, from: casts[0].from_n, body: casts[0].body.slice(0, 200), at: casts[0].at } : null,
+      cell: this.cellOf(inv.number),
+      // a player may change their character until the bags open
+      canEditFace: this.phase() !== "revealed",
+      out: inv.out || 0,
+      night: this.nightBrief(inv),
+    });
+  }
+
+  // The rows of one room or thread that this player may read.
+  roomQuery(inv, room, withN) {
+    if (room === "table") return { key: "table", where: `room = 'table'`, args: [] };
+    if (room === "board") return { key: "board", where: `room = 'board'`, args: [] };
+    if (room === "study") return { key: "study", where: `room = 'study' AND to_n = ?`, args: [inv.number] };
+    if (room === "whisper") {
+      if (!Number.isInteger(withN) || withN < 1 || withN > SEATS || withN === inv.number) return null;
+      return {
+        key: "w:" + withN,
+        where: `room = 'whisper' AND ((from_n = ? AND to_n = ?) OR (from_n = ? AND to_n = ?))`,
+        args: [inv.number, withN, withN, inv.number],
+      };
+    }
+    return null;
+  }
+
+  readMessages(request, url) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const roomName = url.searchParams.get("room") || "";
+    const cell = /^cell[1-9]$/.test(roomName) ? Number(roomName.slice(4)) : 0;
+    if (cell && this.cellOf(inv.number) !== cell) return json({ error: "You are not standing in that cell." }, 403);
+    // In a cell you can read only what was said while you were standing there.
+    const q = cell
+      ? { key: roomName, where: `room = ? AND (',' || heard || ',') LIKE ?`, args: [roomName, "%," + inv.number + ",%"] }
+      : this.roomQuery(inv, roomName, Number(url.searchParams.get("with")));
+    if (!q) return json({ error: "That room does not exist." }, 400);
+    const after = Math.max(0, Number(url.searchParams.get("after")) || 0);
+    const rows = this.sql
+      .exec(`SELECT * FROM (SELECT * FROM messages WHERE ${q.where} AND id > ? ORDER BY id DESC LIMIT 200) ORDER BY id ASC`, ...q.args, after)
+      .toArray();
+    if (rows.length) {
+      this.sql.exec(
+        `INSERT INTO reads (who, key, last_id) VALUES (?, ?, ?) ON CONFLICT(who, key) DO UPDATE SET last_id = MAX(last_id, excluded.last_id)`,
+        "p" + inv.number,
+        q.key,
+        rows[rows.length - 1].id,
+      );
+    }
+    return json({ messages: rows.map(publicMessage) });
+  }
+
+  async postMessage(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const body = await readJson(request);
+    const text = String(body.body || "").replace(/\s+$/g, "").replace(/^\s+/g, "");
+    if (!text) return json({ error: "Write something first." }, 400);
+    if (text.length > MESSAGE_MAX) return json({ error: `Keep it under ${MESSAGE_MAX} characters.` }, 400);
+    const now = Date.now();
+    if (now - (this.lastPost.get(inv.number) || 0) < MESSAGE_GAP_MS) return json({ error: "Slow down a little." }, 429);
+
+    const room = String(body.room || "");
+    if (inv.out && room !== "study") return json({ error: "You are out of the game. You can still ask the GM." }, 403);
+    let to = null;
+    let heard = null;
+    if (room === "whisper") {
+      to = Number(body.with);
+      const other = this.sql
+        .exec(`SELECT number, out FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL AND number = ?`, Number.isInteger(to) ? to : -1)
+        .toArray();
+      if (!other.length || to === inv.number) return json({ error: "That player has not arrived yet." }, 400);
+      if (other[0].out) return json({ error: "That player is out of the game." }, 400);
+    } else if (room === "study") {
+      to = inv.number;
+    } else if (room === "board") {
+      return json({ error: "Only the GM posts on the notice board." }, 403);
+    } else if (/^cell[1-9]$/.test(room)) {
+      const cell = Number(room.slice(4));
+      if (this.cellOf(inv.number) !== cell) return json({ error: "You are not standing in that cell." }, 403);
+      heard = this.cellMates(cell).join(",");
+    } else if (room !== "table") {
+      return json({ error: "That room does not exist." }, 400);
+    }
+    this.lastPost.set(inv.number, now);
+    this.sql.exec(`INSERT INTO messages (room, from_n, to_n, parent, body, at, heard) VALUES (?, ?, ?, NULL, ?, ?, ?)`, room, inv.number, to, text, now, heard);
+    const id = this.sql.exec(`SELECT last_insert_rowid() AS id`).one().id;
+    this.broadcast({ t: "news" });
+    return json({ ok: true, id });
+  }
+
+  // ---------- days, coins, and where a player stands ----------
+
+  // The game's day turns over at the hour the bags open, so "today" is the same for every time zone.
+  dayAnchor() {
+    const t = Date.parse(this.get("opens_at", ""));
+    return Number.isFinite(t) ? t % DAY_MS : 0;
+  }
+
+  today() {
+    return Math.floor((Date.now() - this.dayAnchor()) / DAY_MS);
+  }
+
+  dayEnds() {
+    return (this.today() + 1) * DAY_MS + this.dayAnchor();
+  }
+
+  // What a player holds: the bag's payout, plus everything won or lost since.
+  balance(inv) {
+    return this.phase() === "revealed" ? (inv.coins || 0) + (inv.extra || 0) : null;
+  }
+
+  addCoins(number, amount) {
+    this.sql.exec(`UPDATE invites SET extra = extra + ? WHERE number = ? AND status = 'accepted'`, amount, number);
+  }
+
+  playerByNumber(n) {
+    const rows = this.sql.exec(`SELECT * FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL AND number = ?`, Number.isInteger(n) ? n : -1).toArray();
+    return rows.length ? rows[0] : null;
+  }
+
+  // Which dungeon cell a player is standing in, if any.
+  cellOf(number) {
+    const rows = this.sql.exec(`SELECT room, x, y FROM places WHERE number = ?`, number).toArray();
+    return rows.length ? cellAt(rows[0].room, rows[0].x, rows[0].y) : 0;
+  }
+
+  cellMates(cell) {
+    return this.sql
+      .exec(`SELECT number, room, x, y FROM places`)
+      .toArray()
+      .filter((p) => cellAt(p.room, p.x, p.y) === cell)
+      .map((p) => p.number)
+      .sort((a, b) => a - b);
+  }
+
+  // ---------- the puzzle room ----------
+
+  puzzleFor(number, day) {
+    let salt = this.get("puzzle_salt", "");
+    if (!salt) {
+      salt = randomToken(12);
+      this.set("puzzle_salt", salt);
+    }
+    return makePuzzle(salt + ":" + day + ":" + number, day);
+  }
+
+  puzzleRow(number, day) {
+    const rows = this.sql.exec(`SELECT tries, solved FROM puzzle_tries WHERE number = ? AND day = ?`, number, day).toArray();
+    return rows.length ? rows[0] : { tries: 0, solved: 0 };
+  }
+
+  puzzleView(inv) {
+    const day = this.today();
+    const p = this.puzzleFor(inv.number, day);
+    const row = this.puzzleRow(inv.number, day);
+    return {
+      type: p.type,
+      title: p.title,
+      ask: p.ask,
+      data: p.data,
+      tries: row.tries,
+      left: Math.max(0, PUZZLE_TRIES - row.tries),
+      solved: !!row.solved,
+      answer: row.solved || row.tries >= PUZZLE_TRIES ? p.answer : undefined,
+      resetAt: this.dayEnds(),
+      reward: PUZZLE_REWARD,
+      paid: this.phase() === "revealed",
+    };
+  }
+
+  puzzle(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    return json(this.puzzleView(inv));
+  }
+
+  async puzzleAnswer(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    if (inv.out) return json({ error: "You are out of the game." }, 403);
+    const body = await readJson(request);
+    const day = this.today();
+    const row = this.puzzleRow(inv.number, day);
+    if (row.solved) return json({ error: "You have already solved today's puzzle." }, 409);
+    if (row.tries >= PUZZLE_TRIES) return json({ error: "No tries left today." }, 409);
+    if (!String(body.answer || "").trim()) return json({ error: "Type an answer first." }, 400);
+    const right = sameAnswer(body.answer, this.puzzleFor(inv.number, day).answer);
+    this.sql.exec(
+      `INSERT INTO puzzle_tries (number, day, tries, solved) VALUES (?, ?, 1, ?)
+       ON CONFLICT(number, day) DO UPDATE SET tries = tries + 1, solved = excluded.solved`,
+      inv.number,
+      day,
+      right ? 1 : 0,
+    );
+    if (right) {
+      this.addCoins(inv.number, PUZZLE_REWARD);
+      this.broadcast({ t: "news" });
+    }
+    return json(Object.assign({ right }, this.puzzleView(inv)));
+  }
+
+  // ---------- the betting room: two players, two sealed choices ----------
+
+  // Offers nobody answered by the end of their day are returned to the player who made them.
+  expireDeals() {
+    const today = this.today();
+    for (const d of this.sql.exec(`SELECT id, a FROM deals WHERE status = 'open' AND day < ?`, today).toArray()) {
+      this.addCoins(d.a, DEAL_STAKE);
+      this.sql.exec(`UPDATE deals SET status = 'expired', settled_at = ? WHERE id = ?`, Date.now(), d.id);
+    }
+  }
+
+  dealtToday(number) {
+    return this.sql.exec(`SELECT COUNT(*) AS n FROM deals WHERE status = 'done' AND day = ? AND (a = ? OR b = ?)`, this.today(), number, number).one().n > 0;
+  }
+
+  dealsView(inv) {
+    this.expireDeals();
+    const me = this.sql.exec(`SELECT * FROM invites WHERE token = ?`, inv.token).one();
+    const n = me.number;
+    const today = this.today();
+    const open = this.sql.exec(`SELECT id, b FROM deals WHERE status = 'open' AND a = ?`, n).toArray();
+    const incoming = this.sql.exec(`SELECT id, a FROM deals WHERE status = 'open' AND b = ? AND day = ?`, n, today).toArray();
+    const past = this.sql.exec(`SELECT * FROM deals WHERE status != 'open' AND (a = ? OR b = ?) ORDER BY id DESC LIMIT 12`, n, n).toArray();
+    const others = this.sql.exec(`SELECT number FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL AND out = 0 AND number != ? ORDER BY number`, n).toArray();
+    return {
+      open: this.phase() === "revealed",
+      stake: DEAL_STAKE,
+      pay: DEAL_PAY,
+      balance: this.balance(me),
+      doneToday: this.dealtToday(n),
+      resetAt: this.dayEnds(),
+      mine: open.length ? { id: open[0].id, with: open[0].b } : null,
+      incoming: incoming.map((d) => ({ id: d.id, from: d.a })),
+      players: others.map((p) => p.number),
+      past: past.map((d) => {
+        const first = d.a === n;
+        return {
+          id: d.id,
+          with: first ? d.b : d.a,
+          status: d.status,
+          mine: first ? d.a_choice : d.b_choice,
+          theirs: d.status === "done" ? (first ? d.b_choice : d.a_choice) : null,
+          net: d.status === "done" ? (first ? d.a_net : d.b_net) : 0,
+          at: d.settled_at || d.created_at,
+        };
+      }),
+    };
+  }
+
+  deals(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    return json(this.dealsView(inv));
+  }
+
+  async dealOffer(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const body = await readJson(request);
+    this.expireDeals();
+    if (inv.out) return json({ error: "You are out of the game." }, 403);
+    if (this.phase() !== "revealed") return json({ error: "The betting room opens when the bags open." }, 409);
+    const choice = body.choice === "c" || body.choice === "b" ? body.choice : null;
+    if (!choice) return json({ error: "Choose Cooperate or Betray." }, 400);
+    const other = this.playerByNumber(Number(body.to));
+    if (!other || other.number === inv.number || other.out) return json({ error: "Choose another player who is still in the game." }, 400);
+    if (this.dealtToday(inv.number)) return json({ error: "You have already made your deal today." }, 409);
+    if (this.sql.exec(`SELECT COUNT(*) AS n FROM deals WHERE status = 'open' AND a = ?`, inv.number).one().n) return json({ error: "You already have an offer waiting." }, 409);
+    if (this.balance(inv) < DEAL_STAKE) return json({ error: `You need ${DEAL_STAKE} coins to make a deal.` }, 409);
+    this.addCoins(inv.number, -DEAL_STAKE);
+    this.sql.exec(`INSERT INTO deals (day, a, b, a_choice, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)`, this.today(), inv.number, other.number, choice, Date.now());
+    this.broadcast({ t: "news" });
+    return json(this.dealsView(inv));
+  }
+
+  async dealAnswer(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const body = await readJson(request);
+    this.expireDeals();
+    const rows = this.sql.exec(`SELECT * FROM deals WHERE id = ? AND status = 'open'`, Number(body.id) || 0).toArray();
+    if (!rows.length) return json({ error: "That offer is no longer open." }, 404);
+    const d = rows[0];
+    const now = Date.now();
+    // the player who made the offer may take it back
+    if (body.cancel) {
+      if (d.a !== inv.number) return json({ error: "That is not your offer." }, 403);
+      this.addCoins(d.a, DEAL_STAKE);
+      this.sql.exec(`UPDATE deals SET status = 'cancelled', settled_at = ? WHERE id = ?`, now, d.id);
+      return json(this.dealsView(inv));
+    }
+    if (d.b !== inv.number) return json({ error: "That offer is not for you." }, 403);
+    if (body.decline) {
+      this.addCoins(d.a, DEAL_STAKE);
+      this.sql.exec(`UPDATE deals SET status = 'declined', settled_at = ? WHERE id = ?`, now, d.id);
+      this.broadcast({ t: "news" });
+      return json(this.dealsView(inv));
+    }
+    const choice = body.choice === "c" || body.choice === "b" ? body.choice : null;
+    if (!choice) return json({ error: "Choose Cooperate or Betray." }, 400);
+    if (inv.out) return json({ error: "You are out of the game." }, 403);
+    if (this.dealtToday(inv.number)) return json({ error: "You have already made your deal today." }, 409);
+    if (this.dealtToday(d.a)) return json({ error: "That player has already made a deal today." }, 409);
+    if (this.balance(inv) < DEAL_STAKE) return json({ error: `You need ${DEAL_STAKE} coins to make a deal.` }, 409);
+    const key = d.a_choice + choice;
+    const aNet = DEAL_PAY[key][0];
+    const bNet = DEAL_PAY[key][1];
+    this.addCoins(d.a, DEAL_STAKE + aNet); // the first player's stake comes back, changed by the result
+    this.addCoins(d.b, bNet);
+    this.sql.exec(`UPDATE deals SET status = 'done', b_choice = ?, a_net = ?, b_net = ?, settled_at = ? WHERE id = ?`, choice, aNet, bNet, now, d.id);
+    this.broadcast({ t: "news" });
+    return json(Object.assign({ result: { with: d.a, mine: choice, theirs: d.a_choice, net: bNet } }, this.dealsView(inv)));
+  }
+
+  // ---------- the night's match: Six Vaults ----------
+
+  night() {
+    return JSON.parse(this.get("night", "null"));
+  }
+
+  nightResult() {
+    return JSON.parse(this.get("night_result", "null"));
+  }
+
+  // Everyone still in the game, by number.
+  activeNumbers() {
+    return this.sql
+      .exec(`SELECT number FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL AND out = 0 ORDER BY number`)
+      .toArray()
+      .map((r) => r.number);
+  }
+
+  // A player's row for the night. Someone who walks in after it began is handed a clue nobody holds yet.
+  nightRow(inv, night) {
+    let rows = this.sql.exec(`SELECT * FROM night_plays WHERE number = ?`, inv.number).toArray();
+    if (!rows.length && night && night.status === "open" && !inv.out) {
+      const taken = this.sql.exec(`SELECT clue FROM night_plays`).toArray().map((r) => r.clue);
+      const clue = spareClue(taken);
+      if (!clue) return null;
+      this.sql.exec(`INSERT INTO night_plays (number, clue) VALUES (?, ?)`, inv.number, clue);
+      rows = this.sql.exec(`SELECT * FROM night_plays WHERE number = ?`, inv.number).toArray();
+    }
+    return rows.length ? rows[0] : null;
+  }
+
+  // The few lines every screen needs: is a night on, when does it end, has this player opened, is there a result to watch.
+  nightBrief(inv) {
+    const night = this.night();
+    if (!night) return null;
+    const row = this.nightRow(inv, night);
+    return {
+      n: night.n,
+      game: night.game,
+      status: night.status,
+      endsAt: night.endsAt || "",
+      opened: !!(row && row.a),
+      unseen: night.status === "done" && !!row && !row.seen,
+    };
+  }
+
+  // What is told to everyone once the night is over.
+  publicResult() {
+    const r = this.nightResult();
+    if (!r) return null;
+    return { layout: r.layout, plays: r.plays, gold: r.gold, rank: r.rank, prize: r.prize, last: r.last, duel: r.duel, out: r.out, undecided: r.undecided };
+  }
+
+  nightView(inv) {
+    const night = this.night();
+    if (!night) return { on: false, rules: RULES, coins: this.balance(inv), out: inv.out || 0 };
+    const row = this.nightRow(inv, night);
+    const coins = this.balance(inv);
+    const view = {
+      on: true,
+      n: night.n,
+      game: night.game,
+      status: night.status,
+      endsAt: night.endsAt || "",
+      rules: RULES,
+      you: inv.number,
+      out: inv.out || 0,
+      playing: !!row,
+      clue: row ? clueText(row.clue) : "",
+      bought: row && row.bought ? clueText(row.bought) : "",
+      opened: row && row.a ? [row.a, row.b] : null,
+      throws: row && row.throws ? row.throws.split("") : null,
+      coins,
+      canBuy: !!row && night.status === "open" && !row.bought && !row.a && (coins || 0) >= RULES.cluePrice,
+    };
+    if (night.status === "done") {
+      view.result = this.publicResult();
+      view.seen = row ? !!row.seen : true;
+    }
+    return view;
+  }
+
+  nightGet(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    return json(this.nightView(inv));
+  }
+
+  // The night's player, or the reason they cannot act.
+  nightPlayer(request) {
+    const inv = this.inHall(request);
+    if (!inv) return { error: json({ error: "You are not in the hall yet." }, 403) };
+    if (inv.out) return { error: json({ error: "You are out of the game." }, 403) };
+    const night = this.night();
+    if (!night || night.status !== "open") return { error: json({ error: "No match is being played right now." }, 409) };
+    const row = this.nightRow(inv, night);
+    if (!row) return { error: json({ error: "You are not in tonight's match." }, 409) };
+    return { inv, night, row };
+  }
+
+  // The shop: one more true clue, for a coin.
+  async nightBuy(request) {
+    const p = this.nightPlayer(request);
+    if (p.error) return p.error;
+    if (p.row.a) return json({ error: "You have already opened your vaults." }, 409);
+    if (p.row.bought) return json({ error: "The shop sells each player one clue." }, 409);
+    if ((this.balance(p.inv) || 0) < RULES.cluePrice) return json({ error: "A clue costs " + RULES.cluePrice + " coin. You do not have it." }, 409);
+    this.addCoins(p.inv.number, -RULES.cluePrice);
+    this.sql.exec(`UPDATE night_plays SET bought = ? WHERE number = ?`, shopClue(p.row.clue), p.inv.number);
+    this.broadcast({ t: "news" });
+    return json(this.nightView(this.inHall(request)));
+  }
+
+  // Open two vaults. It is sealed and final, and nobody is shown what was inside until the night ends.
+  async nightOpen(request) {
+    const p = this.nightPlayer(request);
+    if (p.error) return p.error;
+    if (p.row.a) return json({ error: "You have already opened your vaults." }, 409);
+    const body = await readJson(request);
+    const picks = Array.isArray(body.vaults) ? body.vaults.map(Number) : [];
+    if (picks.length !== RULES.open || picks.some((v) => !Number.isInteger(v) || v < 1 || v > RULES.vaults) || picks[0] === picks[1]) {
+      return json({ error: "Choose two different vaults." }, 400);
+    }
+    if (!validThrows(body.throws)) return json({ error: "Seal five throws: rock, paper or scissors." }, 400);
+    picks.sort((x, y) => x - y);
+    this.sql.exec(`UPDATE night_plays SET a = ?, b = ?, throws = ?, opened_at = ? WHERE number = ?`, picks[0], picks[1], body.throws.join(""), Date.now(), p.inv.number);
+    this.broadcast({ t: "news" });
+    return json(this.nightView(this.inHall(request)));
+  }
+
+  nightSeen(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    this.sql.exec(`UPDATE night_plays SET seen = 1 WHERE number = ?`, inv.number);
+    return json({ ok: true });
+  }
+
+  maybeEndNight() {
+    const night = this.night();
+    if (!night || night.status !== "open" || !night.endsAt) return;
+    const at = Date.parse(night.endsAt);
+    if (!Number.isNaN(at) && Date.now() >= at) this.endNight();
+  }
+
+  // Close the vaults: count the gold, pay the three highest amounts, and send one player home.
+  endNight() {
+    const night = this.night();
+    if (!night || night.status !== "open") return null;
+    const players = this.activeNumbers();
+    const plays = {};
+    const shown = {};
+    for (const r of this.sql.exec(`SELECT * FROM night_plays WHERE a IS NOT NULL`).toArray()) {
+      if (!players.includes(r.number)) continue;
+      plays[r.number] = { a: r.a, b: r.b, throws: (r.throws || "").split("") };
+      shown[r.number] = [r.a, r.b];
+    }
+    const coins = {};
+    for (const p of this.sql.exec(`SELECT number, coins, extra FROM invites WHERE status = 'accepted' AND out = 0`).toArray()) coins[p.number] = (p.coins || 0) + (p.extra || 0);
+    const result = settle(players, plays, coins);
+    for (const n of players) if (result.prize[n]) this.addCoins(n, result.prize[n]);
+    if (result.out != null) this.sql.exec(`UPDATE invites SET out = ? WHERE number = ?`, night.n, result.out);
+    this.set("night_result", JSON.stringify({ ...result, plays: shown, players, endedAt: Date.now() }));
+    this.set("night", JSON.stringify({ ...night, status: "done" }));
+    this.broadcast({ t: "news" });
+    return result;
+  }
+
+  async hostNightStart(request) {
+    const body = await readJson(request);
+    if (this.phase() !== "revealed") return json({ error: "Open the bags first. Players need coins for the shop." }, 409);
+    const before = this.night();
+    if (before && before.status === "open") return json({ error: "A match is already being played." }, 409);
+    const players = this.activeNumbers();
+    if (players.length < 2) return json({ error: "A match needs at least two players." }, 409);
+    let endsAt = "";
+    if (body.endsAt) {
+      const at = Date.parse(String(body.endsAt));
+      if (Number.isNaN(at)) return json({ error: "That date could not be read." }, 400);
+      if (at <= Date.now()) return json({ error: "The vaults must close in the future." }, 400);
+      endsAt = new Date(at).toISOString();
+    }
+    this.sql.exec(`DELETE FROM night_plays`);
+    const hands = dealClues(players);
+    for (const n of players) this.sql.exec(`INSERT INTO night_plays (number, clue) VALUES (?, ?)`, n, hands[n]);
+    this.set("night", JSON.stringify({ n: (before ? before.n : 0) + 1, game: "vaults", status: "open", startedAt: Date.now(), endsAt }));
+    this.set("night_result", "null");
+    this.broadcast({ t: "news" });
+    return json({ ok: true, players: players.length });
+  }
+
+  hostNightEnd() {
+    const night = this.night();
+    if (!night || night.status !== "open") return json({ error: "No match is being played." }, 409);
+    this.endNight();
+    return json({ ok: true, result: this.publicResult() });
+  }
+
+  // Undo the night, for testing: prizes and clue money go back, and whoever it sent home returns.
+  hostNightReset() {
+    const night = this.night();
+    if (!night) return json({ ok: true });
+    const result = this.nightResult();
+    if (result) for (const n of Object.keys(result.prize || {})) if (result.prize[n]) this.addCoins(Number(n), -result.prize[n]);
+    for (const r of this.sql.exec(`SELECT number FROM night_plays WHERE bought IS NOT NULL`).toArray()) this.addCoins(r.number, RULES.cluePrice);
+    this.sql.exec(`UPDATE invites SET out = 0 WHERE out = ?`, night.n);
+    this.sql.exec(`DELETE FROM night_plays`);
+    this.set("night", JSON.stringify(night.n > 1 ? { n: night.n - 1, game: night.game, status: "done" } : null));
+    this.set("night_result", "null");
+    this.broadcast({ t: "news" });
+    return json({ ok: true });
+  }
+
+  // The GM sends a player home, or brings one back. Also settles a tie the throws and the coins could not.
+  async hostOut(request) {
+    const body = await readJson(request);
+    const n = Number(body.number);
+    const rows = this.sql.exec(`SELECT number, out FROM invites WHERE status = 'accepted' AND number = ?`, Number.isInteger(n) ? n : -1).toArray();
+    if (!rows.length) return json({ error: "That player is not in the game." }, 400);
+    const night = this.night();
+    const mark = body.out === false ? 0 : Math.max(1, night ? night.n : 1);
+    this.sql.exec(`UPDATE invites SET out = ? WHERE number = ?`, mark, n);
+    const result = this.nightResult();
+    if (result && mark && result.out == null && (result.undecided || []).includes(n)) {
+      result.out = n;
+      result.undecided = [];
+      this.set("night_result", JSON.stringify(result));
+    }
+    this.broadcast({ t: "news" });
+    return json({ ok: true });
+  }
+
+  hostNightView() {
+    const night = this.night();
+    if (!night) return null;
+    const rows = this.sql.exec(`SELECT * FROM night_plays ORDER BY number`).toArray();
+    return {
+      ...night,
+      layout: GOLD,
+      players: rows.map((r) => ({
+        n: r.number,
+        clue: clueText(r.clue),
+        bought: r.bought ? clueText(r.bought) : "",
+        opened: r.a ? [r.a, r.b] : null,
+        gold: r.a ? GOLD[r.a - 1] + GOLD[r.b - 1] : null,
+        throws: r.throws || "",
+      })),
+      result: this.nightResult(),
+    };
+  }
+
+  // ---------- the dungeon: who went down, and when ----------
+
+  doorLog(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const entries = this.sql.exec(`SELECT number, cell, at FROM doorlog ORDER BY id DESC LIMIT 40`).toArray();
+    const now = {};
+    for (let c = 1; c <= CELLS.length; c++) now[c] = this.cellMates(c);
+    return json({ entries: entries.map((e) => ({ n: e.number, cell: e.cell, at: e.at })), now, mine: this.cellOf(inv.number) });
+  }
+
+  // ---------- live: who is in the hall right now, and where they walk ----------
+
+  positions() {
+    const out = {};
+    for (const p of this.sql.exec(`SELECT number, room, x, y FROM places`).toArray()) out[p.number] = [p.room, p.x, p.y];
+    return out;
+  }
+
+  onlineNumbers() {
+    const seen = new Set();
+    for (const ws of this.ctx.getWebSockets()) {
+      const tag = ws.deserializeAttachment();
+      if (tag && tag.n) seen.add(tag.n);
+    }
+    return [...seen];
+  }
+
+  broadcast(message, except) {
+    const text = JSON.stringify(message);
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws === except) continue;
+      try {
+        ws.send(text);
+      } catch {
+        // a socket that has gone away is cleaned up when it closes
+      }
+    }
+  }
+
+  savePosition(number, room, x, y) {
+    x = Number(x);
+    y = Number(y);
+    if (!WORLD_ROOMS.includes(room)) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > WORLD_MAX || y > WORLD_MAX) return null;
+    x = Math.round(x * 10) / 10;
+    y = Math.round(y * 10) / 10;
+    const cell = cellAt(room, x, y);
+    if (cell && cell !== this.cellOf(number)) this.sql.exec(`INSERT INTO doorlog (number, cell, at) VALUES (?, ?, ?)`, number, cell, Date.now());
+    this.sql.exec(
+      `INSERT INTO places (number, room, x, y, at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(number) DO UPDATE SET room = excluded.room, x = excluded.x, y = excluded.y, at = excluded.at`,
+      number,
+      room,
+      x,
+      y,
+      Date.now(),
+    );
+    return [room, x, y];
+  }
+
+  live(request) {
+    if (request.headers.get("Upgrade") !== "websocket") return json({ error: "Expected a live connection." }, 426);
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    const wasHere = this.onlineNumbers().includes(inv.number);
+    this.ctx.acceptWebSocket(server);
+    server.serializeAttachment({ n: inv.number, at: 0, count: 0 });
+    server.send(JSON.stringify({ t: "hi", online: this.onlineNumbers(), pos: this.positions() }));
+    if (!wasHere) this.broadcast({ t: "on", n: inv.number }, server);
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async move(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const body = await readJson(request);
+    const at = this.savePosition(inv.number, String(body.r || ""), body.x, body.y);
+    if (!at) return json({ error: "That is outside the set." }, 400);
+    this.broadcast({ t: body.t === "r" ? "r" : "m", n: inv.number, r: at[0], x: at[1], y: at[2] });
+    return json({ ok: true });
+  }
+
+  webSocketMessage(ws, raw) {
+    const tag = ws.deserializeAttachment();
+    if (!tag || !tag.n || typeof raw !== "string" || raw.length > 200) return;
+    // At most 12 messages a second from one connection.
+    const now = Date.now();
+    if (now - tag.at > 1000) {
+      tag.at = now;
+      tag.count = 0;
+    }
+    tag.count += 1;
+    ws.serializeAttachment(tag);
+    if (tag.count > 12) return;
+    let m;
+    try {
+      m = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (m.t !== "m" && m.t !== "p" && m.t !== "r") return;
+    const at = this.savePosition(tag.n, String(m.r || ""), m.x, m.y);
+    if (at) this.broadcast({ t: m.t, n: tag.n, r: at[0], x: at[1], y: at[2] }, ws);
+  }
+
+  webSocketClose(ws) {
+    this.leftLive(ws);
+  }
+
+  webSocketError(ws) {
+    this.leftLive(ws);
+  }
+
+  leftLive(ws) {
+    const tag = ws.deserializeAttachment();
+    try {
+      ws.close(1000, "bye");
+    } catch {
+      // already closed
+    }
+    if (!tag || !tag.n) return;
+    const others = this.ctx.getWebSockets().some((other) => {
+      if (other === ws) return false;
+      const t = other.deserializeAttachment();
+      return t && t.n === tag.n;
+    });
+    if (!others) this.broadcast({ t: "off", n: tag.n }, ws);
+  }
+
+  // ---------- host ----------
+
+  async hostLogin(request, url) {
+    const body = await readJson(request);
+    const pass = String(body.passphrase || "");
+    const existing = this.get("host_hash");
+
+    if (!existing) {
+      if (pass.length < 8) return json({ error: "Choose a passphrase of at least 8 characters." }, 400);
+      const salt = randomToken(16);
+      this.set("host_salt", salt);
+      this.set("host_hash", await hashPass(pass, salt));
+    } else {
+      const lockedUntil = Number(this.get("login_locked_until", "0"));
+      if (Date.now() < lockedUntil) {
+        return json({ error: "Too many wrong attempts. Wait a minute and try again." }, 429);
+      }
+      const hash = await hashPass(pass, this.get("host_salt", ""));
+      if (hash !== existing) {
+        const fails = Number(this.get("login_fails", "0")) + 1;
+        if (fails >= MAX_LOGIN_FAILS) {
+          this.set("login_fails", 0);
+          this.set("login_locked_until", Date.now() + LOCK_MS);
+        } else {
+          this.set("login_fails", fails);
+        }
+        return json({ error: "That passphrase is not correct." }, 401);
+      }
+      this.set("login_fails", 0);
+    }
+
+    const id = randomToken(24);
+    this.sql.exec(`INSERT INTO host_sessions (id, created_at) VALUES (?, ?)`, id, Date.now());
+    return json({ ok: true }, 200, { "Set-Cookie": cookie(HOST_COOKIE, id, COOKIE_AGE, url) });
+  }
+
+  hostLogout(request, url) {
+    const id = readCookie(request, HOST_COOKIE);
+    if (id) this.sql.exec(`DELETE FROM host_sessions WHERE id = ?`, id);
+    return json({ ok: true }, 200, { "Set-Cookie": cookie(HOST_COOKIE, "", 0, url) });
+  }
+
+  hostState(request) {
+    const hasHost = !!this.get("host_hash");
+    if (!this.hostAuthed(request)) return json({ authed: false, hasHost });
+    const invites = this.sql
+      .exec(`SELECT * FROM invites ORDER BY created_at ASC, name ASC`)
+      .toArray()
+      .map((r) => ({
+        token: r.token,
+        name: r.name,
+        note: r.note,
+        status: r.status,
+        number: r.number,
+        bag: r.bag,
+        coins: r.coins,
+        opened: !!r.opened_at,
+        entered: !!r.entered_at,
+        sealed: r.bag != null,
+        extra: r.extra || 0,
+        out: r.out || 0,
+        avatar: parseAvatar(r.avatar),
+        link: "/i/" + r.token,
+      }));
+    const gmMark = (key) => {
+      const rows = this.sql.exec(`SELECT last_id FROM reads WHERE who = 'gm' AND key = ?`, key).toArray();
+      return rows.length ? rows[0].last_id : 0;
+    };
+    const study = {};
+    for (const m of this.sql.exec(`SELECT id, to_n FROM messages WHERE room = 'study' AND from_n != ?`, GM).toArray()) {
+      if (m.id > gmMark("study:" + m.to_n)) study[m.to_n] = (study[m.to_n] || 0) + 1;
+    }
+    const inbox = {
+      study,
+      board: this.sql.exec(`SELECT COUNT(*) AS n FROM messages WHERE room = 'board' AND from_n != ? AND id > ?`, GM, gmMark("board")).one().n,
+      table: this.sql.exec(`SELECT COUNT(*) AS n FROM messages WHERE room = 'table' AND from_n != ? AND id > ?`, GM, gmMark("table")).one().n,
+      whispers: this.sql.exec(`SELECT COUNT(*) AS n FROM messages WHERE room = 'whisper' AND id > ?`, gmMark("whispers")).one().n,
+      cells: this.sql.exec(`SELECT COUNT(*) AS n FROM messages WHERE room LIKE 'cell%' AND id > ?`, gmMark("cells")).one().n,
+    };
+    return json({
+      authed: true,
+      hasHost,
+      seats: SEATS,
+      bag1Coins: BAG1_COINS,
+      bag2Pot: BAG2_POT,
+      phase: this.phase(),
+      opensAt: this.get("opens_at", ""),
+      replyBy: this.get("reply_by", ""),
+      nextAt: this.get("next_at", ""),
+      nextName: this.get("next_name", "Night 1"),
+      autoOpen: this.get("auto_open", "0") === "1",
+      showChoices: this.showChoices(),
+      letter: this.letter(),
+      defaultLetter: DEFAULT_LETTER,
+      invites,
+      inbox,
+      night: this.night(),
+      reveal: JSON.parse(this.get("reveal", "null")),
+    });
+  }
+
+  // Everything the rooms record: today's puzzle and every player's answer, every deal, and the door log.
+  hostActivity() {
+    this.expireDeals();
+    const day = this.today();
+    const players = this.sql.exec(`SELECT number, name FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL ORDER BY number`).toArray();
+    const solvedEver = new Map(this.sql.exec(`SELECT number AS n, COUNT(*) AS c FROM puzzle_tries WHERE solved = 1 GROUP BY number`).toArray().map((r) => [r.n, r.c]));
+    const sample = players.length ? this.puzzleFor(players[0].number, day) : null;
+    const cells = {};
+    for (let c = 1; c <= CELLS.length; c++) cells[c] = this.cellMates(c);
+    return json({
+      resetAt: this.dayEnds(),
+      puzzle: {
+        title: sample ? sample.title : "",
+        players: players.map((p) => {
+          const row = this.puzzleRow(p.number, day);
+          return { n: p.number, tries: row.tries, solved: !!row.solved, answer: this.puzzleFor(p.number, day).answer, total: solvedEver.get(p.number) || 0 };
+        }),
+      },
+      deals: this.sql
+        .exec(`SELECT * FROM deals ORDER BY id DESC LIMIT 80`)
+        .toArray()
+        .map((d) => ({ id: d.id, a: d.a, b: d.b, aChoice: d.a_choice, bChoice: d.b_choice, aNet: d.a_net, bNet: d.b_net, status: d.status, at: d.settled_at || d.created_at })),
+      doors: this.sql.exec(`SELECT number, cell, at FROM doorlog ORDER BY id DESC LIMIT 80`).toArray().map((e) => ({ n: e.number, cell: e.cell, at: e.at })),
+      cells,
+      night: this.hostNightView(),
+    });
+  }
+
+  // The GM gives or takes coins by hand: a prize, a penalty, or the result of a night played off the site.
+  async hostCoins(request) {
+    const body = await readJson(request);
+    if (this.phase() !== "revealed") return json({ error: "Nobody holds coins until the bags open." }, 409);
+    const amount = Number(body.amount);
+    if (!Number.isInteger(amount) || amount === 0 || Math.abs(amount) > 999) return json({ error: "Give a whole number of coins, like 3 or -2." }, 400);
+    const player = this.playerByNumber(Number(body.number));
+    if (!player) return json({ error: "That player has not arrived." }, 400);
+    if (this.balance(player) + amount < 0) return json({ error: `Player ${player.number} only holds ${this.balance(player)}.` }, 409);
+    this.addCoins(player.number, amount);
+    this.broadcast({ t: "news" });
+    return json({ ok: true, coins: this.balance(player) + amount });
+  }
+
+  async hostCreateInvites(request) {
+    const body = await readJson(request);
+    const names = (Array.isArray(body.names) ? body.names : [])
+      .map((n) => String(n).trim().slice(0, 60))
+      .filter(Boolean)
+      .slice(0, 40);
+    if (!names.length) return json({ error: "Enter at least one name." }, 400);
+    let t = Date.now();
+    for (const name of names) {
+      this.sql.exec(
+        `INSERT INTO invites (token, name, created_at) VALUES (?, ?, ?)`,
+        randomToken(16),
+        name,
+        t++,
+      );
+    }
+    return json({ ok: true, created: names.length });
+  }
+
+  async hostUpdateInvite(request) {
+    const body = await readJson(request);
+    const inv = this.inviteByToken(String(body.token || ""));
+    if (!inv) return json({ error: "That invitation no longer exists." }, 404);
+    const name = body.name != null ? String(body.name).trim().slice(0, 60) || inv.name : inv.name;
+    const note = body.note != null ? String(body.note).trim().slice(0, 280) : inv.note;
+    this.sql.exec(`UPDATE invites SET name = ?, note = ? WHERE token = ?`, name, note, inv.token);
+    return json({ ok: true });
+  }
+
+  async hostDeleteInvite(request) {
+    const body = await readJson(request);
+    const inv = this.inviteByToken(String(body.token || ""));
+    if (!inv) return json({ ok: true });
+    if (this.phase() === "revealed" && inv.status === "accepted") {
+      return json({ error: "Undo the reveal before removing a player." }, 409);
+    }
+    this.forgetPlayer(inv.number);
+    this.sql.exec(`DELETE FROM invites WHERE token = ?`, inv.token);
+    return json({ ok: true });
+  }
+
+  // A seat that is freed must not leave its old messages for the next player who draws that number.
+  forgetPlayer(number) {
+    if (number == null) return;
+    this.sql.exec(`DELETE FROM messages WHERE from_n = ? OR to_n = ?`, number, number);
+    this.sql.exec(`DELETE FROM reads WHERE who = ? OR key = ? OR key = ?`, "p" + number, "w:" + number, "study:" + number);
+    this.sql.exec(`DELETE FROM places WHERE number = ?`, number);
+    this.sql.exec(`DELETE FROM puzzle_tries WHERE number = ?`, number);
+    this.sql.exec(`DELETE FROM doorlog WHERE number = ?`, number);
+    this.sql.exec(`DELETE FROM night_plays WHERE number = ?`, number);
+    for (const d of this.sql.exec(`SELECT id, a FROM deals WHERE status = 'open' AND b = ?`, number).toArray()) this.addCoins(d.a, DEAL_STAKE);
+    this.sql.exec(`DELETE FROM deals WHERE a = ? OR b = ?`, number, number);
+  }
+
+  async hostResetInvite(request) {
+    const body = await readJson(request);
+    if (this.phase() === "revealed") return json({ error: "Undo the reveal before resetting a seat." }, 409);
+    const inv = this.inviteByToken(String(body.token || ""));
+    if (!inv) return json({ ok: true });
+    this.forgetPlayer(inv.number);
+    this.sql.exec(
+      `UPDATE invites SET status = 'invited', number = NULL, bag = NULL, coins = NULL, extra = 0, out = 0, avatar = NULL,
+       responded_at = NULL, entered_at = NULL, sealed_at = NULL, seen_reveal = 0 WHERE token = ?`,
+      inv.token,
+    );
+    return json({ ok: true });
+  }
+
+  async hostSettings(request) {
+    const body = await readJson(request);
+    if (body.letter && typeof body.letter === "object") {
+      const clean = {};
+      for (const key of Object.keys(DEFAULT_LETTER)) {
+        if (body.letter[key] != null) clean[key] = String(body.letter[key]).slice(0, 4000);
+      }
+      this.set("letter", JSON.stringify({ ...this.letter(), ...clean }));
+    }
+    if (body.nextName != null) this.set("next_name", String(body.nextName).trim().slice(0, 40) || "Night 1");
+    for (const [field, key] of [["opensAt", "opens_at"], ["replyBy", "reply_by"], ["nextAt", "next_at"]]) {
+      if (body[field] != null) {
+        const value = String(body[field]);
+        if (value && Number.isNaN(Date.parse(value))) return json({ error: "That date could not be read." }, 400);
+        this.set(key, value ? new Date(value).toISOString() : "");
+      }
+    }
+    if (body.autoOpen != null) this.set("auto_open", body.autoOpen ? "1" : "0");
+    if (body.showChoices != null) this.set("show_choices", body.showChoices ? "1" : "0");
+    return json({ ok: true });
+  }
+
+  hostReadMessages(url) {
+    const room = url.searchParams.get("room");
+    const withN = Number(url.searchParams.get("with"));
+    let rows;
+    let key = room;
+    if (room === "table" || room === "board") {
+      rows = this.sql.exec(`SELECT * FROM messages WHERE room = ? ORDER BY id ASC`, room).toArray();
+    } else if (room === "whispers") {
+      rows = this.sql.exec(`SELECT * FROM messages WHERE room = 'whisper' ORDER BY id ASC`).toArray();
+    } else if (room === "cells") {
+      rows = this.sql.exec(`SELECT * FROM messages WHERE room LIKE 'cell%' ORDER BY id ASC`).toArray();
+    } else if (room === "study" && Number.isInteger(withN) && withN >= 1 && withN <= SEATS) {
+      rows = this.sql.exec(`SELECT * FROM messages WHERE room = 'study' AND to_n = ? ORDER BY id ASC`, withN).toArray();
+      key = "study:" + withN;
+    } else {
+      return json({ error: "That room does not exist." }, 400);
+    }
+    rows = rows.slice(-500);
+    if (rows.length) {
+      this.sql.exec(
+        `INSERT INTO reads (who, key, last_id) VALUES ('gm', ?, ?) ON CONFLICT(who, key) DO UPDATE SET last_id = MAX(last_id, excluded.last_id)`,
+        key,
+        rows[rows.length - 1].id,
+      );
+    }
+    return json({ messages: rows.map(publicMessage) });
+  }
+
+  async hostPostMessage(request) {
+    const body = await readJson(request);
+    const text = String(body.body || "").trim();
+    if (!text) return json({ error: "Write something first." }, 400);
+    if (text.length > MESSAGE_MAX * 3) return json({ error: "That is too long." }, 400);
+    const room = String(body.room || "");
+    let to = null;
+    let parent = null;
+    if (room === "study") {
+      to = Number(body.to);
+      if (!Number.isInteger(to) || to < 1 || to > SEATS) return json({ error: "Choose a player." }, 400);
+    } else if (room === "board") {
+      if (body.parent != null) {
+        parent = Number(body.parent);
+        const found = this.sql.exec(`SELECT id FROM messages WHERE room = 'board' AND parent IS NULL AND id = ?`, parent).toArray();
+        if (!found.length) return json({ error: "That question no longer exists." }, 404);
+      }
+    } else if (room !== "table") {
+      return json({ error: "That room does not exist." }, 400);
+    }
+    this.sql.exec(`INSERT INTO messages (room, from_n, to_n, parent, body, at) VALUES (?, ?, ?, ?, ?, ?)`, room, GM, to, parent, text, Date.now());
+    this.broadcast({ t: "news" });
+    return json({ ok: true });
+  }
+
+  async hostRemoveMessage(request) {
+    const body = await readJson(request);
+    this.sql.exec(`UPDATE messages SET removed = 1 WHERE id = ?`, Number(body.id) || 0);
+    return json({ ok: true });
+  }
+
+  doReveal() {
+    const players = this.sql
+      .exec(`SELECT token, number, bag FROM invites WHERE status = 'accepted' ORDER BY number ASC`)
+      .toArray();
+    if (!players.length) return false;
+
+    const inBag2 = players.filter((p) => p.bag === 2);
+    const share = inBag2.length ? Math.floor(BAG2_POT / inBag2.length) : 0;
+    const payout = (p) => (p.bag === 1 ? BAG1_COINS : p.bag === 2 ? share : 0);
+    for (const p of players) {
+      this.sql.exec(`UPDATE invites SET coins = ?, seen_reveal = 0 WHERE token = ?`, payout(p), p.token);
+    }
+
+    // The order in which the Bag 2 players are read out, fixed once for everyone.
+    const order = inBag2.map((p) => p.number);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+
+    this.set(
+      "reveal",
+      JSON.stringify({
+        at: new Date().toISOString(),
+        pot: BAG2_POT,
+        bag1Coins: BAG1_COINS,
+        bag1Count: players.filter((p) => p.bag === 1).length,
+        bag2Count: inBag2.length,
+        bag2Share: share,
+        leftover: inBag2.length ? BAG2_POT - share * inBag2.length : BAG2_POT,
+        unsealed: players.filter((p) => p.bag == null).map((p) => p.number),
+        order,
+        results: players.map((p) => ({ number: p.number, bag: p.bag, coins: payout(p) })),
+      }),
+    );
+    this.set("phase", "revealed");
+    this.broadcast({ t: "news" });
+    return true;
+  }
+
+  hostReveal() {
+    if (this.phase() === "revealed") return json({ ok: true });
+    if (!this.doReveal()) return json({ error: "Nobody has entered yet." }, 409);
+    return json({ ok: true });
+  }
+
+  hostUnreveal() {
+    this.set("phase", "open");
+    this.set("reveal", "null");
+    this.set("auto_open", "0");
+    this.sql.exec(`UPDATE invites SET coins = NULL, seen_reveal = 0`);
+    return json({ ok: true });
+  }
+}
+
+// ---------- shared utilities ----------
+
+function json(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...extraHeaders },
+  });
+}
+
+async function readJson(request) {
+  try {
+    return (await request.json()) || {};
+  } catch {
+    return {};
+  }
+}
+
+function parseAvatar(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+// A portrait is seven small whole numbers. Anything else is refused.
+function cleanAvatar(value) {
+  if (!value || typeof value !== "object") return null;
+  const out = {};
+  for (const [key, max] of Object.entries(AVATAR_LIMITS)) {
+    const n = value[key] == null ? 0 : Number(value[key]);
+    if (!Number.isInteger(n) || n < 0 || n >= max) return null;
+    out[key] = n;
+  }
+  return out;
+}
+
+function publicMessage(m) {
+  return {
+    id: m.id,
+    room: m.room,
+    from: m.from_n,
+    to: m.to_n,
+    parent: m.parent,
+    body: m.removed ? "" : m.body,
+    removed: !!m.removed,
+    at: m.at,
+    heard: m.heard || undefined,
+  };
+}
+
+// Which dungeon cell a point is in: 1, 2 or 3, or 0 for none.
+function cellAt(room, x, y) {
+  if (room !== "dungeon") return 0;
+  for (let i = 0; i < CELLS.length; i++) {
+    const c = CELLS[i];
+    if (x >= c[0] && x <= c[2] && y >= c[1] && y <= c[3]) return i + 1;
+  }
+  return 0;
+}
+
+function cleanToken(value) {
+  return String(value || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+}
+
+function cookie(name, value, maxAge, url) {
+  const secure = url && url.protocol === "https:" ? "; Secure" : "";
+  return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly${secure}; SameSite=Lax`;
+}
+
+function readCookie(request, name) {
+  const header = request.headers.get("Cookie") || "";
+  for (const part of header.split(";")) {
+    const [k, ...rest] = part.trim().split("=");
+    if (k === name) return rest.join("=");
+  }
+  return "";
+}
+
+function randomToken(bytes) {
+  const buf = new Uint8Array(bytes);
+  crypto.getRandomValues(buf);
+  let s = "";
+  for (const b of buf) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function randomInt(max) {
+  // Uniform integer in [0, max) without modulo bias.
+  const limit = Math.floor(0x100000000 / max) * max;
+  const buf = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(buf);
+  } while (buf[0] >= limit);
+  return buf[0] % max;
+}
+
+async function hashPass(pass, salt) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: enc.encode(salt), iterations: 10000, hash: "SHA-256" },
+    key,
+    256,
+  );
+  return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
