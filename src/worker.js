@@ -14,6 +14,10 @@ const SEAT_COOKIE = "dp_seat";
 const HOST_COOKIE = "dp_host";
 const COOKIE_AGE = 60 * 60 * 24 * 120;
 const MAX_LOGIN_FAILS = 5;
+const WORD_LENGTH = 5;
+const WORD_MAX_FAILS = 5; // wrong words from one address before that address waits
+const WORD_WRONG_PER_HOUR = 40; // wrong words from everywhere before the door shuts for the hour
+const WORD_AVOID = ["ASS", "FUC", "FUK", "SHI", "CUN", "DIC", "COC", "FAG", "NIG", "SEX", "TIT", "PIS", "CUM", "KKK", "NAZ", "RAP", "SLU", "WHO", "DAM", "HEL"];
 const LOCK_MS = 15 * 60 * 1000;
 // The same rules are in public/_headers for the files Cloudflare serves without the Worker.
 const SECURITY_HEADERS = {
@@ -56,18 +60,10 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // An invitation link. Remember the seat on this device and show the site.
-    // The address keeps the token, so a bookmark or a reload always works.
+    // Personal links were how players came in at first. Now there is one address for everyone and each
+    // player types their own word, so an old link only leads to the front page.
     if (url.pathname.startsWith("/i/")) {
-      const token = cleanToken(url.pathname.slice(3));
-      const page = await env.ASSETS.fetch(new Request(new URL("/", url)));
-      // Chat apps only show a preview image when its address is absolute.
-      const html = (await page.text()).replace('content="/card.png"', `content="${url.origin}/card.png"`);
-      const res = new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
-      res.headers.set("Cache-Control", "no-store");
-      for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.headers.set(name, value);
-      if (token) res.headers.append("Set-Cookie", cookie(SEAT_COOKIE, token, COOKIE_AGE, url));
-      return res;
+      return new Response(null, { status: 302, headers: { Location: new URL("/", url).toString(), "Cache-Control": "no-store", ...SECURITY_HEADERS } });
     }
 
     if (url.pathname.startsWith("/api/")) {
@@ -143,6 +139,11 @@ export class Game extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS doorlog (id INTEGER PRIMARY KEY AUTOINCREMENT, number INTEGER NOT NULL, cell INTEGER NOT NULL, at INTEGER NOT NULL)`);
     // Night 1 and after: who is out, and what each player holds and did on the night being played.
     if (!columns.includes("out")) this.sql.exec(`ALTER TABLE invites ADD COLUMN out INTEGER NOT NULL DEFAULT 0`);
+    // One address for everyone: each player signs in with a word of five letters instead of a personal link.
+    if (!columns.includes("code")) this.sql.exec(`ALTER TABLE invites ADD COLUMN code TEXT`);
+    for (const row of this.sql.exec(`SELECT token FROM invites WHERE code IS NULL OR code = ''`).toArray()) {
+      this.sql.exec(`UPDATE invites SET code = ? WHERE token = ?`, this.newWord(), row.token);
+    }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS night_plays (
       number INTEGER PRIMARY KEY,
       clue INTEGER NOT NULL,
@@ -187,6 +188,42 @@ export class Game extends DurableObject {
 
   showChoices() {
     return this.get("show_choices", "1") === "1";
+  }
+
+  // Five random letters. Not a dictionary word: sixteen real words can be guessed, sixteen of these cannot.
+  newWord() {
+    for (;;) {
+      let word = "";
+      for (let i = 0; i < WORD_LENGTH; i++) word += "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[randomInt(26)];
+      if (WORD_AVOID.some((bad) => word.includes(bad))) continue;
+      if (!this.sql.exec(`SELECT 1 FROM invites WHERE code = ?`, word).toArray().length) return word;
+    }
+  }
+
+  // A player types their word on the front page. A right word puts their seat on this device.
+  async claim(request, url) {
+    const body = await readJson(request);
+    const word = String(body.word || "").toUpperCase().replace(/[^A-Z]/g, "");
+    const who = (request.headers.get("CF-Connecting-IP") || "local").replace(/[^0-9A-Fa-f:.]/g, "").slice(0, 45) || "local";
+    const failsKey = "word_fails:" + who, lockKey = "word_locked_until:" + who;
+    const hourKey = "word_wrong:" + Math.floor(Date.now() / 3600000);
+    if (Date.now() < Number(this.get(lockKey, "0"))) return json({ error: "Too many wrong words. Wait fifteen minutes and try again." }, 429);
+    // Guessing from many addresses at once: stop taking words for the rest of the hour.
+    if (Number(this.get(hourKey, "0")) >= WORD_WRONG_PER_HOUR) return json({ error: "The door is shut for a little while. Try again within the hour." }, 429);
+    const rows = word.length === WORD_LENGTH ? this.sql.exec(`SELECT token FROM invites WHERE code = ?`, word).toArray() : [];
+    if (!rows.length) {
+      const fails = Number(this.get(failsKey, "0")) + 1;
+      this.set(hourKey, Number(this.get(hourKey, "0")) + 1);
+      if (fails >= WORD_MAX_FAILS) {
+        this.set(failsKey, 0);
+        this.set(lockKey, Date.now() + LOCK_MS);
+      } else {
+        this.set(failsKey, fails);
+      }
+      return json({ error: "That is not a word I gave anyone." }, 401);
+    }
+    this.set(failsKey, 0);
+    return json({ ok: true }, 200, { "Set-Cookie": cookie(SEAT_COOKIE, rows[0].token, COOKIE_AGE, url) });
   }
 
   seat(request) {
@@ -258,6 +295,7 @@ export class Game extends DurableObject {
       if (path === "/api/night/open" && method === "POST") return this.nightOpen(request);
       if (path === "/api/night/seen" && method === "POST") return this.nightSeen(request);
 
+      if (path === "/api/claim" && method === "POST") return this.claim(request, url);
       if (path === "/api/host/login" && method === "POST") return this.hostLogin(request, url);
       if (path === "/api/host/logout" && method === "POST") return this.hostLogout(request, url);
       if (path === "/api/host/state" && method === "GET") return this.hostState(request);
@@ -267,6 +305,7 @@ export class Game extends DurableObject {
         if (path === "/api/host/invite/update" && method === "POST") return this.hostUpdateInvite(request);
         if (path === "/api/host/invite/delete" && method === "POST") return this.hostDeleteInvite(request);
         if (path === "/api/host/invite/reset" && method === "POST") return this.hostResetInvite(request);
+        if (path === "/api/host/invite/reword" && method === "POST") return this.hostRewordInvite(request);
         if (path === "/api/host/settings" && method === "POST") return this.hostSettings(request);
         if (path === "/api/host/reveal" && method === "POST") return this.hostReveal();
         if (path === "/api/host/unreveal" && method === "POST") return this.hostUnreveal();
@@ -1315,7 +1354,7 @@ export class Game extends DurableObject {
         extra: r.extra || 0,
         out: r.out || 0,
         avatar: parseAvatar(r.avatar),
-        link: "/i/" + r.token,
+        word: r.code,
       }));
     const gmMark = (key) => {
       const rows = this.sql.exec(`SELECT last_id FROM reads WHERE who = 'gm' AND key = ?`, key).toArray();
@@ -1344,6 +1383,7 @@ export class Game extends DurableObject {
       nextAt: this.get("next_at", ""),
       nextName: this.get("next_name", NEXT_NAME),
       autoOpen: this.get("auto_open", "0") === "1",
+      wrongWords: Number(this.get("word_wrong:" + Math.floor(Date.now() / 3600000), "0")),
       bettingOpen: this.bettingOpen(),
       showChoices: this.showChoices(),
       letter: this.letter(),
@@ -1417,10 +1457,11 @@ export class Game extends DurableObject {
     let t = Date.now();
     for (const name of names) {
       this.sql.exec(
-        `INSERT INTO invites (token, name, created_at) VALUES (?, ?, ?)`,
+        `INSERT INTO invites (token, name, created_at, code) VALUES (?, ?, ?, ?)`,
         randomToken(16),
         name,
         t++,
+        this.newWord(),
       );
     }
     return json({ ok: true, created: names.length });
@@ -1434,6 +1475,16 @@ export class Game extends DurableObject {
     const note = body.note != null ? String(body.note).trim().slice(0, 280) : inv.note;
     this.sql.exec(`UPDATE invites SET name = ?, note = ? WHERE token = ?`, name, note, inv.token);
     return json({ ok: true });
+  }
+
+  // A new word for one player. It also signs that player out everywhere, in case the old word got out.
+  async hostRewordInvite(request) {
+    const body = await readJson(request);
+    const inv = this.inviteByToken(String(body.token || ""));
+    if (!inv) return json({ error: "That invitation no longer exists." }, 404);
+    const word = this.newWord();
+    this.sql.exec(`UPDATE invites SET code = ?, token = ? WHERE token = ?`, word, randomToken(16), inv.token);
+    return json({ ok: true, word });
   }
 
   async hostDeleteInvite(request) {

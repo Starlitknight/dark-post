@@ -11,7 +11,8 @@
   var root = document.getElementById("app");
   var query = new URLSearchParams(location.search);
   var demo = query.get("demo");
-  var token = (location.pathname.match(/^\/i\/([A-Za-z0-9_-]+)/) || [])[1] || "";
+  var token = ""; // seats are held in a cookie now; personal links are gone
+  var switching = !!query.get("switch"); // ?switch=1: type a different word on this device
   var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var instant = reduced || !!query.get("notype");
 
@@ -58,6 +59,26 @@
         throw new Error("Could not reach Dark Post. Check your connection and try again.");
       }
     );
+  }
+
+  // The word typed on the front page. A right one puts this player's seat on the device.
+  function claimWord() {
+    var input = $("word"), note = $("word-note");
+    if (!input || ui.busy) return;
+    var word = input.value.toUpperCase().replace(/[^A-Z]/g, "");
+    if (word.length !== 5) { note.textContent = "Your word has five letters."; note.classList.add("bad"); return; }
+    ui.busy = true;
+    note.classList.remove("bad");
+    note.textContent = "One moment.";
+    api("POST", "/api/claim", { word: word })
+      .then(function () {
+        switching = false;
+        if (query.get("switch") && window.history && history.replaceState) history.replaceState(null, "", location.pathname);
+        if (demo) { me = demoMake("letter"); return render(); }
+        return load();
+      })
+      .catch(function (err) { note.textContent = err.message; note.classList.add("bad"); input.select(); })
+      .then(function () { ui.busy = false; });
   }
 
   function load() {
@@ -453,12 +474,22 @@
   // ---------- scenes ----------
 
   var SCENES = {
+    // The front page. Everyone comes to the same address and types the word they were given.
     none: {
       html: function () {
         return (
-          '<section class="screen center">' + ART.wordmark() +
-          '<p class="caps">By invitation only.</p><p class="note">If you were sent a link, open that link again.</p></section>'
+          '<section class="screen center word-door">' + ART.wordmark() +
+          '<p class="caps">By invitation only.</p>' +
+          '<div class="word-box"><label for="word">Enter your word</label>' +
+          '<input type="text" id="word" maxlength="5" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="•••••" aria-describedby="word-note">' +
+          '<button type="button" class="btn" id="word-go" data-act="claim">Enter</button>' +
+          '<p class="note" id="word-note" role="status">Five letters. The gamemaster sent it to you.</p></div></section>'
         );
+      },
+      mount: function () {
+        var input = $("word");
+        input.addEventListener("input", function () { input.value = input.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 5); });
+        input.addEventListener("keydown", function (event) { if (event.key === "Enter") { event.preventDefault(); claimWord(); } });
       },
     },
 
@@ -3109,6 +3140,7 @@
     if (el.disabled) return;
     var name = el.getAttribute("data-act");
     if (name === "advance") advance();
+    else if (name === "claim") claimWord();
     else if (name === "openLetter") {
       if (ui.opened) return;
       el.classList.add("opening");
@@ -3578,8 +3610,9 @@
   }
 
   function start() {
+    if (switching && !demo) { me = { state: "none" }; return render(); }
     if (demo) {
-      me = demoMake(demo);
+      me = demo === "word" ? { state: "none" } : demoMake(demo); // ?demo=word starts the preview on the front page
       if (query.get("scene")) ui.scene = query.get("scene");
       // preview only: lets a review script jump to a screen or step into the next room
       // The GM's moves, for the preview only. Real players have no such controls: only the host console does.

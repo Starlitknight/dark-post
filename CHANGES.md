@@ -1,5 +1,14 @@
 # Dark Post
 
+## One address and a word for each player, 24 Nov 2026, night (the GM's instructions, done outside this agent)
+
+- **Personal links are gone.** Everyone opens the same address. The front page (`none` scene) asks for the player's word: five random letters, made by the server (`newWord`, `claim` in `src/worker.js`). A right word sets the seat cookie on that device.
+- `/i/<token>` now only redirects to the front page and sets nothing.
+- **Guess limits**: five wrong words from one address lock that address for fifteen minutes; forty wrong words from everywhere in one hour shut the door for the rest of that hour. The console shows the count.
+- **The console** lists each player's word, copies a ready invitation (address plus word), and can give a player a new word, which also signs them out everywhere.
+- `/?switch=1` shows the front page on a device that already holds a seat. `/?demo=word` previews the front page.
+- Existing invitations were each given a word when this version started.
+
 ## One puzzle for all, result screens, game clock, 24 Nov 2026, night (the GM's instructions, done outside this agent)
 
 - **Every player gets the same puzzle each day.** The kinds take turns from the first day: code, sums, cipher, sequence (`puzzleFor` in `src/worker.js`). One puzzle a day, three tries; the server refuses anything more.

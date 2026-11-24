@@ -564,19 +564,37 @@ check("auto-open reveals once the opening time has passed", body.get("phase") ==
 call("POST", "/api/host/unreveal", {}, host)
 check("undo switches auto-open off so it does not reopen at once", me(tokens[0]).get("phase") == "open")
 
-# --- the seat can also be carried in the X-Seat header (the link itself) ---
+# --- the seat can also be carried in the X-Seat header ---
 req = urllib.request.Request(BASE + "/api/me")
 req.add_header("X-Seat", tokens[0])
 with urllib.request.urlopen(req) as res:
     body = json.loads(res.read())
-check("the link alone identifies the player, without a cookie", body.get("state") == "avatar")
+check("the header alone identifies the player, without a cookie", body.get("state") == "avatar")
 
-# --- the invitation link serves the site and remembers the seat ---
+# --- one address for everyone: an old personal link signs nobody in, a word does ---
 with urllib.request.urlopen(BASE + "/i/" + tokens[0]) as res:
     page = res.read().decode()
-    set_cookie = res.headers.get("Set-Cookie", "")
-check("invitation link serves the site", "Dark Post" in page and res.status == 200)
-check("invitation link remembers the seat on the device", ("dp_seat=" + tokens[0]) in set_cookie)
+    check("an old personal link only leads to the front page and sets no seat", "Dark Post" in page and res.geturl().rstrip("/") == BASE and "dp_seat" not in (res.headers.get("Set-Cookie") or ""))
+invites = call("GET", "/api/host/state", cookies=host)[1]["invites"]
+words = {i["token"]: i["word"] for i in invites}
+check("every invitation has its own word of five letters, and no link", len(set(words.values())) == len(words) and all(re.fullmatch(r"[A-Z]{5}", w) for w in words.values()) and all("link" not in i for i in invites))
+seen_by_player = json.dumps(me(tokens[1])) + json.dumps(hall_of(tokens[1]))
+check("players are never sent anyone's word", not any(w in seen_by_player for w in words.values()))
+old = words[tokens[0]]
+status, body, headers = call("POST", "/api/claim", {"word": " " + old.lower() + " "})
+got = headers.get("Set-Cookie") or ""
+check("the right word puts the seat on this device, in a cookie scripts cannot read", status == 200 and ("dp_seat=" + tokens[0]) in got and "HttpOnly" in got)
+check("a wrong word is refused, and so is a short one", call("POST", "/api/claim", {"word": "ZZZZZ"})[0] == 401 and call("POST", "/api/claim", {"word": old[:4]})[0] == 401)
+check("a player cannot make themselves a new word", call("POST", "/api/host/invite/reword", {"token": tokens[1]}, seat(tokens[1]))[0] == 401)
+status, body, _ = call("POST", "/api/host/invite/reword", {"token": tokens[0]}, host)
+new = body.get("word", "")
+check("the GM gives a new word: the old one stops, and the old device is signed out", status == 200 and re.fullmatch(r"[A-Z]{5}", new) and new != old and call("POST", "/api/claim", {"word": old})[0] == 401 and me(tokens[0]).get("state") == "none")
+status, body, headers = call("POST", "/api/claim", {"word": new})
+check("the new word signs the same player back in", status == 200 and "dp_seat=" in (headers.get("Set-Cookie") or "") and tokens[0] not in (headers.get("Set-Cookie") or ""))
+for _ in range(5):
+    call("POST", "/api/claim", {"word": "QQQQQ"})
+check("five wrong words lock that address out, even for a right word", call("POST", "/api/claim", {"word": new})[0] == 429)
+check("the GM is told how many wrong words were typed", call("GET", "/api/host/state", cookies=host)[1]["wrongWords"] >= 5)
 
 # --- wrong passphrase lockout ---
 for _ in range(5):

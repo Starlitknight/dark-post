@@ -73,7 +73,9 @@
 
   <section class="panel">
     <h2>1. Invitations</h2>
-    <p class="help">Each guest gets a private link. Whoever holds a link holds that seat, so send each one to one person only. The name is printed on their letter.</p>
+    <p class="help">Every player goes to the same address and types their own word of five letters. Whoever knows a word holds that seat, so give each word to one person only. The name is printed on their letter.</p>
+    <p class="help address-line">The address for everyone: <b id="door-address"></b> <button type="button" class="link" id="copy-address">Copy address</button></p>
+    <p class="help" id="wrong-words" hidden></p>
     <form id="add-form" class="add">
       <label for="names">Names, one per line</label>
       <textarea id="names" rows="4" placeholder="Maya&#10;Arjun&#10;Leila"></textarea>
@@ -81,7 +83,7 @@
     </form>
     <div class="row-between">
       <label class="check"><input type="checkbox" id="show-bags"> Show me the sealed choices</label>
-      <button type="button" class="link" id="copy-all">Copy every unanswered link</button>
+      <button type="button" class="link" id="copy-all">Copy every unanswered invitation</button>
     </div>
     <div id="invites"></div>
   </section>

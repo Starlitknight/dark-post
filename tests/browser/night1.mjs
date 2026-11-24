@@ -32,7 +32,8 @@ const guestCtx = await browser.createBrowserContext();
 const guest = await guestCtx.newPage();
 watch(guest, "guest");
 await guest.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-await guest.goto(BASE + "/i/" + tokens[0] + "?notype=1", { waitUntil: "networkidle0" });
+await guest.setCookie({ name: "dp_seat", value: tokens[0], url: BASE }); // already signed in with their word
+await guest.goto(BASE + "/?notype=1", { waitUntil: "networkidle0" });
 await sleep(2000);
 const click = async (sel) => { await guest.$eval(sel, (el) => el.click()); await sleep(900); };
 // no travel from the menu any more: tap a door sign and wait until the player has walked through it
@@ -146,7 +147,8 @@ const outCtx = await browser.createBrowserContext();
 const gone = await outCtx.newPage();
 watch(gone, "out");
 await gone.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-await gone.goto(BASE + "/i/" + tokens[4] + "?notype=1", { waitUntil: "networkidle0" }); await sleep(2500);
+await gone.setCookie({ name: "dp_seat", value: tokens[4], url: BASE });
+await gone.goto(BASE + "/?notype=1", { waitUntil: "networkidle0" }); await sleep(2500);
 await gone.$eval('[data-act="vNext"]', (el) => el.click()); await sleep(600); await gone.$eval('[data-act="vNext"]', (el) => el.click()); await sleep(600); await gone.$eval('[data-act="vNext"]', (el) => el.click()); await sleep(1200);
 ok("the player who lost is told plainly", (await text(gone)).includes("YOU ARE OUT"));
 await gone.screenshot({ path: SHOTS + "/nr-you-out.png" });

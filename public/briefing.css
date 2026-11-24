@@ -465,3 +465,14 @@ body.desk:has(.envelope-scene) { background: #1c1c1d; }
 #app .screen.scene .crowd:not(.b0) .pawn.me { color: #f0d58f; filter: drop-shadow(0 0 12px rgba(235, 209, 154, 0.55)); }
 #app .screen.scene .crowd.b2 .pawn.out { opacity: 0.13; }
 #app .screen.scene .crowd.b3 .pawn:not(.me) { opacity: 0.1; }
+
+/* ---------- the front page: one address, and each player's word ---------- */
+#app .screen.word-door { gap: 14px; }
+#app .word-box { display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(100%, 320px); margin-top: 22px; }
+#app .word-box label { font-family: var(--label); font-weight: 700; font-size: 15px; letter-spacing: 0.18em; text-transform: uppercase; color: #d7bf8f; }
+#app .word-box input { width: 100%; padding: 14px 10px 14px 22px; background: #0d1416; border: 1.5px solid #8f7c4e; border-radius: 4px; color: #fff; font-family: var(--typed, "Courier Prime", monospace); font-weight: 700; font-size: 34px; letter-spacing: 0.42em; text-align: center; text-transform: uppercase; caret-color: #ebd19a; }
+#app .word-box input::placeholder { color: #3d4a4f; }
+#app .word-box input:focus { outline: none; border-color: #ebd19a; box-shadow: 0 0 0 3px rgba(235, 209, 154, 0.18); }
+#app .word-box .btn { width: 100%; }
+#app .word-box .note { min-height: 2.6em; margin: 0; text-align: center; }
+#app .word-box .note.bad { color: #ff8a7a; }

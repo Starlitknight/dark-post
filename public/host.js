@@ -110,6 +110,10 @@
     $("auto").checked = !!state.autoOpen;
     $("show-choices").checked = !!state.showChoices;
     $("betting-open").checked = !!state.bettingOpen;
+    $("door-address").textContent = location.origin;
+    var wrong = $("wrong-words");
+    wrong.hidden = !state.wrongWords;
+    wrong.textContent = state.wrongWords ? state.wrongWords + (state.wrongWords === 1 ? " wrong word has" : " wrong words have") + " been typed at the door in the last hour. A few are typos. Dozens mean someone is guessing; the door shuts itself for the hour at 40." : "";
     // Night 1 is shelved while its art is redrawn. /host?night=1 shows its controls.
     $("night-panel").hidden = new URLSearchParams(location.search).get("night") !== "1";
     fillLetter(state.letter);
@@ -171,7 +175,7 @@
       "<div><b>" + declined.length + "</b><span>Declined</span></div>";
 
     if (!list.length) {
-      $("invites").innerHTML = '<p class="table-empty">No invitations yet. Add names above to create the links.</p>';
+      $("invites").innerHTML = '<p class="table-empty">No invitations yet. Add names above. Each one gets a word.</p>';
     } else {
       var rows = list.map(function (inv) {
         var bag = "";
@@ -188,8 +192,10 @@
           "<td>" + statusChip(inv) + (inv.out ? ' <span class="chip red">Out</span>' : "") + "</td>" +
           '<td class="num">' + (inv.number != null ? inv.number : "") + "</td>" +
           "<td>" + esc(bag) + "</td>" +
+          '<td class="word">' + esc(inv.word || "") + "</td>" +
           '<td class="actions">' +
-          '<button type="button" class="link" data-do="copy">Copy link</button>' +
+          '<button type="button" class="link" data-do="copy">Copy invitation</button>' +
+          '<button type="button" class="link quiet" data-do="reword">New word</button>' +
           '<button type="button" class="link quiet" data-do="rename">Rename</button>' +
           (inv.status !== "invited" && state.phase !== "revealed" ? '<button type="button" class="link quiet" data-do="reset">Reset</button>' : "") +
           '<button type="button" class="link quiet" data-do="remove">Remove</button>' +
@@ -197,7 +203,7 @@
         );
       });
       $("invites").innerHTML =
-        '<table class="table"><thead><tr><th>Name</th><th>Status</th><th>Player</th><th>Bag</th><th></th></tr></thead><tbody>' +
+        '<table class="table"><thead><tr><th>Name</th><th>Status</th><th>Player</th><th>Bag</th><th>Word</th><th></th></tr></thead><tbody>' +
         rows.join("") + "</tbody></table>";
     }
 
@@ -267,12 +273,18 @@
 
   $("show-bags").addEventListener("change", function () { showBags = this.checked; draw(); });
 
+  // What to send a player: the one address, and their word.
+  function inviteText(inv) {
+    return "Dark Post is a game. Go to " + location.origin + " and enter your word: " + inv.word;
+  }
+  $("copy-address").addEventListener("click", function () { copy(location.origin, "Address copied."); });
+
   $("copy-all").addEventListener("click", function () {
     var lines = state.invites
       .filter(function (i) { return i.status === "invited"; })
-      .map(function (i) { return i.name + ": " + location.origin + i.link; });
+      .map(function (i) { return i.name + ": " + inviteText(i); });
     if (!lines.length) { toast("There are no unanswered invitations."); return; }
-    copy(lines.join("\n"), lines.length + " links copied.");
+    copy(lines.join("\n"), lines.length + " invitations copied.");
   });
 
   $("invites").addEventListener("click", function (e) {
@@ -282,7 +294,11 @@
     var inv = state.invites.filter(function (i) { return i.token === token; })[0];
     if (!inv) return;
     var what = btn.getAttribute("data-do");
-    if (what === "copy") copy(location.origin + inv.link, "Link for " + inv.name + " copied.");
+    if (what === "copy") copy(inviteText(inv), "Invitation for " + inv.name + " copied.");
+    else if (what === "reword") {
+      if (window.confirm("Give " + inv.name + " a new word? The old word stops working and they are signed out everywhere until they type the new one."))
+        run(api("POST", "/api/host/invite/reword", { token: token }), "New word made.");
+    }
     else if (what === "rename") {
       var name = window.prompt("Name printed on the letter:", inv.name);
       if (name && name.trim()) run(api("POST", "/api/host/invite/update", { token: token, name: name.trim() }), "Renamed.");
@@ -290,7 +306,7 @@
       if (window.confirm("Reset " + inv.name + "? Their answer, number and sealed choice are erased and they see the letter again."))
         run(api("POST", "/api/host/invite/reset", { token: token }), "Reset.");
     } else if (what === "remove") {
-      if (window.confirm("Remove " + inv.name + "? Their link stops working."))
+      if (window.confirm("Remove " + inv.name + "? Their word stops working."))
         run(api("POST", "/api/host/invite/delete", { token: token }), "Removed.");
     }
   });

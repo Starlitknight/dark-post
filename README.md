@@ -53,9 +53,10 @@ In the host console:
    length it is: it is laid out to fit one phone screen, with Accept and Decline
    always visible below it. A longer letter scrolls inside the sheet.
 3. Open each preview in section 5 on your phone.
-4. Create one invitation named "Test", open its link in a private window, and play
-   it through. Then press Remove on it, which frees the seat and the number.
-5. Add your guests' names and send each person their own link.
+4. Create one invitation named "Test", open the game's address in a private window,
+   type its word, and play it through. Then press Remove on it, which frees the seat
+   and the number.
+5. Add your guests' names. Send each person the one address and their own word.
 
 ## What a guest goes through
 

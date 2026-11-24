@@ -13,7 +13,8 @@ const login = await call("POST", "/api/host/login", { passphrase: "lantern-walk-
 const host = { Cookie: login.cookie.split(";")[0] };
 await call("POST", "/api/host/invites", { names: ["Maya", "Arjun", "Leila", "Tomas"] }, host);
 await call("POST", "/api/host/settings", { opensAt: new Date(Date.now() + 864e5).toISOString() }, host);
-const tokens = (await call("GET", "/api/host/state", null, host)).invites.map((i) => i.token);
+const invited = (await call("GET", "/api/host/state", null, host)).invites;
+const tokens = invited.map((i) => i.token), words = invited.map((i) => i.word);
 const seat = (i) => ({ "X-Seat": tokens[i] });
 for (let i = 1; i < 4; i++) {
   await call("POST", "/api/respond", { accept: true }, seat(i));
@@ -28,8 +29,15 @@ page.on("console", (m) => { if (m.type() === "error" && !/40[13479]|429/.test(m.
 page.on("requestfailed", (r) => { if (!/ws$|\/live/.test(r.url())) problems.push("request failed: " + r.url().replace(BASE, "")); });
 page.on("response", (r) => { if (r.status() === 404) problems.push("404: " + r.url().replace(BASE, "")); });
 await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-await page.goto(BASE + "/i/" + tokens[0] + "?notype=1", { waitUntil: "networkidle0" });
+// one address for everyone: the front page asks for this player's word
+await page.goto(BASE + "/?notype=1", { waitUntil: "networkidle0" });
 await sleep(1500);
+await page.screenshot({ path: SHOTS + "/mf00-word.png" });
+await page.type("#word", "zzzzz"); await page.click("#word-go"); await sleep(900);
+ok("the shared address asks for a word, and refuses a wrong one", (await page.$eval("#app", (el) => el.dataset.scene)) === "none" && (await page.$eval("#word-note", (el) => el.textContent)).includes("not a word"));
+await page.$eval("#word", (el) => { el.value = ""; });
+await page.type("#word", words[0].toLowerCase()); await page.keyboard.press("Enter"); await sleep(1500);
+ok("the right word, typed in lower case, opens this player's envelope", (await page.$eval("#app", (el) => el.dataset.scene)) === "envelope" && !page.url().includes("/i/"));
 const scene = () => page.evaluate(() => document.getElementById("app") ? document.getElementById("app").dataset.scene : document.querySelector("[data-scene]") && document.body.innerHTML.length ? (document.querySelector("#root, main, body > div") || {}).dataset?.scene : "");
 const sceneOf = () => page.evaluate(() => { const el = [...document.querySelectorAll("body > *")].find((x) => x.dataset && x.dataset.scene); return el ? el.dataset.scene : ""; });
 const text = () => page.evaluate(() => document.body.innerText.replace(/\s+/g, " "));
