@@ -52,7 +52,7 @@ const hostCtx = await browser.createBrowserContext();
 const hostPage = await hostCtx.newPage();
 watch(hostPage, "host");
 await hostPage.setViewport({ width: 1280, height: 900 });
-await hostPage.goto(BASE + "/host", { waitUntil: "networkidle0" });
+await hostPage.goto(BASE + "/host?night=1", { waitUntil: "networkidle0" }); // Night 1's controls are hidden unless asked for
 await hostPage.type("#pass", "lantern-walk-seven"); await hostPage.click("#gate-go"); await sleep(1500);
 const pad = (x) => String(x).padStart(2, "0");
 const ends = new Date(Date.now() + 6 * 3600e3);

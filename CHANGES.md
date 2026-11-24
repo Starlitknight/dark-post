@@ -1,5 +1,14 @@
 # Dark Post
 
+## House staff and closed rooms, 24 Nov 2026, evening (the GM's instructions, done outside this agent)
+
+- **House staff** stand in four rooms: a dealer (betting room), an attendant (puzzle room), an attendant (arena) and a shopkeeper (shop). Same avatar art as players, but no number, an ivory name plate, and they never move (`STAFF`, `staffHTML` in `public/app.js`). They speak in a card at the bottom of the screen when a player walks in, and again when tapped.
+- **The arena, the shop and the betting room are closed.** No floor mark, no action button; the member of staff says why (`roomOpen`). The arena and shop open by themselves when a night is running. The betting room opens only when the GM ticks the box in the console (`bettingOpen` in `src/worker.js`; the server refuses deals while it is shut).
+- **The puzzle attendant** says whether today's puzzle is done and offers it if not.
+- **Night 1 is shelved while its art is redrawn.** Its panel in the host console is hidden; `/host?night=1` shows it. Nothing on the player's side names Night 1: the round after the bags is "The first game" until the GM names it.
+- **The code puzzle says in words how close each guess was** ("1 digit is right and in the right place") in place of two numbered circles.
+- **The preview's host moves left the player's menu.** `window.DP_PREVIEW.openBags()`, `.betting(true)`, `.startNight()` and `.endNight()` do them in preview mode. Real players never had these controls.
+
 ## Opening pictures, 24 Nov 2026, later (the GM's instructions, done outside this agent)
 
 - **The number draw is the ring again**: sixteen numbered discs with one large number in the middle that runs with the light and lands on the player's number. The badge picture is no longer used.

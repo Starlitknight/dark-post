@@ -780,6 +780,7 @@
           "</div>" +
           '<div class="hud-say">' + sayHTML() + "</div>" +
           '<button type="button" class="onair" id="onair" data-act="go" data-scene="table" hidden></button>' +
+          '<div class="npc-talk" id="npc-talk" role="dialog" aria-live="polite" hidden></div>' +
           '<div class="hud-bottom">' +
           '<button type="button" class="btn hud-action" id="hud-action" data-act="use" hidden></button>' +
           '<button type="button" class="menu-btn" id="menu-btn" data-act="menu" aria-haspopup="dialog" aria-expanded="false" disabled>Menu<span id="menu-n"></span></button>' +
@@ -1097,8 +1098,8 @@
           '<div class="guide">' +
           card(ICON.goal, "How you win", "Sixteen players enter. The last one in the house wins. Everyone plays under a number.") +
           card(ICON.hall, "Walk the house", "Tap or click the floor to walk. You can also use the arrow keys or WASD. Walk through a marked door to enter the next room.") +
-          card(ICON.arena, "Play each night", "The Gamemaster sets a match in the arena. Check the clock for the deadline. A loss can eliminate you.") +
-          card(ICON.bank, "Earn coins", "Your balance appears at the top of the screen. Bag payouts, puzzles and deals affect your total. Standings shows public coin rankings.", '<button type="button" class="link" data-act="rules">How the two bags work</button>') +
+          card(ICON.arena, "Pass the tests", "The Gamemaster holds each of Mr. Crane’s tests in the arena, and says when it starts and ends. Doing poorly can eliminate you.") +
+          card(ICON.bank, "Earn coins", "Your balance appears at the top of the screen. Your bag and the daily puzzle add to it. Standings shows public coin rankings.", '<button type="button" class="link" data-act="rules">How the two bags work</button>') +
           card(ICON.whispers, "Talk to people", "Messages are private between two players and the GM. To speak to everyone, use the broadcast room.") +
           card(ICON.study, "Ask the Gamemaster", "Open Ask the GM to send a private question. Open Broadcast for public messages and GM notices.") +
           '<button type="button" class="btn ghost" data-act="go" data-scene="tour">Tour the rooms</button>' +
@@ -1335,12 +1336,12 @@
   var TOUR = [
     { art: "hall", intro: true, title: "The Crane Estate", line: "Welcome to the Crane Estate. Mr. Crane built this game arena specifically to decide his heir. Let me show you around." },
     { art: "hall", place: "hall", line: "The hall connects all six rooms. Tap the floor to walk, then cross a marked doorway." },
-    { art: "arena", place: "arena", line: "Come here for the nightly match. The clock tells you when it begins." },
+    { art: "arena", place: "arena", line: "Mr. Crane’s tests are held here. It is closed until the first one." },
     { art: "puzzle", place: "puzzle", line: "Try the daily puzzle at the terminal. You have three attempts to earn one coin." },
-    { art: "betting", place: "betting", line: "Make a deal with another player. The payoff depends on whether each of you cooperates or betrays." },
+    { art: "betting", place: "betting", line: "The betting room. The dealer will tell you when it opens for bets." },
     { art: "studio", place: "studio", line: "Use the microphone to send a message everyone can read." },
     { art: "gallery", place: "gallery", line: "Tap a portrait to see that player’s card." },
-    { art: "shop", place: "shop", line: "The shop opens on match nights. Spend coins there on clues." },
+    { art: "shop", place: "shop", line: "The shop is closed for now. It opens when the games start." },
     { art: "hall", menu: true, line: "Open Menu anywhere to message a player, ask me a question or check the standings." },
   ];
 
@@ -1542,6 +1543,78 @@
   }
 
   // Put a figure on the floor for every player who is in this room.
+  // House staff. They are not players: no number, an ivory name plate, the house uniform, and they never move.
+  var STAFF = {
+    betting: { name: "Dealer", at: [620, 404], look: { f: 1, s: 4, h: 0, c: 1, b: 2, m: 1, o: 8, t: 3 } },
+    puzzle: { name: "Attendant", at: [812, 338], look: { s: 1, h: 8, c: 1, e: 1, m: 0, o: 8, t: 3 } },
+    arena: { name: "Attendant", at: [905, 965], look: { f: 1, s: 2, h: 11, c: 1, m: 0, o: 8, t: 3 } },
+    shop: { name: "Shopkeeper", at: [640, 282], look: { f: 1, s: 0, h: 13, c: 1, b: 4, m: 2, o: 8, t: 3 } },
+  };
+
+  // Which rooms are doing business. The GM decides; players cannot open anything.
+  function roomOpen(id) {
+    var n = hall && hall.night;
+    if (id === "arena") return !!n;
+    if (id === "shop") return !!(n && n.status === "open");
+    if (id === "betting") return !!(hall && hall.bettingOpen);
+    return true;
+  }
+
+  function staffHTML(id) {
+    var st = STAFF[id];
+    if (!st) return "";
+    return '<button type="button" class="actor npc" data-act="npc" style="transform: translate3d(' + (st.at[0] - 32) + "px," + (st.at[1] - 104) + "px,0); z-index: " + Math.round(st.at[1]) + '" aria-label="' + st.name + ', house staff">' +
+      '<span class="actor-tag">' + st.name + '</span><span class="actor-fig">' + AV.sprite(st.look, null) + "</span></button>";
+  }
+
+  // What a member of staff says, and what the player can do about it.
+  function staffLine(id, pz) {
+    var n = hall && hall.night;
+    if (id === "betting") {
+      return roomOpen(id)
+        ? { text: "The tables are open. Make a deal when you are ready.", go: ["deal", "Make a deal"] }
+        : { text: "The betting room is closed for bets right now, but feel free to explore the space. To place bets, check again later, when the games start." };
+    }
+    if (id === "arena") {
+      if (!n) return { text: "The GM is preparing the next game, so this area is closed right now, but feel free to explore." };
+      return n.status === "open" ? { text: "Tonight’s match is on the stage.", go: ["arena", "Play tonight’s match"] } : { text: "Tonight’s match is over. The result is on the stage.", go: ["arena", "See the result"] };
+    }
+    if (id === "shop") {
+      return roomOpen(id)
+        ? { text: "The shop is open.", go: ["shop", "See what is for sale"] }
+        : { text: "The shop is closed right now. It will open when the games start." };
+    }
+    if (id === "puzzle") {
+      if (!pz) return { text: "One moment." };
+      if (pz.solved) return { text: "I see you have done today’s puzzle. Check again later for a different puzzle." };
+      if (pz.left <= 0) return { text: "You have used all three tries on today’s puzzle. Check again later for a different puzzle." };
+      return { text: "I see you haven’t done today’s puzzle. Would you like to solve it now?", go: ["puzzle", "Solve it now"], later: "Not now" };
+    }
+    return null;
+  }
+
+  var talkedIn = ""; // the room whose staff has already spoken on this visit
+  function drawTalk(id, pz) {
+    var box = $("npc-talk"), st = STAFF[id], line = staffLine(id, pz);
+    if (!box || !st || !line || !stage || stage.room !== id) return;
+    box.innerHTML =
+      '<span class="npc-face">' + AV.draw(st.look, { ring: "#EFE8D6", ringWidth: 3, label: st.name }) + "</span>" +
+      '<div class="npc-words"><b>' + st.name + "<i>House staff</i></b><p>" + esc(line.text) + '</p><div class="npc-acts">' +
+      (line.go ? '<button type="button" class="btn" data-act="go" data-scene="' + line.go[0] + '">' + line.go[1] + "</button>" : "") +
+      '<button type="button" class="btn ghost" data-act="talkClose">' + (line.later || "OK") + "</button></div></div>";
+    box.hidden = false;
+  }
+  function openTalk(id) {
+    if (!STAFF[id]) return;
+    if (id !== "puzzle") return drawTalk(id);
+    drawTalk(id, ui.pz && ui.pz.resetAt > Date.now() ? ui.pz : null);
+    api("GET", "/api/puzzle").then(function (pz) { ui.pz = pz; if (stage && stage.room === id && !$("npc-talk").hidden) drawTalk(id, pz); }).catch(function () {});
+  }
+  function closeTalk() {
+    var box = $("npc-talk");
+    if (box) box.hidden = true;
+  }
+
   function buildActors() {
     var out = "";
     hall.seats.forEach(function (s) {
@@ -1569,6 +1642,7 @@
       actors[n] = { n: n, room: stage.room, x: p[0], y: p[1], path: was ? was.path : [], then: was ? was.then : null, el: el, walking: false, flip: was ? was.flip : false, empty: empty };
       place(actors[n]);
     });
+    box.insertAdjacentHTML("beforeend", staffHTML(stage.room));
     stage.sig = roomSig();
     dressActors();
   }
@@ -1613,7 +1687,7 @@
       };
     }
     var revealed = hall.phase === "revealed";
-    var name = revealed ? hall.nextName || "Night 1" : "The bags open";
+    var name = revealed ? hall.nextName || "The first game" : "The bags open";
     var at = new Date(revealed ? hall.nextAt : hall.opensAt).getTime();
     var left = at - Date.now();
     var count = isNaN(at) ? (revealed ? "To be announced" : "Soon") : left <= 0 ? (revealed ? "Starting" : "Any moment") : span(left);
@@ -1623,7 +1697,7 @@
       next: name,
       at: at,
       count: count,
-      todo: hall.out ? "You are out of the game. You can still watch." : revealed ? "Solve today’s puzzle or make a deal." : "You have taken your bag. Try the daily puzzle while you wait.",
+      todo: hall.out ? "You are out of the game. You can still watch." : revealed ? (hall.bettingOpen ? "Solve today’s puzzle or make a deal." : "Solve today’s puzzle. Talk to the other players.") : "You have taken your bag. Try the daily puzzle while you wait.",
     };
   }
 
@@ -1684,7 +1758,7 @@
         "</div>" +
         '<div class="s-card next"><i>Next</i><h2>' + esc(s.next) + '</h2><b class="s-count" id="sched-count"></b>' + (when ? "<p>" + esc(when) + "</p>" : "") +
         (s.revealed ? "<p>It is played here, in the arena.</p>" : "") + "</div>" +
-        (s.revealed ? "" : '<div class="s-card then"><i>Then</i><h2>' + esc(hall.nextName || "Night 1") + "</h2><p>" + esc(later) + "</p></div>") +
+        (s.revealed ? "" : '<div class="s-card then"><i>Then</i><h2>' + esc(hall.nextName || "The first game") + "</h2><p>" + esc(later) + "</p></div>") +
         '<div class="s-card todo"><i>What to do now</i><p>' + esc(s.todo) + "</p></div>";
     }
     var c = $("sched-count");
@@ -1705,9 +1779,6 @@
       (hall.night ? '<button type="button" class="menu-night" data-act="go" data-scene="tonight"><span><i>' + (hall.night.status === "open" ? "Being played now" : "Finished") + "</i><b>Night " + hall.night.n + " · Six Vaults</b></span><small>" + (hall.night.status === "open" ? (hall.night.opened ? "Your vaults are sealed" : "Your clue and the rules") : "See the result") + "</small></button>" : "") +
       menuNowHTML() +
       '<div class="menu-grid">' + items.join("") + '</div>' +
-      (demo && me.phase !== "revealed" ? '<button type="button" class="link menu-preview" data-act="demoOpen">Preview: open the bags</button>' : "") +
-      (demo && me.phase === "revealed" && !hall.night ? '<button type="button" class="link menu-preview" data-act="demoNight">Preview: start Night 1</button>' : "") +
-      (demo && hall.night && hall.night.status === "open" ? '<button type="button" class="link menu-preview" data-act="demoNightEnd">Preview: end the night</button>' : "") +
       '</div>';
   }
 
@@ -1743,7 +1814,7 @@
     var n = hall && hall.night;
     WORLD.setArena(n ? n.game : "");
     WORLD.setShop(!!(n && n.status === "open"));
-    return n ? n.game + ":" + n.status : "";
+    return (n ? n.game + ":" + n.status : "") + (hall && hall.bettingOpen ? "+b" : "");
   }
 
   function buildRoom(first) {
@@ -1762,7 +1833,7 @@
       });
     }
     R.spots.forEach(function (s, i) {
-      if (s.mark) extras += '<button type="button" class="mark" data-act="use" data-i="' + i + '" style="left: ' + s.mark[0] + "px; top: " + s.mark[1] + "px; --place: " + PLACES[id].color + '" aria-label="' + s.label + '"><span class="mark-gem"></span><span class="mark-n" id="mark-n"></span></button>';
+      if (s.mark && roomOpen(id)) extras += '<button type="button" class="mark" data-act="use" data-i="' + i + '" style="left: ' + s.mark[0] + "px; top: " + s.mark[1] + "px; --place: " + PLACES[id].color + '" aria-label="' + s.label + '"><span class="mark-gem"></span><span class="mark-n" id="mark-n"></span></button>';
     });
     // Things drawn in front of some players and behind others, like the bars of a cell.
     WORLD.overlays(id).forEach(function (o) { extras += '<div class="world-over" style="z-index: ' + o.z + '">' + o.svg + "</div>"; });
@@ -1782,6 +1853,8 @@
     here.style.setProperty("--place", PLACES[id].color);
     $("now").hidden = id !== "hall";
     if (id === "hall") flashNow();
+    if (!STAFF[id]) { talkedIn = ""; closeTalk(); }
+    else if (talkedIn !== id) { talkedIn = id; openTalk(id); }
     offerSpot();
     var name = $("room-name");
     name.textContent = first ? "" : PLACES[id].title;
@@ -1795,7 +1868,7 @@
     if (!stage || !stage.room) return;
     var a = actors[me.number];
     var at = a ? [a.x, a.y] : spotOf(me.number).slice(1);
-    var spot = WORLD.spotAt(stage.room, at[0], at[1]);
+    var spot = roomOpen(stage.room) ? WORLD.spotAt(stage.room, at[0], at[1]) : null;
     if (spot === stage.spot) return;
     stage.spot = spot;
     var btn = $("hud-action");
@@ -1835,7 +1908,7 @@
     if (stage.dressed !== set) {
       var was = stage.dressed;
       stage.dressed = set;
-      if (was !== undefined && (stage.room === "arena" || stage.room === "shop")) return buildRoom(false);
+      if (was !== undefined && STAFF[stage.room]) { talkedIn = ""; return buildRoom(false); }
     }
     if (roomSig() !== stage.sig) buildActors();
     else dressActors();
@@ -2034,6 +2107,7 @@
   function walkTo(target, then) {
     var a = hall && actors[hall.you];
     if (!a || !stage || stage.entering) return;
+    closeTalk();
     var to = WORLD.nearest(stage.room, Math.round(target[0]), Math.round(target[1]));
     a.path = WORLD.findPath(stage.room, [a.x, a.y], to);
     a.then = null;
@@ -2271,10 +2345,13 @@
     if (!box || !p) return;
     var body = "";
     if (p.type === "code") {
-      body = '<p class="pz-hint">Each row is a wrong guess, and how close it came.</p>' +
-        '<div class="pz-key"><span><b class="in"></b>Right digit, right place</span><span><b class="near"></b>Right digit, wrong place</span></div>' +
+      body = '<p class="pz-hint">Each row is a wrong guess. Beside it: how close that guess was.</p>' +
         p.data.clues.map(function (c) {
-          return '<div class="pz-clue">' + tiles(c.guess) + '<b class="in" aria-label="' + c.place + ' in the right place">' + c.place + '</b><b class="near" aria-label="' + c.digit + ' in the wrong place">' + c.digit + "</b></div>";
+          var notes = [];
+          if (c.place) notes.push('<span class="in">' + (c.place === 1 ? "1 digit is right and in the right place." : c.place + " digits are right and in the right place.") + "</span>");
+          if (c.digit) notes.push('<span class="near">' + (c.digit === 1 ? "1 digit is right but in the wrong place." : c.digit + " digits are right but in the wrong place.") + "</span>");
+          if (!notes.length) notes.push('<span class="none">No digit is right.</span>');
+          return '<div class="pz-clue said">' + tiles(c.guess) + '<p class="pz-said">' + notes.join("") + "</p></div>";
         }).join("");
     } else if (p.type === "sums") {
       body = p.data.rows.map(function (r) {
@@ -2894,6 +2971,8 @@
   }
 
   function go(scene) {
+    // back from the puzzle: the attendant has something new to say
+    if (scene === "hall" && ui.scene === "puzzle") talkedIn = "";
     ui.scene = scene;
     render();
   }
@@ -3011,6 +3090,8 @@
     else if (name === "hall") go("hall");
     else if (name === "go") go(el.getAttribute("data-scene"));
     else if (name === "seat") { ui.withN = Number(el.getAttribute("data-n")); ui.card = 0; go("whisper"); }
+    else if (name === "npc") { if (stage && STAFF[stage.room]) openTalk(stage.room); }
+    else if (name === "talkClose") closeTalk();
     else if (name === "actor") {
       var n = Number(el.getAttribute("data-n"));
       if (n !== me.number) approach(n);
@@ -3054,8 +3135,6 @@
     else if (name === "vDone") {
       api("POST", "/api/night/seen", {}).catch(function () {}).then(function () { hall = null; go("hall"); });
     }
-    else if (name === "demoNight") { demoNightStart(); setMenu(false); loadHall().then(function () { refreshStage(); go("tonight"); }); }
-    else if (name === "demoNightEnd") { demoNightEnd(); setMenu(false); loadHall().then(refreshStage); }
     else if (name === "cardClose") { ui.card = 0; $("card").hidden = true; }
     else if (name === "dealTo") { ui.dealTo = Number(el.getAttribute("data-n")); drawDeal(); }
     else if (name === "dealPick") { ui.dealPick = { id: Number(el.getAttribute("data-id")) || 0, n: Number(el.getAttribute("data-n")), choice: el.getAttribute("data-c") }; drawDeal(); }
@@ -3078,14 +3157,6 @@
       var scene = SCENES[currentScene()];
       go(typeof scene.next === "function" ? scene.next() : scene.next);
     } else if (name === "seen") act("POST", "/api/seen", {}, function () { ui.scene = "ledger"; hall = null; });
-    else if (name === "demoOpen") {
-      var keep = me;
-      me = demoMake("reveal", keep.bag, keep.number, keep.avatar);
-      me.letter = keep.letter;
-      ui.scene = "";
-      hall = null;
-      render();
-    }
   });
 
   root.addEventListener("input", function (event) {
@@ -3259,12 +3330,13 @@
         if (d.night && d.night.result && d.night.result.out === s.number) seat.out = 1;
         return seat;
       }),
-      unread: { table: count("table"), study: count("study", true), board: count("board"), whispers: whispers.reduce(function (sum, t) { return sum + t.unread; }, 0), deals: revealed ? d.deals.incoming.length : 0 },
+      unread: { table: count("table"), study: count("study", true), board: count("board"), whispers: whispers.reduce(function (sum, t) { return sum + t.unread; }, 0), deals: revealed && d.bettingOpen ? d.deals.incoming.length : 0 },
       whispers: whispers,
       coins: revealed ? me.coins + d.extra : null,
       banked: d.extra,
       lastCast: d.msgs.filter(function (m) { return m.room === "table"; }).slice(-1).map(function (m) { return { id: m.id, from: m.from, body: m.body, at: m.at }; })[0] || null,
       cell: 0,
+      bettingOpen: !!d.bettingOpen,
       out: d.night && d.night.result && d.night.result.out === me.number ? 1 : 0,
       night: d.night ? { n: 1, game: "vaults", status: d.night.status, endsAt: d.night.endsAt, opened: !!d.night.opened, unseen: d.night.status === "done" && !d.night.seen } : null,
     };
@@ -3469,7 +3541,24 @@
       me = demoMake(demo);
       if (query.get("scene")) ui.scene = query.get("scene");
       // preview only: lets a review script jump to a screen or step into the next room
-      window.DP_PREVIEW = { go: go, enter: enterRoom };
+      // The GM's moves, for the preview only. Real players have no such controls: only the host console does.
+      window.DP_PREVIEW = {
+        go: go,
+        enter: enterRoom,
+        openBags: function () {
+          if (!me || me.state !== "hall" || me.phase === "revealed") return false;
+          var keep = me;
+          me = demoMake("reveal", keep.bag, keep.number, keep.avatar);
+          me.letter = keep.letter;
+          ui.scene = "";
+          hall = null;
+          render();
+          return true;
+        },
+        betting: function (open) { demoHallStore().bettingOpen = !!open; return loadHall().then(refreshStage); },
+        startNight: function () { demoNightStart(); setMenu(false); return loadHall().then(function () { refreshStage(); go("tonight"); }); },
+        endNight: function () { demoNightEnd(); setMenu(false); return loadHall().then(refreshStage); },
+      };
       if (query.get("with")) ui.withN = parseInt(query.get("with"), 10) || 0;
       if (query.get("tab")) ui.tab = query.get("tab");
       if (query.get("pick")) ui.pick = parseInt(query.get("pick"), 10) || 0;

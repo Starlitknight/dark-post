@@ -30,6 +30,7 @@ const DEAL_STAKE = 2;
 const DEAL_PAY = { cc: [1, 1], cb: [-2, 2], bc: [2, -2], bb: [-1, -1] };
 const WORLD_MAX = 2000;
 const GM = 0; // the Gamemaster's number in messages
+const NEXT_NAME = "The first game"; // what the clock calls the round after the bags, until the GM names it
 
 const DEFAULT_LETTER = {
   kicker: "Dark Post",
@@ -516,8 +517,10 @@ export class Game extends DurableObject {
       phase,
       opensAt: this.get("opens_at", ""),
       nextAt: this.get("next_at", ""),
-      nextName: this.get("next_name", "Night 1"),
+      nextName: this.get("next_name", NEXT_NAME),
       canEditFace: phase !== "revealed",
+      // rooms the GM has opened. The betting room stays shut until the GM opens it.
+      bettingOpen: this.bettingOpen(),
       pos: this.positions(),
       online: this.onlineNumbers(),
       seats,
@@ -751,7 +754,7 @@ export class Game extends DurableObject {
     const past = this.sql.exec(`SELECT * FROM deals WHERE status != 'open' AND (a = ? OR b = ?) ORDER BY id DESC LIMIT 12`, n, n).toArray();
     const others = this.sql.exec(`SELECT number FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL AND out = 0 AND number != ? ORDER BY number`, n).toArray();
     return {
-      open: this.phase() === "revealed",
+      open: (this.phase() === "revealed") && this.bettingOpen(),
       stake: DEAL_STAKE,
       pay: DEAL_PAY,
       balance: this.balance(me),
@@ -775,6 +778,11 @@ export class Game extends DurableObject {
     };
   }
 
+  // Only the GM opens the betting room.
+  bettingOpen() {
+    return this.get("betting_open", "0") === "1";
+  }
+
   deals(request) {
     const inv = this.inHall(request);
     if (!inv) return json({ error: "You are not in the hall yet." }, 403);
@@ -787,6 +795,7 @@ export class Game extends DurableObject {
     const body = await readJson(request);
     this.expireDeals();
     if (inv.out) return json({ error: "You are out of the game." }, 403);
+    if (!this.bettingOpen()) return json({ error: "The betting room is closed." }, 409);
     if (this.phase() !== "revealed") return json({ error: "The betting room opens when the bags open." }, 409);
     const choice = body.choice === "c" || body.choice === "b" ? body.choice : null;
     if (!choice) return json({ error: "Choose Cooperate or Betray." }, 400);
@@ -806,6 +815,7 @@ export class Game extends DurableObject {
     if (!inv) return json({ error: "You are not in the hall yet." }, 403);
     const body = await readJson(request);
     this.expireDeals();
+    if (!this.bettingOpen()) return json({ error: "The betting room is closed." }, 409);
     const rows = this.sql.exec(`SELECT * FROM deals WHERE id = ? AND status = 'open'`, Number(body.id) || 0).toArray();
     if (!rows.length) return json({ error: "That offer is no longer open." }, 404);
     const d = rows[0];
@@ -1312,8 +1322,9 @@ export class Game extends DurableObject {
       opensAt: this.get("opens_at", ""),
       replyBy: this.get("reply_by", ""),
       nextAt: this.get("next_at", ""),
-      nextName: this.get("next_name", "Night 1"),
+      nextName: this.get("next_name", NEXT_NAME),
       autoOpen: this.get("auto_open", "0") === "1",
+      bettingOpen: this.bettingOpen(),
       showChoices: this.showChoices(),
       letter: this.letter(),
       defaultLetter: DEFAULT_LETTER,
@@ -1443,7 +1454,7 @@ export class Game extends DurableObject {
       }
       this.set("letter", JSON.stringify({ ...this.letter(), ...clean }));
     }
-    if (body.nextName != null) this.set("next_name", String(body.nextName).trim().slice(0, 40) || "Night 1");
+    if (body.nextName != null) this.set("next_name", String(body.nextName).trim().slice(0, 40) || NEXT_NAME);
     for (const [field, key] of [["opensAt", "opens_at"], ["replyBy", "reply_by"], ["nextAt", "next_at"]]) {
       if (body[field] != null) {
         const value = String(body[field]);
@@ -1452,6 +1463,7 @@ export class Game extends DurableObject {
       }
     }
     if (body.autoOpen != null) this.set("auto_open", body.autoOpen ? "1" : "0");
+    if (body.bettingOpen != null) this.set("betting_open", body.bettingOpen ? "1" : "0");
     if (body.showChoices != null) this.set("show_choices", body.showChoices ? "1" : "0");
     return json({ ok: true });
   }

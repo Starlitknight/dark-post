@@ -102,11 +102,36 @@ const walk = async (to, title) => {
   for (let i = 0; i < 240; i++) { if ((await page.$eval("#top-room", (el) => el.textContent)) === title) { await sleep(1300); return true; } await sleep(250); }
   return false;
 };
+// The arena, the betting room and the shop are closed: a member of staff says so, and there is nothing to press.
+// The puzzle room is open: its attendant offers today's puzzle, and solving it pays.
+const talk = () => page.evaluate(() => { const b = document.getElementById("npc-talk"); return b && !b.hidden ? b.innerText.replace(/\s+/g, " ") : ""; });
+const closed = { arena: "GM is preparing the next game", betting: "closed for bets right now", shop: "shop is closed right now" };
 for (const [id, title] of [["arena", "The arena"], ["puzzle", "Puzzle room"], ["betting", "Betting room"], ["studio", "Broadcast room"], ["gallery", "Gallery"], ["shop", "The shop"]]) {
   const got = await walk(id, title);
-  let used = false, inside = "";
-  if (got) { await snap("room-" + id); used = await tryClick("#hud-action"); await sleep(1300); inside = await sceneOf(); await snap("in-" + id); await tryClick('[data-act="hall"], [data-act="go"][data-scene="hall"]'); await sleep(900); }
-  ok("walks into " + title + (inside ? " and opens its page (" + inside + ")" : ""), got && (used || id === "gallery"));
+  if (got && closed[id]) {
+    await snap("room-" + id);
+    const t = await talk();
+    ok(title + ": a member of staff says it is closed, with no number on them and nothing to press", t.includes(closed[id]) && t.includes("HOUSE STAFF") && (await page.$eval("#hud-action", (el) => el.hidden)) && (await page.$("#world .mark")) === null && (await page.$eval(".actor.npc", (el) => !/\d/.test(el.textContent))));
+    await tryClick('[data-act="talkClose"]'); await sleep(300);
+  } else if (got && id === "puzzle") {
+    await sleep(700); await snap("room-puzzle");
+    const offer = await talk();
+    const answer = (await call("GET", "/api/host/activity", null, host)).puzzle.players.find((p) => p.n === me.number).answer;
+    const before = (await call("GET", "/api/hall", null, seat(0))).coins;
+    await tryClick('.npc-talk [data-scene="puzzle"]'); await sleep(1400);
+    await snap("puzzle");
+    await page.type("#pz-answer", String(answer)); await tryClick("#pz-send"); await sleep(1600);
+    const solved = (await text()).includes("Solved.");
+    const now = (await call("GET", "/api/hall", null, seat(0))).coins;
+    ok("the attendant offers today's puzzle, and solving it pays one coin (" + before + " to " + now + ")", offer.includes("haven’t done today’s puzzle") && solved && now === before + 1);
+    await tryClick('[data-act="hall"], [data-act="go"][data-scene="hall"]'); await sleep(1500);
+    ok("the coin shows at once, and the attendant says the puzzle is done", (await page.$eval("#top-coins", (el) => el.textContent)) === now + " coins" && (await talk()).includes("have done today’s puzzle"));
+    await tryClick('[data-act="talkClose"]'); await sleep(300);
+  } else {
+    let used = false, inside = "";
+    if (got) { await snap("room-" + id); used = await tryClick("#hud-action"); await sleep(1300); inside = await sceneOf(); await snap("in-" + id); await tryClick('[data-act="hall"], [data-act="go"][data-scene="hall"]'); await sleep(900); }
+    ok("walks into " + title + (inside ? " and opens its page (" + inside + ")" : ""), got && (used || id === "gallery"));
+  }
   if (got && !(await walk("hall", "The hall"))) { problems.push("could not walk back from " + title); break; }
 }
 console.log(problems.length ? "\nPROBLEMS:\n" + [...new Set(problems)].join("\n") : "\nNO PROBLEMS");

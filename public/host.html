@@ -43,7 +43,7 @@
     <div id="mview" class="mview"></div>
   </section>
 
-  <section class="panel" id="night-panel">
+  <section class="panel" id="night-panel" hidden>
     <h2>Night 1: Six Vaults</h2>
     <p class="help">Three vaults are empty and three hold 10, 5 and 2 gold. Each player is dealt one true clue, can buy one more in the shop for 1 coin, and opens two vaults. The least gold is out, and a tie for last is played as Rock Paper Scissors from throws each player seals. Start it after the bags are open. The vaults close by themselves at the time you set, or when you press the button.</p>
     <form id="night-form" class="row coins-form">
@@ -95,7 +95,7 @@
       <label class="check wide"><input type="checkbox" id="auto"> Open the bags by themselves at that time, so I do not have to be awake</label>
       <div>
         <label for="next-name">The next round is called</label>
-        <input id="next-name" type="text" maxlength="40" placeholder="Night 1">
+        <input id="next-name" type="text" maxlength="40" placeholder="The first game">
       </div>
       <div>
         <label for="next-at">It begins</label>
@@ -135,6 +135,7 @@
   <section class="panel">
     <h2>4. Opening night</h2>
     <label class="check"><input type="checkbox" id="show-choices"> When the bags open, show every player which numbers took which bag</label>
+    <label class="check"><input type="checkbox" id="betting-open"> The betting room is open for deals (leave off until you want players betting)</label>
     <p class="help">Unticked, players only learn how many took each bag, and their own coins.</p>
     <div id="night"></div>
   </section>

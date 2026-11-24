@@ -217,7 +217,7 @@ check("the live line refuses a plain request", status == 426)
 
 # --- the clock: what comes after the bags ---
 h = call("GET", "/api/hall", cookies=seat(A))[1]
-check("the next round has a name before the host sets one, and no time", h.get("nextName") == "Night 1" and h.get("nextAt") == "")
+check("the next round has a name before the host sets one, and no time", h.get("nextName") == "The first game" and h.get("nextAt") == "")
 status, body, _ = call("POST", "/api/host/settings", {"nextName": "Night 1: Four Wings", "nextAt": "2099-12-06T02:00:00Z"}, host)
 check("the host can name the next round and say when it begins", status == 200)
 h = call("GET", "/api/hall", cookies=seat(A))[1]
@@ -226,7 +226,7 @@ status, body, _ = call("POST", "/api/host/settings", {"nextAt": "not a date"}, h
 check("a date that cannot be read is refused", status == 400)
 status, body, _ = call("POST", "/api/host/settings", {"nextName": "", "nextAt": ""}, host)
 h = call("GET", "/api/hall", cookies=seat(A))[1]
-check("and both can be cleared again", status == 200 and h.get("nextName") == "Night 1" and h.get("nextAt") == "")
+check("and both can be cleared again", status == 200 and h.get("nextName") == "The first game" and h.get("nextAt") == "")
 
 # --- the table (public) ---
 status, body, _ = say(A, "table", "Good evening, strangers.")
@@ -383,6 +383,10 @@ check("a solved puzzle is paid when the bags open", hall_of(B)["coins"] == 7 and
 # --- the betting room: two players, two sealed choices ---
 D, E, F, G = tokens[3], tokens[4], tokens[5], tokens[6]
 nD, nE, nF, nG = numbers[3], numbers[4], numbers[5], numbers[6]
+check("the betting room stays shut until the GM opens it", call("GET", "/api/deals", cookies=seat(A))[1]["open"] is False and call("POST", "/api/deal", {"to": nB, "choice": "c"}, seat(A))[0] == 409 and hall_of(A)["bettingOpen"] is False)
+check("a player cannot open it", call("POST", "/api/host/settings", {"bettingOpen": True}, seat(A))[0] in (401, 403) and hall_of(A)["bettingOpen"] is False)
+status, body, _ = call("POST", "/api/host/settings", {"bettingOpen": True}, host)
+check("the GM opens the betting room", status == 200 and hall_of(A)["bettingOpen"] is True)
 deals = call("GET", "/api/deals", cookies=seat(A))[1]
 check("the betting room is open, with the stake and every payoff on show", deals["open"] is True and deals["stake"] == 2 and deals["pay"] == {"cc": [1, 1], "cb": [-2, 2], "bc": [2, -2], "bb": [-1, -1]} and deals["balance"] == 6)
 check("a player can deal with anyone who has arrived", len(deals["players"]) == 13 and nA not in deals["players"])

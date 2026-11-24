@@ -22,7 +22,7 @@ for (const [tag, w, h, mobile] of [["mp", 390, 844, true], ["md", 1440, 900, fal
   const step = async (name, fn) => { try { await fn(); } catch (e) { errors.push(tag + " " + name + ": " + e.message.slice(0, 160)); await snap("FAILED-" + name); } };
   await page.goto(base + "/?demo=hall&revealed=1&notype=1", { waitUntil: "networkidle0" });
   await step("hall", async () => { await until("#world .map-art"); await wait(1500); await snap("hall"); });
-  await step("menu", async () => { await click("#menu-btn"); await wait(500); await snap("menu"); await click('[data-act="demoNight"]'); await wait(1500); await snap("after-start"); });
+  await step("menu", async () => { await click("#menu-btn"); await wait(500); await snap("menu"); await click('[data-act="menuClose"]'); await page.evaluate(() => window.DP_PREVIEW.startNight()); await wait(1500); await snap("after-start"); });
   await step("tonight", async () => { await until('[data-act="vbSkip"]'); await snap("briefing"); await click('[data-act="vbSkip"]'); await until(".vb-grid"); await wait(900); await snap("tonight"); await back(); await snap("hall-night"); });
   await step("menu-night", async () => { await click("#menu-btn"); await wait(500); await snap("menu-night"); await click('[data-act="menuClose"]'); await wait(300); });
   await step("shop", async () => { await enter("shop"); await snap("shop-room"); await click("#hud-action"); await until("#shop .s-card"); await wait(900); await snap("shop"); await click('[data-act="clueBuy"]'); await wait(800); await snap("shop-bought"); await back(); });
@@ -34,7 +34,7 @@ for (const [tag, w, h, mobile] of [["mp", 390, 844, true], ["md", 1440, 900, fal
     await click('[data-act="vaultSealYes"]'); await wait(900); await snap("arena-sealed"); await back(); await snap("arena-room-after");
   });
   await step("reveal", async () => {
-    await click("#menu-btn"); await wait(400); await click('[data-act="demoNightEnd"]'); await until(".v-gate"); await wait(700); await snap("reveal-gate");
+    await page.evaluate(() => window.DP_PREVIEW.endNight()); await until(".v-gate"); await wait(700); await snap("reveal-gate");
     await click('[data-act="vNext"]'); await wait(1500); await snap("reveal-vaults");
     await click('[data-act="vNext"]'); await wait(1800); await snap("reveal-gold");
     await click('[data-act="vNext"]'); await wait(3200); await snap("reveal-out");

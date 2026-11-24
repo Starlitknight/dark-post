@@ -106,6 +106,9 @@
     $("next-at").value = toLocalInput(state.nextAt);
     $("auto").checked = !!state.autoOpen;
     $("show-choices").checked = !!state.showChoices;
+    $("betting-open").checked = !!state.bettingOpen;
+    // Night 1 is shelved while its art is redrawn. /host?night=1 shows its controls.
+    $("night-panel").hidden = new URLSearchParams(location.search).get("night") !== "1";
     fillLetter(state.letter);
   }
 
@@ -319,6 +322,10 @@
 
   $("show-choices").addEventListener("change", function () {
     run(api("POST", "/api/host/settings", { showChoices: this.checked }), "Saved.");
+  });
+
+  $("betting-open").addEventListener("change", function () {
+    run(api("POST", "/api/host/settings", { bettingOpen: this.checked }), this.checked ? "The betting room is open." : "The betting room is closed.");
   });
 
   $("night").addEventListener("click", function (e) {

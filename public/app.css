@@ -2735,3 +2735,26 @@ button.throw { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .vb-dots i.on { background: #ebca83; }
 .vb-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; width: min(100%, 320px); }
 .vb-foot .btn { width: 100%; }
+
+/* ----- house staff: an ivory name plate, no number, and a card for what they say ----- */
+.actor.npc .actor-tag { background: #efe8d6; border-color: #efe8d6; color: #1b2529; letter-spacing: 0.1em; }
+.actor.npc .actor-tag::before { content: ""; flex: none; width: 6px; height: 6px; background: #8f2015; transform: rotate(45deg); }
+.npc-talk { position: absolute; left: 12px; right: 12px; bottom: 86px; z-index: 6; display: flex; gap: 12px; align-items: flex-start; max-width: 560px; margin: 0 auto; padding: 14px; background: rgba(13, 20, 22, 0.97); border: 1px solid #efe8d6; border-radius: 8px; box-shadow: 0 10px 34px rgba(0, 0, 0, 0.7); }
+.npc-talk[hidden] { display: none; }
+.npc-face { flex: 0 0 58px; width: 58px; height: 58px; }
+.npc-face svg { display: block; width: 100%; height: 100%; }
+.npc-words { flex: 1; min-width: 0; text-align: left; }
+.npc-words b { display: flex; align-items: baseline; gap: 8px; font-family: var(--label); font-size: 17px; letter-spacing: 0.08em; text-transform: uppercase; color: #efe8d6; }
+.npc-words b i { font-style: normal; font-size: 11px; letter-spacing: 0.14em; color: #9aa5a8; }
+.npc-words p { margin: 4px 0 10px; font-size: 16px; line-height: 1.4; color: #fff; }
+.npc-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.npc-acts .btn { flex: 1 1 auto; width: auto; min-height: 42px; padding: 8px 16px; font-size: 14px; }
+
+/* ----- the code puzzle: each guess, and in words how close it was ----- */
+.pz-clue.said { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+.pz-clue.said .pz-tiles { flex: none; margin: 0; }
+.pz-said { flex: 1; min-width: 0; margin: 0; text-align: left; font-size: 14px; line-height: 1.35; color: #e8e8e8; }
+.pz-said span { display: block; }
+.pz-said .in { color: #8fdca6; }
+.pz-said .near { color: #ecc56a; }
+.pz-said .none { color: #aab4b8; }
