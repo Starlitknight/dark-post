@@ -14,6 +14,7 @@ const SEAT_COOKIE = "dp_seat";
 const HOST_COOKIE = "dp_host";
 const COOKIE_AGE = 60 * 60 * 24 * 120;
 const MAX_LOGIN_FAILS = 5;
+const RESIGNED = -1; // in the "out" column: gave up their place before playing, and watches
 const WORD_LENGTH = 5;
 const WORD_MAX_FAILS = 5; // wrong words from one address before that address waits
 const WORD_WRONG_PER_HOUR = 40; // wrong words from everywhere before the door shuts for the hour
@@ -141,6 +142,8 @@ export class Game extends DurableObject {
     if (!columns.includes("out")) this.sql.exec(`ALTER TABLE invites ADD COLUMN out INTEGER NOT NULL DEFAULT 0`);
     // One address for everyone: each player signs in with a word of five letters instead of a personal link.
     if (!columns.includes("code")) this.sql.exec(`ALTER TABLE invites ADD COLUMN code TEXT`);
+    // After the tour each player is asked once: play for the whole week, or give up the place and watch.
+    if (!columns.includes("committed")) this.sql.exec(`ALTER TABLE invites ADD COLUMN committed INTEGER NOT NULL DEFAULT 0`);
     for (const row of this.sql.exec(`SELECT token FROM invites WHERE code IS NULL OR code = ''`).toArray()) {
       this.sql.exec(`UPDATE invites SET code = ? WHERE token = ?`, this.newWord(), row.token);
     }
@@ -198,6 +201,18 @@ export class Game extends DurableObject {
       if (WORD_AVOID.some((bad) => word.includes(bad))) continue;
       if (!this.sql.exec(`SELECT 1 FROM invites WHERE code = ?`, word).toArray().length) return word;
     }
+  }
+
+  // Asked once, on first reaching the hall: play for the week, or resign the place and watch.
+  async commit(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    if (inv.committed || inv.out) return json({ error: "You have already answered." }, 409);
+    const body = await readJson(request);
+    if (body.play !== true && body.play !== false) return json({ error: "Choose to play or to resign." }, 400);
+    this.sql.exec(`UPDATE invites SET committed = 1, out = ? WHERE token = ?`, body.play ? 0 : RESIGNED, inv.token);
+    this.broadcast({ t: "news" });
+    return json({ ok: true, playing: body.play });
   }
 
   // A player types their word on the front page. A right word puts their seat on this device.
@@ -296,6 +311,7 @@ export class Game extends DurableObject {
       if (path === "/api/night/seen" && method === "POST") return this.nightSeen(request);
 
       if (path === "/api/claim" && method === "POST") return this.claim(request, url);
+      if (path === "/api/commit" && method === "POST") return this.commit(request);
       if (path === "/api/host/login" && method === "POST") return this.hostLogin(request, url);
       if (path === "/api/host/logout" && method === "POST") return this.hostLogout(request, url);
       if (path === "/api/host/state" && method === "GET") return this.hostState(request);
@@ -566,6 +582,7 @@ export class Game extends DurableObject {
       nextAt: this.get("next_at", ""),
       nextName: this.get("next_name", NEXT_NAME),
       canEditFace: phase !== "revealed",
+      needsCommit: !inv.committed && !inv.out,
       // rooms the GM has opened. The betting room stays shut until the GM opens it.
       bettingOpen: this.bettingOpen(),
       pos: this.positions(),
@@ -1354,6 +1371,7 @@ export class Game extends DurableObject {
         extra: r.extra || 0,
         out: r.out || 0,
         avatar: parseAvatar(r.avatar),
+        committed: !!r.committed,
         word: r.code,
       }));
     const gmMark = (key) => {
@@ -1519,7 +1537,7 @@ export class Game extends DurableObject {
     if (!inv) return json({ ok: true });
     this.forgetPlayer(inv.number);
     this.sql.exec(
-      `UPDATE invites SET status = 'invited', number = NULL, bag = NULL, coins = NULL, extra = 0, out = 0, avatar = NULL,
+      `UPDATE invites SET status = 'invited', number = NULL, bag = NULL, coins = NULL, extra = 0, out = 0, committed = 0, avatar = NULL,
        responded_at = NULL, entered_at = NULL, sealed_at = NULL, seen_reveal = 0 WHERE token = ?`,
       inv.token,
     );
@@ -1610,7 +1628,7 @@ export class Game extends DurableObject {
 
   doReveal() {
     const players = this.sql
-      .exec(`SELECT token, number, bag FROM invites WHERE status = 'accepted' ORDER BY number ASC`)
+      .exec(`SELECT token, number, bag FROM invites WHERE status = 'accepted' AND out >= 0 ORDER BY number ASC`)
       .toArray();
     if (!players.length) return false;
 

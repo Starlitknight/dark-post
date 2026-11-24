@@ -1,5 +1,11 @@
 # Dark Post
 
+## Play or resign, 24 Nov 2026, night (the GM's instructions, done outside this agent)
+
+- **The first time a player stands in the hall they are asked once**: "Will you play?" with "Confirm. I'll play." and "Resign my spot and spectate instead" (`drawCommit` in `public/app.js`, `commit` in `src/worker.js`, `needsCommit` on the hall). Resigning asks once more before it is final.
+- **A resigned player is a spectator**: `out` is -1. They keep their figure, greyed, and can walk and read; they cannot message players, broadcast, solve or play. They take no bag money and are left out of the Bag 2 split.
+- The console marks each player Confirmed, Not confirmed yet, or Resigned. Removing a resigned invitation frees the place and the number.
+
 ## One address and a word for each player, 24 Nov 2026, night (the GM's instructions, done outside this agent)
 
 - **Personal links are gone.** Everyone opens the same address. The front page (`none` scene) asks for the player's word: five random letters, made by the server (`newWord`, `claim` in `src/worker.js`). A right word sets the seat cookie on that device.

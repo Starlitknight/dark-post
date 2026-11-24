@@ -20,7 +20,7 @@ for (const [tag, w, h, mobile] of [["mp", 390, 844, true], ["md", 1440, 900, fal
   const back = async () => { await click('[data-act="hall"], [data-act="go"][data-scene="hall"]'); await until("#world .map-art"); await wait(900); };
   const enter = async (room) => { await page.evaluate((r) => window.DP_PREVIEW.enter(r), room); await wait(2600); };
   const step = async (name, fn) => { try { await fn(); } catch (e) { errors.push(tag + " " + name + ": " + e.message.slice(0, 160)); await snap("FAILED-" + name); } };
-  await page.goto(base + "/?demo=hall&revealed=1&notype=1", { waitUntil: "networkidle0" });
+  await page.goto(base + "/?demo=hall&revealed=1&notype=1&committed=1", { waitUntil: "networkidle0" });
   await step("hall", async () => { await until("#world .map-art"); await wait(1500); await snap("hall"); });
   await step("menu", async () => { await click("#menu-btn"); await wait(500); await snap("menu"); await click('[data-act="menuClose"]'); await page.evaluate(() => window.DP_PREVIEW.startNight()); await wait(1500); await snap("after-start"); });
   await step("tonight", async () => { await until('[data-act="vbSkip"]'); await snap("briefing"); await click('[data-act="vbSkip"]'); await until(".vb-grid"); await wait(900); await snap("tonight"); await back(); await snap("hall-night"); });

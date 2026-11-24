@@ -59,6 +59,15 @@ for (let i = 0; i < 90; i++) {
 console.log("screens:", seen.join(" > "));
 ok("a new player gets from the envelope to the hall on the real server", last === "hall" && seen[0] === "envelope" && seen[1] === "letter" && seen[2] === "welcome" && seen.length >= 9);
 await sleep(1500);
+// the question, asked once: play for the week, or resign and watch
+const asked = await page.evaluate(() => { const c = document.getElementById("commit"); return c && !c.hidden ? c.innerText.replace(/\s+/g, " ") : ""; });
+await page.screenshot({ path: SHOTS + "/mf13b-commit.png" });
+ok("on first reaching the hall the player is asked whether they will play", /will you play/i.test(asked) && /seven days/i.test(asked) && /confirm/i.test(asked) && /resign my spot and spectate instead/i.test(asked));
+await tryClick('[data-act="commitAsk"]'); await sleep(300);
+ok("resigning asks once more before it is final", /cannot be undone/i.test(await page.$eval("#commit", (el) => el.innerText)));
+await tryClick('[data-act="commitBack"]'); await sleep(300);
+await tryClick('[data-act="commitYes"]'); await sleep(1500);
+ok("confirming closes the question and the server remembers it", (await page.$eval("#commit", (el) => el.hidden)) && (await call("GET", "/api/hall", null, seat(0))).needsCommit === false);
 ok("the hall has the player and the clock", (await page.$$(".actor")).length >= 4 && (await page.$eval("#now-a", (el) => el.textContent)).length > 3);
 const me = await call("GET", "/api/me", null, seat(0));
 ok("the server has the bag sealed and a character saved", me.state === "hall" && !!me.avatar && (me.bag === 1 || me.sealed === true || me.choice === 1 || me.bag != null));

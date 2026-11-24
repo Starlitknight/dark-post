@@ -812,6 +812,7 @@
           '<div class="hud-say">' + sayHTML() + "</div>" +
           '<button type="button" class="onair" id="onair" data-act="go" data-scene="table" hidden></button>' +
           '<div class="npc-talk" id="npc-talk" role="dialog" aria-live="polite" hidden></div>' +
+          '<div class="commit" id="commit" role="dialog" aria-modal="true" aria-labelledby="commit-h" hidden></div>' +
           '<div class="hud-bottom">' +
           '<button type="button" class="btn hud-action" id="hud-action" data-act="use" hidden></button>' +
           '<button type="button" class="menu-btn" id="menu-btn" data-act="menu" aria-haspopup="dialog" aria-expanded="false" disabled>Menu<span id="menu-n"></span></button>' +
@@ -827,7 +828,7 @@
           if (stage !== mine) return;
           if (stage.room) return refreshStage();
           stage.room = spotOf(hall.you)[0];
-          var firstVisit = !heard("hall");
+          var firstVisit = !heard("hall") && !hall.needsCommit; // the question comes first; the walking hint follows a yes
           buildRoom(true);
           if (firstVisit) {
             markHeard("hall");
@@ -1624,6 +1625,37 @@
     return null;
   }
 
+  // Asked once, the first time a player stands in the hall: play for the week, or resign and watch.
+  function drawCommit() {
+    var box = $("commit");
+    if (!box || !hall) return;
+    if (!hall.needsCommit) { box.hidden = true; return; }
+    var sig = ui.resignAsk ? "ask" : "first";
+    if (!box.hidden && box.getAttribute("data-sig") === sig) return;
+    box.setAttribute("data-sig", sig);
+    box.innerHTML = '<div class="commit-card">' + (ui.resignAsk
+      ? '<i>Resign</i><h2 id="commit-h">Resign your spot?</h2><p>This cannot be undone. You can still walk the house and watch, but you will not play.</p>' +
+        '<button type="button" class="btn red" data-act="commitResign">Yes, resign my spot</button>' +
+        '<button type="button" class="btn ghost" data-act="commitBack">Go back</button>'
+      : '<i>Before you go on</i><h2 id="commit-h">Will you play?</h2><p>Dark Post lasts seven days. A different game every night, until you are eliminated or you win.</p>' +
+        '<button type="button" class="btn" data-act="commitYes">Confirm. I’ll play.</button>' +
+        '<button type="button" class="btn ghost" data-act="commitAsk">Resign my spot and spectate instead</button>') + "</div>";
+    box.hidden = false;
+  }
+  function sendCommit(play) {
+    if (ui.busy) return;
+    ui.busy = true;
+    api("POST", "/api/commit", { play: play })
+      .then(function () { ui.resignAsk = false; return loadHall(); })
+      .then(function () {
+        refreshStage();
+        if (!play) return toast("You have resigned your spot. You can still watch.");
+        if (!heard("hall")) { markHeard("hall"); narrate(["Tap the floor to walk. Step through a marked door to enter its room."], { auto: 3200, fade: true }); }
+      })
+      .catch(function (err) { toast(err.message); })
+      .then(function () { ui.busy = false; });
+  }
+
   var talkedIn = ""; // the room whose staff has already spoken on this visit
   function drawTalk(id, pz) {
     var box = $("npc-talk"), st = STAFF[id], line = staffLine(id, pz);
@@ -1714,7 +1746,7 @@
         next: "The vaults close",
         at: ends,
         count: isNaN(ends) ? "When the GM says" : togo <= 0 ? "Any moment" : span(togo),
-        todo: hall.out ? "You are out of the game. You can still watch." : night.opened ? "Your two vaults are sealed. Wait for the night to end." : "Collect clues. Then open two vaults in the arena.",
+        todo: hall.out ? outLine(hall.out) : night.opened ? "Your two vaults are sealed. Wait for the night to end." : "Collect clues. Then open two vaults in the arena.",
       };
     }
     var revealed = hall.phase === "revealed";
@@ -1728,7 +1760,7 @@
       next: name,
       at: at,
       count: count,
-      todo: hall.out ? "You are out of the game. You can still watch." : revealed ? (hall.bettingOpen ? "Solve today’s puzzle or make a deal." : "Solve today’s puzzle. Talk to the other players.") : "You have taken your bag. Try the daily puzzle while you wait.",
+      todo: hall.out ? outLine(hall.out) : revealed ? (hall.bettingOpen ? "Solve today’s puzzle or make a deal." : "Solve today’s puzzle. Talk to the other players.") : "You have taken your bag. Try the daily puzzle while you wait.",
     };
   }
 
@@ -1742,6 +1774,10 @@
       var d = new Date(Date.now() - 5 * 3600000), h = d.getUTCHours(), m = d.getUTCMinutes();
       return ((h + 11) % 12 + 1) + ":" + (m < 10 ? "0" : "") + m + " " + (h < 12 ? "AM" : "PM") + " EST";
     }
+  }
+
+  function outLine(out) {
+    return out < 0 ? "You resigned your spot. You can still watch." : "You are out of the game. You can still watch.";
   }
 
   var nowSeen = "", nowTimer = null;
@@ -1955,6 +1991,7 @@
       stage.dressed = set;
       if (was !== undefined && STAFF[stage.room]) { talkedIn = ""; return buildRoom(false); }
     }
+    drawCommit();
     if (roomSig() !== stage.sig) buildActors();
     else dressActors();
     var total = hall.unread.table + hall.unread.whispers + hall.unread.study + hall.unread.board;
@@ -2342,7 +2379,7 @@
       return (
         '<button type="button" class="face-tile' + (mine ? " me" : "") + (s.avatar ? "" : " empty") + (s.out ? " gone" : "") + '" data-act="card" data-n="' + s.number + '">' +
         '<span class="face-pic">' + faceHTML(s.number) + "</span><b>" + (mine ? "You" : "Player " + s.number) + "</b>" +
-        (!s.avatar ? "<small>Not here yet</small>" : s.out ? '<small class="gone">Out</small>' : s.coins != null ? '<small class="coin">' + s.coins + "</small>" : "<small>In the game</small>") + "</button>"
+        (!s.avatar ? "<small>Not here yet</small>" : s.out ? '<small class="gone">' + (s.out < 0 ? "Resigned" : "Out") + "</small>" : s.coins != null ? '<small class="coin">' + s.coins + "</small>" : "<small>In the game</small>") + "</button>"
       );
     }).join("");
   }
@@ -2358,7 +2395,7 @@
     function row(label, value) { return '<div class="card-row"><span>' + label + "</span><b>" + value + "</b></div>"; }
     var rows = !s.avatar
       ? row("Status", "Not here yet")
-      : row("Status", s.out ? "Out on Night " + s.out : "In the game") +
+      : row("Status", s.out < 0 ? "Resigned. Watching." : s.out ? "Out on Night " + s.out : "In the game") +
         row("Coins", mine ? balance() : s.coins != null ? s.coins : revealed ? "Private" : "Bags not open yet") +
         row("Joined", ago(s.since)) +
         row("Last seen", mine || online[n] ? "Here now" : ago(s.seen)) +
@@ -3162,6 +3199,9 @@
     else if (name === "go") go(el.getAttribute("data-scene"));
     else if (name === "seat") { ui.withN = Number(el.getAttribute("data-n")); ui.card = 0; go("whisper"); }
     else if (name === "pzDone") { var done = $("pz-result"); if (done) done.remove(); }
+    else if (name === "commitYes") sendCommit(true);
+    else if (name === "commitAsk" || name === "commitBack") { ui.resignAsk = name === "commitAsk"; drawCommit(); }
+    else if (name === "commitResign") sendCommit(false);
     else if (name === "npc") { if (stage && STAFF[stage.room]) openTalk(stage.room); }
     else if (name === "talkClose") closeTalk();
     else if (name === "actor") {
@@ -3400,6 +3440,7 @@
           if (!mine && d.night && d.night.result) seat.coins += d.night.result.prize[s.number] || 0;
         }
         if (d.night && d.night.result && d.night.result.out === s.number) seat.out = 1;
+        if (d.resigned && s.number === me.number) seat.out = -1;
         return seat;
       }),
       unread: { table: count("table"), study: count("study", true), board: count("board"), whispers: whispers.reduce(function (sum, t) { return sum + t.unread; }, 0), deals: revealed && d.bettingOpen ? d.deals.incoming.length : 0 },
@@ -3409,7 +3450,8 @@
       lastCast: d.msgs.filter(function (m) { return m.room === "table"; }).slice(-1).map(function (m) { return { id: m.id, from: m.from, body: m.body, at: m.at }; })[0] || null,
       cell: 0,
       bettingOpen: !!d.bettingOpen,
-      out: d.night && d.night.result && d.night.result.out === me.number ? 1 : 0,
+      needsCommit: !d.committed && !query.get("committed"),
+      out: d.resigned ? -1 : d.night && d.night.result && d.night.result.out === me.number ? 1 : 0,
       night: d.night ? { n: 1, game: "vaults", status: d.night.status, endsAt: d.night.endsAt, opened: !!d.night.opened, unseen: d.night.status === "done" && !d.night.seen } : null,
     };
   }
@@ -3605,6 +3647,7 @@
     else if (path === "/api/deals" || path === "/api/deal" || path === "/api/deal/answer") out = demoDeals(path, body);
     else if (path === "/api/doorlog") out = demoDoors();
     else if (path.indexOf("/api/night") === 0) out = demoNight(method, path, body);
+    else if (path === "/api/commit") { var dc = demoHallStore(); dc.committed = true; dc.resigned = !body.play; }
     else if (path.indexOf("/api/messages") === 0) out = demoMessages(method, path, body);
     return Promise.resolve(out);
   }

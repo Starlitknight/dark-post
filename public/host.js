@@ -189,7 +189,7 @@
         return (
           '<tr data-token="' + esc(inv.token) + '">' +
           '<td class="name">' + (inv.avatar ? '<span class="name-face">' + window.DP_AVATAR.draw(inv.avatar) + "</span>" : "") + esc(inv.name) + "</td>" +
-          "<td>" + statusChip(inv) + (inv.out ? ' <span class="chip red">Out</span>' : "") + "</td>" +
+          "<td>" + statusChip(inv) + (inv.out < 0 ? ' <span class="chip red">Resigned</span>' : inv.out ? ' <span class="chip red">Out</span>' : inv.committed ? ' <span class="chip gold">Confirmed</span>' : inv.avatar ? ' <span class="chip">Not confirmed yet</span>' : "") + "</td>" +
           '<td class="num">' + (inv.number != null ? inv.number : "") + "</td>" +
           "<td>" + esc(bag) + "</td>" +
           '<td class="word">' + esc(inv.word || "") + "</td>" +

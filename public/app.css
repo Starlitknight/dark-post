@@ -2788,3 +2788,13 @@ button.throw { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 @keyframes pz-rays { to { transform: rotate(360deg); } }
 @keyframes pz-slam { 0% { opacity: 0; transform: scale(2.4); } 100% { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .pz-result, .pz-result * { animation: none !important; } }
+
+/* ----- the question in the hall: play for the week, or resign and watch ----- */
+.commit { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(6, 10, 11, 0.78); animation: fade 0.3s ease both; }
+.commit[hidden] { display: none; }
+.commit-card { width: min(100%, 420px); display: flex; flex-direction: column; gap: 10px; padding: 24px 22px 20px; text-align: center; background: #111a1c; border: 1px solid #d4b471; border-radius: 8px; box-shadow: 0 16px 50px rgba(0, 0, 0, 0.75); animation: rise 0.4s ease both; }
+.commit-card i { font-style: normal; font-family: var(--label); font-weight: 700; font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase; color: #d7bf8f; }
+.commit-card h2 { margin: 0; font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 7vw, 40px); line-height: 1.05; color: #fff; }
+.commit-card p { margin: 2px 0 10px; font-size: 16.5px; line-height: 1.45; color: #dfe3e2; }
+.commit-card .btn { width: 100%; }
+#app .commit-card .btn.red { background: #b3372b; background-image: none; border-color: #b3372b; color: #fff; }

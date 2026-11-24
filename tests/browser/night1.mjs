@@ -21,6 +21,7 @@ for (let i = 0; i < 6; i++) {
   await call("POST", "/api/enter", {}, seat(i));
   await call("POST", "/api/seal", { bag: i < 2 ? 2 : 1 }, seat(i));
   await call("POST", "/api/avatar", { avatar: { s: i % 6, h: i, c: i, g: 0, b: 0, m: 0, o: i } }, seat(i));
+  await call("POST", "/api/commit", { play: true }, seat(i));
 }
 await call("POST", "/api/host/reveal", {}, host);
 for (let i = 0; i < 6; i++) await call("POST", "/api/seen", {}, seat(i));

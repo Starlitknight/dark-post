@@ -544,9 +544,23 @@ for t in tokens[:16]:
     call("POST", "/api/host/invite/reset", {"token": t}, host)
 for i, t in enumerate(tokens[:16]):
     call("POST", "/api/respond", {"accept": True}, seat(t))
-    call("POST", "/api/seal", {"bag": 2 if i < 3 else 1}, seat(t))
+    call("POST", "/api/seal", {"bag": 2 if i < 4 else 1}, seat(t))
+# --- after the tour: play for the week, or resign the place and watch ---
+Q, P = tokens[3], tokens[4]
+for t in (Q, P):
+    call("POST", "/api/avatar", {"avatar": {"s": 1, "h": 2, "c": 3, "g": 0, "b": 0, "m": 0, "o": 1}}, seat(t))
+check("a player in the hall for the first time is asked whether they will play", hall_of(Q)["needsCommit"] is True and hall_of(P)["needsCommit"] is True)
+check("the answer must be yes or no", call("POST", "/api/commit", {}, seat(P))[0] == 400)
+status, body, _ = call("POST", "/api/commit", {"play": True}, seat(P))
+check("confirming keeps the place and is not asked again", status == 200 and hall_of(P)["needsCommit"] is False and hall_of(P)["out"] == 0 and call("POST", "/api/commit", {"play": False}, seat(P))[0] == 409)
+status, body, _ = call("POST", "/api/commit", {"play": False}, seat(Q))
+hq = hall_of(Q)
+check("resigning makes the player a spectator: still in the house, marked resigned, not asked again", status == 200 and hq["out"] == -1 and hq["needsCommit"] is False and [x for x in hall_of(P)["seats"] if x["number"] == me(Q)["number"]][0]["out"] == -1)
+check("a spectator cannot speak to the players or solve the puzzle", say(Q, "table", "hello")[0] == 403 and call("POST", "/api/puzzle", {"answer": "1"}, seat(Q))[0] == 403 and call("POST", "/api/commit", {"play": True}, seat(Q))[0] == 409)
+rows = {i["token"]: i for i in call("GET", "/api/host/state", cookies=host)[1]["invites"]}
+check("the GM sees who confirmed and who resigned", rows[P]["committed"] is True and rows[P]["out"] == 0 and rows[Q]["out"] == -1)
 call("POST", "/api/host/reveal", {}, host)
-check("three players share 40: 13 coins each, rounded down", me(tokens[0]).get("coins") == 13)
+check("three players share 40: 13 coins each, rounded down. The one who resigned takes nothing and does not thin the bag", me(tokens[0]).get("coins") == 13 and not me(Q).get("coins"))
 call("POST", "/api/host/unreveal", {}, host)
 
 # --- host can hide who took which bag ---
