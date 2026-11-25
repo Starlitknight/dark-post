@@ -663,8 +663,11 @@
     gmTimer = setInterval(function () { if (!document.hidden) gmLoad(); }, 5000);
   }
 
+  function localInput(at) { var d = new Date(at - new Date(at).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); }
+
   function drawLadder1(n) {
     var box = $("night-box");
+    if (document.activeElement && document.activeElement.id === "stage-ends") return; // do not redraw under the GM's fingers
     $("night-form").hidden = !!n;
     if (!n) { box.innerHTML = state.phase === "revealed" ? "" : '<p class="table-empty">Open the bags first. Players need coins for the +2 boost.</p>'; return; }
     var out = '<div class="night-box">';
@@ -673,7 +676,8 @@
       out += "<p><b>Game " + n.n + ": The Ladder. Stage " + n.stage + " of " + n.stages + " is open.</b> " + n.sealed.length + " of " + n.players.length + " players have sealed their cards. " +
         (waiting.length ? "Not yet: " + waiting.map(function (k) { return "Player " + k; }).join(", ") + ". " : "Everyone has sealed. ") +
         (n.endsAt ? "This stage closes by itself " + esc(htime(Date.parse(n.endsAt))) + ", your time." : "It closes when you press the button.") + "</p>" +
-        '<button type="button" class="btn" data-night="stage" data-waiting="' + waiting.length + '">Close stage ' + n.stage + (n.stage === n.stages ? " and end the game" : " and turn the cards") + '</button> <button type="button" class="link quiet" data-night="reset">Cancel the game</button>';
+        '<button type="button" class="btn" data-night="stage" data-waiting="' + waiting.length + '">Close stage ' + n.stage + (n.stage === n.stages ? " and end the game" : " and turn the cards") + '</button> <button type="button" class="link quiet" data-night="reset">Cancel the game</button>' +
+        '<div class="row ends-row"><div><label for="stage-ends">This stage closes by itself at (your time)</label><input type="datetime-local" id="stage-ends" value="' + (n.endsAt ? localInput(Date.parse(n.endsAt)) : "") + '"></div><button type="button" class="btn" data-night="ends">Set the time</button>' + (n.endsAt ? ' <button type="button" class="link quiet" data-night="noends">Remove the time</button>' : "") + "</div>";
     } else {
       var r = n.result || {};
       out += "<p><b>Game " + n.n + ": The Ladder is over.</b> " + (r.out != null ? esc(hwho(r.out)) + " is out." : "Nobody is out yet.") + "</p>";
@@ -796,6 +800,12 @@
     }
     if (!act) return;
     var what = act.getAttribute("data-night");
+    if (what === "ends" || what === "noends") {
+      var val = what === "ends" ? $("stage-ends").value : "";
+      if (what === "ends" && !val) return toast("Choose a time first.");
+      api("POST", "/api/host/night/ends", { endsAt: val ? new Date(val).toISOString() : "" }).then(function () { toast(val ? "The closing time is set." : "The closing time is removed."); if (document.activeElement) document.activeElement.blur(); return refresh(); }).catch(function (err) { toast(err.message); });
+      return;
+    }
     if (what === "stage") {
       var late = Number(act.getAttribute("data-waiting"));
       if (!window.confirm(late ? late + " players have not sealed. If you close now they play their lowest cards. Close the stage?" : "Close the stage and turn the cards?")) return;

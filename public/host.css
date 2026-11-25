@@ -226,3 +226,5 @@ details.archive[open] > summary { border-bottom: 1px solid #333; margin-bottom: 
 .act-did { color: #bbb; font-size: 13px; line-height: 1.4; }
 .act-score { font-size: 18px; color: #f1d58c; min-width: 26px; text-align: right; }
 .act-row.none .act-did, .act-row.none b { color: #e58a7a; }
+
+.ends-row { margin-top: 14px; align-items: flex-end; }

@@ -103,6 +103,13 @@ check("the GM sees the cards a player has sealed, and when each player was last 
 leak = json.dumps([night(by[o[0]]), hall(by[o[0]]), betv(by[o[0]])])
 check("no player is sent anyone's sealed cards or the GM's list", '"choices"' not in leak and '"sealed": [' not in leak and call("GET", "/api/host/activity", cookies=seat(by[o[0]]))[0] == 401)
 
+import datetime
+soon = (datetime.datetime.utcnow() + datetime.timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M:00.000Z")
+check("a player cannot set the closing time", call("POST", "/api/host/night/ends", {"endsAt": soon}, seat(A))[0] == 401)
+check("a time already gone is refused", call("POST", "/api/host/night/ends", {"endsAt": "2020-01-01T00:00:00Z"}, host)[0] == 400)
+check("the GM sets when the stage closes, and players are told", call("POST", "/api/host/night/ends", {"endsAt": soon}, host)[1]["endsAt"] == soon and night(A)["endsAt"] == soon and hall(A)["night"]["endsAt"] == soon)
+check("the GM can remove it again", call("POST", "/api/host/night/ends", {"endsAt": ""}, host)[0] == 200 and night(A)["endsAt"] == "")
+
 if len(sys.argv) > 2 and sys.argv[2] == "keep":
     print("left open at stage 1"); sys.exit(0)
 

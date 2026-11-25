@@ -521,3 +521,4 @@ body, body.desk { transition:none; }
 #app .bt-mineduel { display:grid; grid-template-columns:34px 1fr auto; gap:10px; align-items:center; padding:8px 0; border-top:1px solid #2a3331; font:500 14px/1.25 var(--sans); color:#f5f0dd; }
 #app .bt-mineduel:first-of-type { border-top:0; } #app .bt-mineduel .rung-face { width:34px; height:34px; } #app .bt-mineduel small { display:block; color:#8a968f; font-size:11.5px; }
 #app .bt-mineduel b { font:700 12px/1 var(--label); letter-spacing:.08em; text-transform:uppercase; color:#e9c14e; } #app .bt-mineduel.won b { color:#8fd6a4; } #app .bt-mineduel.lost b { color:#ff8a7a; }
+#app .ld-closeat { margin:8px 0 0; font:500 13.5px/1.4 var(--sans); color:#d9ddd4; } #app .ld-closeat b { color:#f3d98f; }

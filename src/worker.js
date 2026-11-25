@@ -190,7 +190,24 @@ export class Game extends DurableObject {
     // A player's one bet on their own final score in The Ladder.
     this.sql.exec(`CREATE TABLE IF NOT EXISTS ladder_bets (number INTEGER PRIMARY KEY, score INTEGER NOT NULL, stake INTEGER NOT NULL, stage INTEGER NOT NULL, mult INTEGER NOT NULL, paid INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS ladder_players (number INTEGER PRIMARY KEY, seen_stage INTEGER NOT NULL DEFAULT 0, seen INTEGER NOT NULL DEFAULT 0)`);
+    // Decided once, 25 Nov 2026: stage 1 of the first game of The Ladder, started with no closing time,
+    // closes at 9 PM Eastern that evening. The GM can change or remove the time from the console.
+    if (this.get("stage1_close_9pm", "") === "") {
+      this.set("stage1_close_9pm", "1");
+      const night = this.night();
+      const at = Date.parse("2026-11-26T02:00:00.000Z");
+      if (night && night.game === "ladder" && night.status === "open" && night.stage === 1 && !night.endsAt && Date.now() < at) {
+        this.set("night", JSON.stringify({ ...night, endsAt: new Date(at).toISOString() }));
+        ctx.storage.setAlarm(at + 2000);
+      }
+    }
+    this.ctx = ctx;
     this.lastPost = new Map();
+  }
+
+  // Woken at a stage's closing time, so it closes on time even when nobody has the game open.
+  async alarm() {
+    this.maybeEndNight();
   }
 
   // ---------- small helpers ----------
@@ -373,6 +390,7 @@ export class Game extends DurableObject {
         if (path === "/api/host/night/start" && method === "POST") return this.hostNightStart(request);
         if (path === "/api/host/night/end" && method === "POST") return this.hostNightEnd();
         if (path === "/api/host/night/stage" && method === "POST") return this.hostLadderStage();
+        if (path === "/api/host/night/ends" && method === "POST") return this.hostLadderEnds(request);
         if (path === "/api/host/gm" && method === "GET") return json(this.hostGmView());
         if (path === "/api/host/gm" && method === "POST") return this.hostGmMove(request);
         if (path === "/api/host/gm/say" && method === "POST") return this.hostGmSay(request);
@@ -1601,10 +1619,28 @@ export class Game extends DurableObject {
       this.set("night", JSON.stringify({ ...night, status: "done", endsAt: "" }));
     } else {
       const endsAt = night.stageMinutes ? new Date(Date.now() + night.stageMinutes * 60000).toISOString() : "";
+      if (endsAt) this.ctx.storage.setAlarm(Date.parse(endsAt) + 2000);
       this.set("night", JSON.stringify({ ...night, stage: night.stage + 1, endsAt }));
     }
     this.broadcast({ t: "news" });
     return this.night();
+  }
+
+  // Set, change or remove the time the open stage closes by itself.
+  async hostLadderEnds(request) {
+    const night = this.night();
+    if (!night || night.game !== "ladder" || night.status !== "open") return json({ error: "No stage is open." }, 409);
+    const body = await readJson(request);
+    let endsAt = "";
+    if (body.endsAt) {
+      const at = Date.parse(body.endsAt);
+      if (Number.isNaN(at) || at <= Date.now()) return json({ error: "Choose a time that is still to come." }, 400);
+      endsAt = new Date(at).toISOString();
+      this.ctx.storage.setAlarm(at + 2000);
+    }
+    this.set("night", JSON.stringify({ ...night, endsAt }));
+    this.broadcast({ t: "news" });
+    return json({ ok: true, endsAt });
   }
 
   hostLadderStage() {

@@ -3117,7 +3117,8 @@
       out = '<div class="s-card now"><i>Game ' + n.n + " · being played now</i><h2>The Ladder</h2><p>Walk to the arena. The attendant will give you the rules.</p></div>";
     } else {
       var last = n.results[n.results.length - 1];
-      var count = n.endsAt ? '<i>This stage closes in</i><b class="s-count small" id="v-count">' + span(Math.max(0, new Date(n.endsAt).getTime() - Date.now())) + "</b>" : "<p>The GM closes each stage.</p>";
+      var closeAt = n.endsAt ? new Date(n.endsAt).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }) + " ET" : "";
+      var count = n.endsAt ? '<i>This stage closes in</i><b class="s-count small" id="v-count">' + span(Math.max(0, new Date(n.endsAt).getTime() - Date.now())) + '</b><p class="ld-closeat">At <b>' + esc(closeAt) + "</b>. Anyone who has not submitted by then plays their three lowest cards.</p>" : "<p>The GM closes each stage.</p>";
       out += '<div class="s-card now"><i>Game ' + n.n + " · The Ladder</i><h2>Stage " + n.stage + " of " + n.stages + "</h2>" + count + "</div>";
       var subs = n.submitted || [], all = (n.table || []).map(function (r) { return r.n; }).sort(function (a, b) { return a - b; });
       if (all.length) out += '<div class="s-card ld-subs"><i>Submitted · ' + subs.length + " of " + all.length + '</i><div class="subs">' + all.map(function (k) {
