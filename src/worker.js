@@ -1865,7 +1865,7 @@ export class Game extends DurableObject {
   }
 
   hostGmView() {
-    return { gm: this.gmPlace(), pos: this.positions(), online: this.onlineNumbers() };
+    return { gm: this.gmPlace(), line: this.get("gm_line", ""), pos: this.positions(), online: this.onlineNumbers() };
   }
 
   async hostGmMove(request) {
@@ -1887,15 +1887,14 @@ export class Game extends DurableObject {
     return json(this.hostGmView());
   }
 
-  // A line spoken aloud: a bubble over the figure, for everyone standing in that room. It is not kept.
+  // The line over the Gamemaster's head. It is kept and stays there, in whatever room he stands,
+  // until the GM writes another or clears it with an empty one.
   async hostGmSay(request) {
     const body = await readJson(request);
     const text = String(body.text || "").trim().slice(0, 160);
-    const at = this.gmPlace();
-    if (!at) return json({ error: "The Gamemaster is not in the estate." }, 409);
-    if (!text) return json({ error: "Write something first." }, 400);
-    this.broadcast({ t: "gmsay", r: at[0], text });
-    return json({ ok: true });
+    this.set("gm_line", text);
+    this.broadcast({ t: "gmsay", text });
+    return json({ ok: true, line: text });
   }
 
   // ---------- the dungeon: who went down, and when ----------
@@ -1969,7 +1968,7 @@ export class Game extends DurableObject {
     const wasHere = this.onlineNumbers().includes(inv.number);
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ n: inv.number, at: 0, count: 0 });
-    server.send(JSON.stringify({ t: "hi", online: this.onlineNumbers(), pos: this.positions() }));
+    server.send(JSON.stringify({ t: "hi", online: this.onlineNumbers(), pos: this.positions(), gmLine: this.get("gm_line", "") }));
     if (!wasHere) this.broadcast({ t: "on", n: inv.number }, server);
     return new Response(null, { status: 101, webSocket: client });
   }

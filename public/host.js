@@ -638,6 +638,8 @@
     var map = $("gm-map");
     if (map.getAttribute("data-room") !== gmRoom) { map.setAttribute("data-room", gmRoom); map.innerHTML = '<div class="gm-art">' + DP_WORLD.svg(gmRoom).replace(/ width="\d+" height="\d+" class/, ' class') + '</div><div class="gm-dots"></div>'; map.style.aspectRatio = room.w + " / " + room.h; }
     map.querySelector(".gm-dots").innerHTML = dots + me;
+    var lineBox = $("gm-line"), lineHTML = GMV.line ? "Over his head now: <b>\u201c" + esc(GMV.line) + '\u201d</b> <button type="button" class="link quiet" data-clear>Clear the line</button>' : "Nothing is written over his head.";
+    if (lineBox.getAttribute("data-h") !== lineHTML) { lineBox.setAttribute("data-h", lineHTML); lineBox.innerHTML = lineHTML; }
     $("gm-here").textContent = (GMV.gm[0] === gmRoom ? "You are in this room. " : "You are in another room: tap the map to walk in here. ") + (here.length ? "Here now: " + here.join(", ") + "." : "No players are in this room.");
   }
   function gmLoad() { return api("GET", "/api/host/gm").then(function (v) { GMV = v; if (v.gm && !gmLoad.once) { gmLoad.once = true; gmRoom = v.gm[0]; } gmDraw(); }).catch(function () {}); }
@@ -656,8 +658,12 @@
     $("gm-say-form").addEventListener("submit", function (e) {
       e.preventDefault();
       var text = $("gm-say").value.trim();
-      if (!text) return;
-      api("POST", "/api/host/gm/say", { text: text }).then(function () { $("gm-say").value = ""; toast("Said in " + DP_WORLD.ROOMS[GMV.gm[0]].name.toLowerCase() + "."); }).catch(function (err) { toast(err.message); });
+      if (!text) return toast("Write the line first. To remove it, press Clear the line.");
+      api("POST", "/api/host/gm/say", { text: text }).then(function (r) { $("gm-say").value = ""; GMV.line = r.line; gmDraw(); toast("It is over his head now."); }).catch(function (err) { toast(err.message); });
+    });
+    $("gm-line").addEventListener("click", function (e) {
+      if (!e.target.closest("[data-clear]")) return;
+      api("POST", "/api/host/gm/say", { text: "" }).then(function (r) { GMV.line = r.line; gmDraw(); toast("The line is cleared."); }).catch(function (err) { toast(err.message); });
     });
     gmLoad();
     gmTimer = setInterval(function () { if (!document.hidden) gmLoad(); }, 5000);

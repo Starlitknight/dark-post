@@ -76,6 +76,11 @@ await hostPage.type("#gm-say", "Welcome to the Crane estate. Stage 1 is still op
 await hostPage.$eval("#gm-say-form", (f) => f.requestSubmit()); await sleep(1200);
 ok("a line he says appears over his head", (await guest.$eval(".gm-say", (el) => (el.hidden ? "" : el.textContent))) === "Welcome to the Crane estate. Stage 1 is still open.");
 await guest.screenshot({ path: S + "3-player-sees.png" });
+await sleep(16000);
+ok("the line stays over his head", (await guest.$eval(".gm-say", (el) => (el.hidden ? "" : el.textContent))) === "Welcome to the Crane estate. Stage 1 is still open.");
+ok("the console shows what is written", (await hostPage.$eval("#gm-line", (el) => el.innerText)).includes("Welcome to the Crane estate"));
+await guest.reload({ waitUntil: "networkidle0" }); await sleep(3500);
+ok("a player who arrives later sees it too", (await guest.$eval(".gm-say", (el) => (el.hidden ? "" : el.textContent))) === "Welcome to the Crane estate. Stage 1 is still open.");
 await guest.$eval(".actor.gm", (el) => el.click()); await sleep(2000);
 ok("tapping him opens the private thread with the GM", (await sceneOf()) === "study");
 await guest.screenshot({ path: S + "4-ask-gm.png" });
@@ -84,6 +89,8 @@ ok("no player is ever shown a 'Player 0'", !/Player 0\b/.test(await text(guest))
 const other = await call("GET", "/api/hall", null, seat(3));
 ok("a player cannot move or speak as the Gamemaster", (await call("POST", "/api/host/gm", { on: true, r: "hall", x: 500, y: 500 }, seat(3))).status === 401 && (await call("POST", "/api/host/gm/say", { text: "hi" }, seat(3))).status === 401 && other.seats.length === 16);
 ok("he cannot go down to the dungeon", (await call("POST", "/api/host/gm", { on: true, r: "dungeon", x: 500, y: 500 }, host)).status === 400);
+await hostPage.$eval("#gm-line [data-clear]", (el) => el.click()); await sleep(1500);
+ok("clearing the line removes it", await guest.$eval(".gm-say", (el) => el.hidden));
 await hostPage.$eval("#gm-leave", (el) => el.click()); await sleep(1500);
 ok("when he leaves, he is gone from the player's screen", (await guest.$(".actor.gm")) === null && (await hostPage.$eval("#gm-status", (el) => el.textContent)) === "Not in the estate");
 console.log(problems.length ? "\n" + problems.join("\n") : "\nALL PASSED");

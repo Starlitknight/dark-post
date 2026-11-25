@@ -51,14 +51,15 @@
 
   <section class="panel" id="gm-panel">
     <h2>The Gamemaster in the estate</h2>
-    <p class="help">Your own figure, which players see walking among them. Choose a room and tap the map where he should go; players in that room see him walk there. A line you say appears over his head for everyone in that room. A player who taps him opens their private "Ask the GM" thread. He never goes down to the dungeon.</p>
+    <p class="help">Your own figure, which players see walking among them. Choose a room and tap the map where he should go; players in that room see him walk there. The line you write stays over his head, in whatever room he stands, until you change or clear it. A player who taps him opens their private "Ask the GM" thread. He never goes down to the dungeon.</p>
     <div class="gm-who"><span id="gm-face"></span><div><b id="gm-status">Not in the estate</b><div class="row"><button class="btn" type="button" id="gm-enter">Enter the estate</button> <button class="link quiet" type="button" id="gm-leave" hidden>Leave the estate</button></div></div></div>
     <div id="gm-walk" hidden>
       <label for="gm-room">Room</label>
       <select id="gm-room"></select>
       <div id="gm-map" class="gm-map" role="application" aria-label="Map of the room. Tap to walk there."></div>
       <p class="help" id="gm-here"></p>
-      <form id="gm-say-form" class="row"><input type="text" id="gm-say" maxlength="160" placeholder="Say a line aloud in this room" autocomplete="off"><button class="btn" type="submit">Say</button></form>
+      <form id="gm-say-form" class="row"><input type="text" id="gm-say" maxlength="160" placeholder="The line shown over his head" autocomplete="off"><button class="btn" type="submit">Show it</button></form>
+      <p class="help" id="gm-line"></p>
     </div>
   </section>
 

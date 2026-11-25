@@ -1822,7 +1822,7 @@
     // the Gamemaster, when the GM has walked into this room: a figure of their own, not a player and not staff
     if (spots[0] && spots[0][0] === stage.room) {
       if (!spriteMemo.gm) spriteMemo.gm = AV.executor("sprite");
-      out += '<button type="button" class="actor npc gm" data-act="gmTalk" data-n="0" aria-label="The Gamemaster"><span class="actor-tag">Gamemaster</span><span class="gm-say" hidden></span><span class="actor-fig">' + spriteMemo.gm + "</span></button>";
+      out += '<button type="button" class="actor npc gm" data-act="gmTalk" data-n="0" aria-label="The Gamemaster"><span class="actor-tag">Gamemaster</span><span class="gm-say"' + (gmLine ? "" : " hidden") + ">" + esc(gmLine) + '</span><span class="actor-fig">' + spriteMemo.gm + "</span></button>";
     }
     var box = $("actors");
     box.innerHTML = out;
@@ -2395,6 +2395,7 @@
       stage.world.animate([{opacity: 0.78}, {opacity: 1}], {duration: 160, easing: "ease-out"});
   }
 
+  var gmLine = ""; // what is written over the Gamemaster's head, wherever he stands
   var DUELS_SPOT = { scene: "arena", label: "See your duels" };
 
   // The one big button offers whatever can be used from where the player stands.
@@ -2714,6 +2715,7 @@
       online = {};
       (m.online || []).forEach(function (n) { online[n] = true; });
       for (var k in m.pos) if (Number(k) !== me.number || !spots[k]) spots[k] = m.pos[k];
+      gmLine = String(m.gmLine || "");
       if (stage && hall && stage.room) buildActors();
       presenceChanged();
     } else if (m.t === "on") { online[m.n] = true; dressActors(); presenceChanged(); }
@@ -2732,14 +2734,14 @@
       redrawMenu();
       if (stage && hall && stage.room && actors[0]) buildActors();
     } else if (m.t === "gmsay") {
+      // the line over the Gamemaster's head stays until the GM changes it
+      gmLine = String(m.text || "");
       var g = stage && actors[0];
-      if (!g || m.r !== stage.room) return;
+      if (!g) return;
       var b = g.el.querySelector(".gm-say");
-      b.textContent = String(m.text || "");
-      b.hidden = false;
-      b.classList.remove("on"); void b.offsetWidth; b.classList.add("on");
-      clearTimeout(onLive.sayTimer);
-      onLive.sayTimer = setTimeout(function () { b.hidden = true; }, Math.min(14000, 5000 + b.textContent.length * 70));
+      b.textContent = gmLine;
+      b.hidden = !gmLine;
+      if (gmLine) { b.classList.remove("on"); void b.offsetWidth; b.classList.add("on"); }
     } else if (m.t === "news") news();
   }
 
