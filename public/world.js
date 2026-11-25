@@ -335,6 +335,20 @@ window.DP_WORLD = (function () {
       lettering(697, 120, '+2', 21, ink) + lettering(849, 120, '−1', 21, '#e1baa9');
   }
 
+  // The wall board while bets are open: what one coin pays, stage by stage. The stage being played is lit.
+  function oddsBoard() {
+    var ink = '#e4e7dc', gold = '#f3d98f', dim = '#6f8078';
+    var out = lettering(663, 36, 'Game 1 · Bet on your own score · 1 coin pays', 16, ink) + line('M419 50h485', '#677970', 1.4, .90);
+    [5, 4, 3, 2].forEach(function (pay, i) {
+      var x = 470 + i * 104, now = betStage === i + 1, past = betStage > i + 1;
+      if (now) out += '<rect x="' + (x - 46) + '" y="56" width="92" height="70" rx="6" fill="#f3d98f" fill-opacity=".14" stroke="#f3d98f" stroke-width="1.6"/>';
+      out += lettering(x, 76, 'Stage ' + (i + 1), 14, past ? dim : now ? gold : ink) + lettering(x, 112, '×' + pay, 32, past ? dim : now ? gold : ink);
+      if (past) out += line('M' + (x - 30) + ' 100h60', dim, 2, .9);
+    });
+    out += lettering(866, 76, 'Stage 5', 14, dim) + lettering(866, 108, 'Closed', 17, betStage > 4 ? '#e1baa9' : dim);
+    return out;
+  }
+
   function dungeonRails() {
     var out = '';
     CELLS.forEach(function (cell) {
@@ -379,6 +393,9 @@ window.DP_WORLD = (function () {
   }
 
   // The shop's sign. It is open only while a match is being played.
+  // The betting room while bets are taken on a game: coins on the tables, and the odds on the wall. 0 = not taking bets.
+  var betStage = 0;
+  function setBets(on, stage) { betStage = on ? Math.max(1, stage || 1) : 0; }
   var shopOpen = false;
   function setShop(open) {
     shopOpen = !!open;
@@ -419,7 +436,7 @@ window.DP_WORLD = (function () {
   function fixtures(id) {
     if (id === 'hall') return positions(); // the hall picture itself now has six doors, not eight
     if (id === 'arena') return ''; // Night 1's vaults are painted into their own picture of the arena
-    if (id === 'betting') return payoffBoard();
+    if (id === 'betting') return betStage ? oddsBoard() : payoffBoard();
     if (id === 'studio') return '<circle cx="581" cy="82" r="6" fill="#e0a099"/>' + lettering(663, 93, 'ON AIR', 30, '#f0d3c6', 'middle', '3');
     if (id === 'gallery') return portraits();
     if (id === 'shop') {
@@ -443,12 +460,13 @@ window.DP_WORLD = (function () {
     if (id === 'arena' && arenaSet === 'vaults') return 'arena-vaults';
     if (id === 'arena' && arenaSet === 'ladder') return 'arena-ladder';
     if (id === 'shop' && shopOpen) return 'shop-open';
+    if (id === 'betting' && betStage) return 'betting-open';
     return id;
   }
 
   var roomsDrawn = {};
   function svg(id) {
-    var drawn = id === 'arena' ? id + ':' + arenaSet : id === 'shop' ? id + ':' + shopOpen : id;
+    var drawn = id === 'arena' ? id + ':' + arenaSet : id === 'shop' ? id + ':' + shopOpen : id === 'betting' ? id + ':' + betStage : id;
     if (!roomsDrawn[drawn]) {
       var room = ROOMS[id];
       roomsDrawn[drawn] = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + room.w + ' ' + room.h +
@@ -553,6 +571,6 @@ window.DP_WORLD = (function () {
 
   return {
     ROOMS: ROOMS, CELLS: CELLS, CX: CX, CY: CY, HUB: "hall",
-    framePage: framePage, svg: svg, setArena: setArena, setShop: setShop, lightSVG: lightSVG, overlays: overlays, walkable: walkable, nearest: nearest, findPath: findPath, marker: marker, doorAt: doorAt, doorTo: doorTo, spotAt: spotAt,
+    framePage: framePage, svg: svg, setArena: setArena, setShop: setShop, setBets: setBets, lightSVG: lightSVG, overlays: overlays, walkable: walkable, nearest: nearest, findPath: findPath, marker: marker, doorAt: doorAt, doorTo: doorTo, spotAt: spotAt,
   };
 })();

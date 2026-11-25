@@ -68,6 +68,20 @@ met = sorted(o for st in v["opponents"] for o in st)
 check("a player meets each of the other fifteen exactly once", met == list(range(2, 17)))
 check("the hall says a game is on and nothing is sealed", hall(A)["night"]["game"] == "ladder" and hall(A)["night"]["stage"] == 1 and hall(A)["night"]["opened"] is False)
 
+# the betting room: one bet on your own final score
+bet = lambda t, score, stake: call("POST", "/api/bet", {"score": score, "stake": stake}, seat(t))
+betv = lambda t: call("GET", "/api/bet", cookies=seat(t))[1]
+check("no bets until the GM opens the betting room", betv(A)["on"] is False and bet(A, 0, 1)[0] == 409 and hall(A)["bets"] is None)
+call("POST", "/api/host/settings", {"bettingOpen": True}, host)
+bv = betv(A)
+check("stage 1: a coin pays 5, up to 3 coins, any score from -15 to +15", bv["on"] and bv["taking"] and bv["mult"] == 5 and bv["pays"] == [5, 4, 3, 2] and bv["maxStake"] == 3 and (bv["low"], bv["high"]) == (-15, 15) and hall(A)["bets"] == {"taking": True, "stage": 1, "placed": False})
+check("four coins are too many, and +16 cannot be reached", bet(A, 0, 4)[0] == 400 and bet(A, 16, 1)[0] == 400 and bet(A, 0, 0)[0] == 400)
+c0 = coins(A)
+status, body, _ = bet(A, -2, 2)
+check("a bet is placed and the coins are taken", status == 200 and body["bet"]["score"] == -2 and body["bet"]["pays"] == 10 and coins(A) == c0 - 2 and hall(A)["bets"]["placed"] is True)
+check("one bet a player, and it cannot be changed", bet(A, 3, 1)[0] == 409 and betv(A)["bet"]["score"] == -2)
+check("nobody else sees it", betv(by[2])["bet"] is None)
+
 o = v["opponents"][0]
 check("a card is needed against every opponent", seal(A, [{"opp": o[0], "card": "A"}])[0] == 400)
 check("a card cannot be played twice in a stage", seal(A, [{"opp": o[0], "card": "A"}, {"opp": o[1], "card": "A"}, {"opp": o[2], "card": "K"}])[0] == 400)
@@ -107,6 +121,10 @@ check("the absent player was given their three lowest cards", sorted(v["used"]["
 check("one boost is left and the coin stays spent", v["boostsLeft"] == 1 and coins(A) == before - 1)
 check("the ladder adds up to nothing", sum(row["pts"] for row in v["table"]) == 0 and len(v["table"]) == 16)
 check("an already played card is refused", seal(A, [{"opp": v["opponents"][1][0], "card": "9"}, {"opp": v["opponents"][1][1], "card": "A"}, {"opp": v["opponents"][1][2], "card": "Q"}])[0] == 400)
+bv = betv(by[2])
+check("stage 2: a coin pays 4, and the reachable scores have narrowed", bv["mult"] == 4 and bv["left"] == 12 and bv["high"] - bv["low"] == 24)
+c2 = coins(by[2])
+check("a stage 2 bet is taken at 4", bet(by[2], 4, 1)[1]["bet"]["pays"] == 4)
 v = call("POST", "/api/night/stage-seen", {}, seat(A))[1]
 check("the stage result is shown once", v["seenStage"] == 1)
 
@@ -116,6 +134,9 @@ play_stage(2)
 call("POST", "/api/host/night/stage", {}, host)
 v = night(A)
 o = v["opponents"][2]
+pts3 = [r for r in v["table"] if r["n"] == 3][0]["pts"]
+c3 = coins(by[3])
+check("stage 3: a coin pays 3", betv(by[3])["mult"] == 3 and bet(by[3], pts3 - 9, 3)[1]["bet"]["pays"] == 9)
 check("a third boost is refused", v["boostsLeft"] == 0 and seal(A, [{"opp": o[0], "card": "J", "boost": True}, {"opp": o[1], "card": "X1"}, {"opp": o[2], "card": "2"}])[0] == 400)
 for stage in (3, 4, 5):
     v = night(A)
@@ -123,10 +144,19 @@ for stage in (3, 4, 5):
     seal(A, [{"opp": opp, "card": hand[-1 - i]} for i, opp in enumerate(v["opponents"][stage - 1])])
     play_stage(stage)
     status, body, _ = call("POST", "/api/host/night/stage", {}, host)
+    if stage == 4:
+        check("stage 5: the betting room is closed", betv(by[4])["taking"] is False and betv(by[4])["mult"] == 0 and bet(by[4], 0, 1)[0] == 409 and hall(by[4])["bets"]["taking"] is False)
 check("closing stage 5 ends the game", status == 200 and body["status"] == "done")
 check("nothing more can be closed", call("POST", "/api/host/night/stage", {}, host)[0] == 409)
 
 v = night(A)
+final = {r["n"]: r["pts"] for r in v["table"]}
+check("the seeded game ends where the bets expect", final[1] == -2 and final[2] == 4)
+check("a right bet is paid: 2 coins at 5", betv(A)["bet"]["won"] is True and betv(A)["bet"]["paid"] == 10 and v["bet"]["won"] is True)
+check("a right stage 2 bet is paid at 4", betv(by[2])["bet"]["paid"] == 4 and coins(by[2]) == c2 - 1 + 4 + v["result"]["prizes"].get("2", 0))
+check("a wrong bet is lost", betv(by[3])["bet"]["won"] is False and betv(by[3])["bet"]["paid"] == 0)
+hb = call("GET", "/api/host/activity", cookies=host)[1]["night"]["bets"]
+check("the GM sees every bet", [(b["number"], b["score"], b["stake"], b["mult"]) for b in hb] == [(1, -2, 2, 5), (2, 4, 1, 4), (3, pts3 - 9, 3, 3)])
 res = v["result"]
 table = v["table"]
 check("every player played all fifteen cards", all(sorted(v["used"][str(n)]) == sorted(CARDS) for n in range(1, 17)) and v["hand"] == [])
@@ -143,7 +173,7 @@ print("ladder:", [(row["n"], row["pts"]) for row in table], "out:", res["out"], 
 
 paid = {int(k): c for k, c in res["prizes"].items()}
 bal = {n: coins(by[n]) for n in range(1, 17)}
-check("the GM can undo the game: prizes and boosts go back, the player returns", call("POST", "/api/host/night/reset", {}, host)[0] == 200 and night(A)["on"] is False and coins(A) == bal[1] - paid.get(1, 0) + 2 and all(hall(by[n])["out"] == 0 for n in range(1, 17)))
+check("the GM can undo the game: prizes and boosts go back, the player returns", call("POST", "/api/host/night/reset", {}, host)[0] == 200 and night(A)["on"] is False and coins(A) == bal[1] - paid.get(1, 0) + 2 + 2 - 10 and coins(by[3]) == bal[3] - paid.get(3, 0) + 3 and all(hall(by[n])["out"] == 0 for n in range(1, 17)))
 
 # a new game where nobody is missing: the last seal closes the stage by itself
 call("POST", "/api/host/night/start", {"game": "ladder"}, host)

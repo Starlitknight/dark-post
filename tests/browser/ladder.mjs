@@ -77,8 +77,8 @@ ok("the attendant offers the rules", (await guest.$eval("#npc-talk", (el) => el.
 await shot(guest, "arena");
 await click('[data-act="introRules"]'); await sleep(900);
 const lines = [];
-for (let i = 1; i <= 8; i++) { await sleep(450); lines.push(await guest.$eval("#vb-line", (el) => el.textContent)); if (i === 1 || i === 3) await shot(guest, "rule-" + i); await click("#vb-next"); }
-ok("the rules say the Ace is high, twice", lines.length === 8 && lines[0].includes("The Ace is the highest: it beats the King.") && lines[2].includes("Ace beats King."));
+for (let i = 1; i <= 10; i++) { await sleep(450); lines.push(await guest.$eval("#vb-line", (el) => el.textContent)); if (i === 1 || i >= 8) await shot(guest, "rule-" + i); await click("#vb-next"); }
+ok("the rules say the Ace is high, twice", lines.length === 10 && lines[7].includes("The lowest ranked player is eliminated.") && lines[8].includes("walk to the yellow symbol in the arena") && lines[9].includes("strike deals") && lines[0].includes("The Ace is the highest: it beats the King.") && lines[2].includes("Ace beats King."));
 await sleep(1500);
 await click('[data-act="talkClose"]');
 await guest.keyboard.down("ArrowUp"); await sleep(1500); await guest.keyboard.up("ArrowUp"); await sleep(700);

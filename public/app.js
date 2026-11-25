@@ -1064,14 +1064,20 @@
       },
       mount: function () {
         ui.dealTo = 0;
+        ui.bt = null;
         ui.dealPick = null;
         ui.dealResult = null;
         function fetchDeals() {
-          return (hall ? Promise.resolve() : loadHall()).then(function () { return api("GET", "/api/deals"); }).then(function (d) { ui.deals = d; drawDeal(); });
+          return (hall ? Promise.resolve() : loadHall()).then(function () {
+            // while a game takes bets, the room is for the bet and nothing else
+            if (betsOn()) return api("GET", "/api/bet").then(function (v) { ui.bet = v; drawBet(); });
+            ui.bet = null;
+            return api("GET", "/api/deals").then(function (d) { ui.deals = d; drawDeal(); });
+          });
         }
         fetchDeals().catch(function (err) { toast(err.message); });
         poller = setInterval(function () {
-          if (!quiet() && !ui.dealPick && !ui.dealTo) fetchDeals().catch(function () {});
+          if (!quiet() && !ui.dealPick && !ui.dealTo && !(ui.bt && ui.bt.ask)) fetchDeals().catch(function () {});
         }, 8000);
       },
     },
@@ -1648,6 +1654,12 @@
   function staffLine(id, pz) {
     var n = hall && hall.night;
     if (id === "betting") {
+      if (roomOpen(id) && betsOn()) {
+        var bs = hall.bets;
+        return bs.placed ? { text: "Your bet is placed. It cannot be changed. It is settled when Game 1 ends.", go: ["deal", "See your bet"] }
+          : bs.taking && !hall.out ? { text: "Bets are open on Game 1. Guess the score you will finish on. A bet in this stage pays " + [5, 4, 3, 2][bs.stage - 1] + " coins for every coin.", go: ["deal", "Place a bet"] }
+          : { text: "Bets on Game 1 are closed.", go: ["deal", "How the bets work"] };
+      }
       return roomOpen(id)
         ? { text: "The tables are open. Make a deal when you are ready.", go: ["deal", "Make a deal"] }
         : { text: "The betting room is closed for bets right now, but feel free to explore the space. To place bets, check again later, when the games start." };
@@ -1658,7 +1670,7 @@
       if (isLadder()) {
         if (!briefed()) return { text: "Welcome to Game " + n.n + ": The Ladder. Let me show you how it is played.", act: ["introRules", "Show me the rules"], solo: true };
         if (hall.out) return { text: "Game " + n.n + " is being played at the table.", act: ["introRules", "Show me the rules"] };
-        return { text: n.opened ? "Your cards for this stage are sealed. The stage closes as soon as everyone has sealed." : "The table is open. Walk up to it and play your three cards.", act: ["introRules", "The rules again"] };
+        return { text: n.opened ? "Your cards for this stage are sealed. The stage closes as soon as everyone has sealed." : "The table is open. Walk to the yellow symbol and play your three cards.", act: ["introRules", "The rules again"] };
       }
       // first visit: welcome, then the vaults, then the rules. Nothing else is offered until the rules are seen.
       if (!briefed()) {
@@ -2007,7 +2019,8 @@
     if (u.study) out.push({ title: "The GM wrote to you", sub: "Only you can read it.", scene: "study", go: "Read" });
     if (u.board) out.push({ title: plural(u.board, "new notice", "new notices") + " from the GM", sub: "For every player.", scene: "board", go: "Read" });
     if (u.table) out.push({ title: plural(u.table, "new broadcast", "new broadcasts"), sub: "Said to every player.", scene: "table", go: "Read" });
-    if (hall.bettingOpen && u.deals && !hall.out) out.push({ title: plural(u.deals, "player offers", "players offer") + " you a deal", sub: "Answer in the betting room.", scene: "deal", go: "Answer" });
+    if (betsOn() && hall.bets.taking && !hall.bets.placed && !hall.out) out.push({ title: "Bet on your Game 1 score", sub: "Pays " + [5, 4, 3, 2][hall.bets.stage - 1] + " coins a coin in this stage. Less in the next.", walk: "Walk to the betting room." });
+    if (hall.bettingOpen && !betsOn() && u.deals && !hall.out) out.push({ title: plural(u.deals, "player offers", "players offer") + " you a deal", sub: "Answer in the betting room.", scene: "deal", go: "Answer" });
     return out;
   }
 
@@ -2204,7 +2217,8 @@
     var n = hall && hall.night;
     WORLD.setArena(n ? n.game : "");
     WORLD.setShop(!!(n && n.status === "open" && n.game !== "ladder")); // the shop sells clues, and only Six Vaults has them
-    return (n ? n.game + ":" + n.status : "") + (hall && hall.bettingOpen ? "+b" : "");
+    WORLD.setBets(betsOn(), hall && hall.bets ? hall.bets.stage : 0);
+    return (n ? n.game + ":" + n.status : "") + (hall && hall.bettingOpen ? "+b" : "") + (betsOn() ? "+bets" + hall.bets.stage : "");
   }
 
   function buildRoom(first) {
@@ -2266,7 +2280,7 @@
     var btn = $("hud-action");
     btn.hidden = !spot;
     if (spot) {
-      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? (isLadder() ? "Play your cards" : "Open the vaults") : spot.label;
+      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? (isLadder() ? "Play your cards" : "Open the vaults") : spot.scene === "deal" && betsOn() ? (hall.bets.placed ? "See your bet" : "Place a bet") : spot.label;
       btn.style.setProperty("--place", PLACES[stage.room].color);
     }
     measureStage();
@@ -2941,7 +2955,9 @@
       { line: "Each card is played once. Everyone can see which cards you have used.", pic: pic('<div class="fan-all">' + used + "</div>") },
       { line: plural(r.boostPrice, "coin", "coins") + " adds " + r.boost + " to a card. You can do it " + (r.boosts === 2 ? "twice" : r.boosts + " times") + " in the whole game.", pic: pic(versus("9", "10", 1, -1, { boost: true }, {}), "boost") },
       { line: "There are five stages. Each stage you play three opponents.", pic: pic('<div class="stages">' + faces + "</div>") },
-      { line: "The three highest scores win " + pr + " coins. The lowest is out.", pic: '<img class="vb-art" src="/art/night1/brief-8.webp" alt="A podium with three coins">' },
+      { line: "The three highest scores win " + pr + " coins. The lowest ranked player is eliminated.", pic: '<img class="vb-art" src="/art/night1/brief-8.webp" alt="A podium with three coins">' + pic('<div class="elim"><span class="rung-face">' + faceHTML(n.you) + '</span><b>Last place</b><img src="/art/night1/stamp-out.webp" alt="Out"></div>', "elim-wrap") },
+      { line: "To play your cards, walk to the yellow symbol in the arena.", pic: pic('<div class="walkto"><span class="walk-me">' + faceHTML(n.you) + '</span><i class="walk-arrow"></i><span class="walk-mark"></span></div><div class="walk-cap">The yellow symbol, in front of the cards</div>') },
+      { line: "A tip: talk to your opponents before you seal. You can strike deals with them. They may keep their word. They may not.", pic: pic('<div class="talkto"><span class="rung-face">' + faceHTML(n.you) + '</span><span class="bubble">I play low, you play low?</span><span class="bubble right">Deal.</span><span class="rung-face">' + faceHTML((n.opponents && n.opponents[0] && n.opponents[0][0]) || (n.you % 16) + 1) + "</span></div>") },
     ];
   }
 
@@ -3067,9 +3083,103 @@
     box.innerHTML = '<div class="s-card now"><i>Game ' + n.n + " · The Ladder · final</i>" + (mine ? "<h2>You finished " + place + ORD(place) + " with " + (mine.pts > 0 ? "+" : "") + mine.pts + "</h2>" : "") + ladderTableHTML(n, true) + "</div>" +
       '<div class="s-card next v-outcard"><i>Out</i><img class="v-stamp" src="/art/night1/stamp-out.webp" alt="Out"><h2>' + (res.out == null ? "The GM will decide" : out ? "You are out" : "Player " + res.out + " is out") + "</h2>" +
       (res.out != null ? '<img class="v-car" src="/art/night1/out-car.webp" alt="A car waiting at the gate">' : "") + "<p>" + (res.last.length > 1 ? "Level on points at the bottom. The duels between those players decided it." : "The fewest points on the ladder.") + "</p></div>" +
+      (n.bet ? '<div class="s-card ' + (n.bet.won ? "now" : "next") + '"><i>Your bet in the betting room</i><h2>' + (n.bet.won ? "Right: +" + n.bet.pays + " coins" : "Wrong: −" + plural(n.bet.stake, "coin", "coins")) + "</h2><p>You bet " + plural(n.bet.stake, "coin", "coins") + " on finishing on " + signed(n.bet.score) + ". You finished on " + (mine ? signed(mine.pts) : "") + ".</p></div>" : "") +
       '<button type="button" class="btn" data-act="vDone">Continue</button>';
   }
   function ORD(k) { return k === 1 ? "st" : k === 2 ? "nd" : k === 3 ? "rd" : "th"; }
+
+  // ----- the betting room during The Ladder: one bet on your own final score -----
+
+  function betsOn() { return !!(hall && hall.bettingOpen && hall.bets); }
+  function signed(k) { return (k > 0 ? "+" : k < 0 ? "−" : "") + Math.abs(k); }
+  function coinsHTML(k, cls) { var o = ""; for (var i = 0; i < k; i++) o += '<i class="bcoin' + (cls ? " " + cls : "") + '"></i>'; return '<span class="coins-row">' + o + "</span>"; }
+
+  // What one coin pays, stage by stage. The stage being played is lit; the ones gone by are struck out.
+  function betOddsHTML(v) {
+    return '<div class="odds">' + v.pays.map(function (p, i) {
+      var st = i + 1, now = !v.done && v.stage === st, past = v.done || v.stage > st;
+      return '<span class="odd' + (now ? " now" : past ? " past" : "") + '"><i>Stage ' + st + "</i><b>×" + p + "</b><u>" + (now ? "Now" : past ? "Gone" : "Later") + "</u></span>";
+    }).join("") + '<span class="odd shut' + (v.done || v.stage > v.pays.length ? " now" : "") + '"><i>Stage ' + (v.pays.length + 1) + "</i><b>✕</b><u>Closed</u></span></div>";
+  }
+
+  // The rules of the bet, one picture to a screen.
+  function betTiles(v) {
+    function pic(inner, cls) { return '<div class="vb-draw' + (cls ? " " + cls : "") + '">' + inner + "</div>"; }
+    var guess = '<div class="bt-guess"><span class="rung-face">' + faceHTML(v.you) + "</span><b>Your final score</b><strong>?</strong></div>";
+    return [
+      { line: "Guess the score you will finish Game 1 on.", pic: pic(guess) },
+      { line: "Bet 1, 2 or " + v.maxStake + " coins on your guess.", pic: pic('<div class="bt-stakes"><span>' + coinsHTML(1) + "</span><span>" + coinsHTML(2) + "</span><span>" + coinsHTML(3) + "</span></div>") },
+      { line: "Right: every coin comes back as more coins. Wrong: the coins you bet are gone.", pic: pic('<div class="bt-pay win"><em>✓</em>' + coinsHTML(1) + "<s></s>" + coinsHTML(5) + '</div><div class="bt-pay lose"><em>✕</em>' + coinsHTML(1) + "<s></s><b>0</b></div>") },
+      { line: "The earlier you bet, the more one coin pays. After stage " + v.pays.length + " the room is closed.", pic: pic(betOddsHTML({ pays: v.pays, stage: 0, done: false })) },
+      { line: "Your guess must be exact. You get one bet, and it cannot be changed.", pic: pic('<div class="bt-exact"><span class="no">+2<i>✕</i></span><span class="yes">+3<i>✓</i></span><span class="no">+4<i>✕</i></span></div><div class="walk-cap">You bet on +3</div>') },
+    ];
+  }
+
+  function drawBet() {
+    var box = $("deal"), v = ui.bet;
+    if (!box || !v) return;
+    var head = document.querySelector("#app .room-head h1");
+    if (head) head.textContent = "Bet on your score";
+    if (!v.on) { ui.bet = null; return api("GET", "/api/deals").then(function (d) { ui.deals = d; drawDeal(); }); }
+    if (!ui.bt) ui.bt = { step: heard("bet" + v.n) ? -1 : 0, score: null, stake: 1, ask: false };
+    var b = ui.bt, out = "";
+    if (b.step >= 0) {
+      var tiles = betTiles(v), t = tiles[Math.min(b.step, tiles.length - 1)];
+      out = '<div class="s-card now bt-tile"><i>Game ' + v.n + " · the betting room · " + (b.step + 1) + " of " + tiles.length + "</i>" + t.pic + '<p class="bt-line">' + esc(t.line) + '</p><button type="button" class="btn" data-act="btNext">' + (b.step === tiles.length - 1 ? "Got it" : "Next") + "</button></div>";
+      box.innerHTML = out;
+      return;
+    }
+    out += '<div class="s-card"><i>What 1 coin pays, if you are right</i>' + betOddsHTML(v) + "</div>";
+    if (v.bet) {
+      var won = v.bet.won;
+      out += '<div class="s-card ' + (won === false ? "next" : "now") + ' bt-mine"><i>' + (won == null ? "Your bet · placed in stage " + v.bet.stage + " · final" : won ? "Your bet · you were right" : "Your bet · you were wrong") + '</i><div class="bt-big"><strong>' + signed(v.bet.score) + "</strong><span>" + coinsHTML(v.bet.stake) + "<small>" + plural(v.bet.stake, "coin", "coins") + " bet</small></span></div>" +
+        "<p>" + (won == null ? "Finish Game 1 on exactly <b>" + signed(v.bet.score) + "</b> and you get <b>" + v.bet.pays + " coins</b>. Any other score and the " + plural(v.bet.stake, "coin is", "coins are") + " gone." : won ? "You finished on " + signed(v.pts) + ". You were paid <b>" + v.bet.pays + " coins</b>." : "You finished on " + signed(v.pts) + ". The " + plural(v.bet.stake, "coin is", "coins are") + " gone.") + "</p>" +
+        (won == null ? '<p class="bt-now">Your score now: <b>' + signed(v.pts) + "</b> · " + plural(v.left, "duel", "duels") + " left</p>" : "") + "</div>";
+    } else if (v.taking) {
+      if (b.score == null || b.score < v.low || b.score > v.high) b.score = Math.max(v.low, Math.min(v.high, v.pts));
+      var can = Math.min(v.maxStake, v.coins || 0);
+      if (b.stake > can) b.stake = Math.max(1, can);
+      if (b.ask) {
+        out += '<div class="s-card now"><i>Place this bet?</i><div class="bt-big"><strong>' + signed(b.score) + "</strong><span>" + coinsHTML(b.stake) + "<small>" + plural(b.stake, "coin", "coins") + "</small></span></div><p>It is final. You cannot change the score or the coins.</p>" +
+          '<div class="btn-row"><button type="button" class="btn" data-act="btYes">Place it</button><button type="button" class="btn ghost" data-act="btBack">Back</button></div></div>';
+      } else if (can < 1) {
+        out += '<div class="s-card next"><i>No coins</i><p>A bet costs at least 1 coin. You have none.</p></div>';
+      } else {
+        out += '<div class="s-card"><i>Where you stand</i><p class="bt-now">Your score now: <b>' + signed(v.pts) + "</b> · " + plural(v.left, "duel", "duels") + " left. You can still finish anywhere from <b>" + signed(v.low) + "</b> to <b>" + signed(v.high) + "</b>.</p></div>";
+        out += '<div class="s-card todo"><i>1 · The score you will finish on</i><div class="bt-step"><button type="button" class="bt-pm" data-act="btDown" aria-label="One lower"' + (b.score <= v.low ? " disabled" : "") + '>−</button><strong id="bt-score">' + signed(b.score) + '</strong><button type="button" class="bt-pm" data-act="btUp" aria-label="One higher"' + (b.score >= v.high ? " disabled" : "") + ">+</button></div></div>";
+        out += '<div class="s-card todo"><i>2 · The coins you bet</i><div class="bt-stakes pick">' + [1, 2, 3].slice(0, v.maxStake).map(function (k) {
+          return '<button type="button" class="bt-stake' + (b.stake === k ? " on" : "") + '" data-act="btStake" data-k="' + k + '"' + (k > can ? " disabled" : "") + ">" + coinsHTML(k) + "<small>" + plural(k, "coin", "coins") + "</small></button>";
+        }).join("") + "</div></div>";
+        out += '<div class="s-card now bt-sum"><i>This bet</i><div class="bt-pay win"><em>✓</em><span>Finish on exactly <b>' + signed(b.score) + "</b></span><s></s><b>+" + b.stake * v.mult + '</b></div><div class="bt-pay lose"><em>✕</em><span>Any other score</span><s></s><b>−' + b.stake + "</b></div>" +
+          '<button type="button" class="btn" data-act="btAsk">Bet ' + plural(b.stake, "coin", "coins") + " on " + signed(b.score) + "</button></div>";
+      }
+    } else {
+      out += '<div class="s-card next"><i>Closed</i><p>' + (v.out ? "You are out of the game." : !v.playing ? "You are not playing in this game, so there is no score to bet on." : v.done ? "Game 1 is over. You placed no bet." : "Bets closed when stage " + (v.pays.length + 1) + " opened. You placed no bet.") + "</p></div>";
+    }
+    out += '<div class="s-card"><button type="button" class="link" data-act="btRules">How the bet works</button></div>';
+    box.innerHTML = out;
+  }
+
+  function betAct(name, el) {
+    var v = ui.bet, b = ui.bt;
+    if (!v || !b) return;
+    if (name === "btNext") { b.step += 1; if (b.step >= betTiles(v).length) { b.step = -1; markHeard("bet" + v.n); } window.scrollTo(0, 0); }
+    else if (name === "btRules") { b.step = 0; window.scrollTo(0, 0); }
+    else if (name === "btDown") b.score = Math.max(v.low, b.score - 1);
+    else if (name === "btUp") b.score = Math.min(v.high, b.score + 1);
+    else if (name === "btStake") b.stake = Number(el.getAttribute("data-k"));
+    else if (name === "btAsk") b.ask = true;
+    else if (name === "btBack") b.ask = false;
+    else if (name === "btYes") {
+      if (ui.busy) return;
+      ui.busy = true;
+      api("POST", "/api/bet", { score: b.score, stake: b.stake }).then(function (nv) { ui.bet = nv; b.ask = false; if (hall && hall.bets) hall.bets.placed = true; syncWalletAfter(nv); drawBet(); toast("Your bet is placed."); })
+        .catch(function (err) { b.ask = false; toast(err.message); drawBet(); }).then(function () { ui.busy = false; });
+      return;
+    }
+    drawBet();
+  }
+  function syncWalletAfter(nv) { if (hall && nv && nv.coins != null) { hall.coins = nv.coins; syncWallet(); } }
 
   // ----- the night's match: Six Vaults -----
 
@@ -3841,6 +3951,7 @@
       api("POST", "/api/night/seen", {}).catch(function () {}).then(function () { hall = null; go("hall"); });
     }
     else if (name === "cardClose") { ui.card = 0; $("card").hidden = true; }
+    else if (name.indexOf("bt") === 0) betAct(name, el);
     else if (name === "dealTo") { ui.dealTo = Number(el.getAttribute("data-n")); drawDeal(); }
     else if (name === "dealPick") { ui.dealPick = { id: Number(el.getAttribute("data-id")) || 0, n: Number(el.getAttribute("data-n")), choice: el.getAttribute("data-c") }; drawDeal(); }
     else if (name === "dealBack") { ui.dealPick = null; ui.dealTo = 0; drawDeal(); }
@@ -4047,6 +4158,7 @@
       lastCast: d.msgs.filter(function (m) { return m.room === "table"; }).slice(-1).map(function (m) { return { id: m.id, from: m.from, body: m.body, at: m.at }; })[0] || null,
       cell: 0,
       bettingOpen: !!d.bettingOpen,
+      bets: d.bettingOpen && d.night && d.night.game === "ladder" ? { taking: d.night.status === "open" && d.night.stage <= 4, stage: d.night.status === "open" ? d.night.stage : 5, placed: !!d.night.bet } : null,
       gm: (function () {
         var posts = d.msgs.filter(function (m) { return m.room === "board" && m.from === 0 && m.parent == null; });
         return { total: posts.length, notes: posts.slice(-3).reverse().map(function (m) { return { id: m.id, body: m.body, at: m.at, fresh: m.id > mark("board") }; }) };
@@ -4252,6 +4364,19 @@
       table: LADDER.table(nt.players, nt.duels), rules: LADDER.RULES, result: nt.result };
   }
 
+  function demoBet(method, body) {
+    var d = demoHallStore(), nt = d.night, pays = [5, 4, 3, 2];
+    if (!nt || nt.game !== "ladder" || !d.bettingOpen) return { on: false };
+    var done = nt.status === "done", stage = done ? LADDER.stageCount(nt.players) + 1 : nt.stage;
+    var row = LADDER.table(nt.players, nt.duels).filter(function (r) { return r.n === me.number; })[0];
+    var left = nt.players.length - 1 - (row.w + row.l + row.t);
+    if (method === "POST" && !nt.bet) { nt.bet = { score: body.score, stake: body.stake, stage: stage, mult: pays[stage - 1] }; d.extra -= body.stake; }
+    var b = nt.bet;
+    return { on: true, n: 1, you: me.number, playing: true, out: 0, done: done, stage: stage, stages: 5, pays: pays, mult: pays[stage - 1] || 0, taking: !done && stage <= 4 && !b, maxStake: 3,
+      coins: me.coins + d.extra, pts: row.pts, left: left, low: row.pts - left, high: row.pts + left,
+      bet: b ? { score: b.score, stake: b.stake, stage: b.stage, mult: b.mult, pays: b.stake * b.mult, won: done ? row.pts === b.score : null } : null };
+  }
+
   function demoNight(method, path, body) {
     var d = demoHallStore();
     var nt = d.night;
@@ -4308,6 +4433,7 @@
     else if (path === "/api/deals" || path === "/api/deal" || path === "/api/deal/answer") out = demoDeals(path, body);
     else if (path === "/api/doorlog") out = demoDoors();
     else if (path.indexOf("/api/night") === 0) out = demoNight(method, path, body);
+    else if (path === "/api/bet") out = demoBet(method, body);
     else if (path === "/api/commit") { var dc = demoHallStore(); dc.committed = true; dc.resigned = !body.play; }
     else if (path === "/api/notices/seen") demoHallStore().noticeMark = body.upTo;
     else if (path.indexOf("/api/messages") === 0) out = demoMessages(method, path, body);

@@ -36,6 +36,9 @@ const WORLD_ROOMS = ["hall", "arena", "puzzle", "betting", "studio", "sky", "dun
 const CELLS = [[90, 162, 470, 462], [560, 162, 940, 462], [1030, 162, 1410, 462]];
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LADDER = globalThis.LADDER;
+// A bet on your own score in The Ladder: what one coin pays when placed in stage 1, 2, 3 and 4, and the most a player may stake.
+const BET_PAYS = [5, 4, 3, 2];
+const BET_MAX = 3;
 const GAME_DAY_STARTS_UTC_MS = 5 * 60 * 60 * 1000; // midnight EST is 05:00 UTC
 const PUZZLE_TRIES = 3;
 const PUZZLE_REWARD = 1;
@@ -178,6 +181,8 @@ export class Game extends DurableObject {
     )`);
     // The Ladder: what each player has sealed for a stage, and what they have been shown.
     this.sql.exec(`CREATE TABLE IF NOT EXISTS ladder_seals (number INTEGER NOT NULL, stage INTEGER NOT NULL, plays TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (number, stage))`);
+    // A player's one bet on their own final score in The Ladder.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS ladder_bets (number INTEGER PRIMARY KEY, score INTEGER NOT NULL, stake INTEGER NOT NULL, stage INTEGER NOT NULL, mult INTEGER NOT NULL, paid INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS ladder_players (number INTEGER PRIMARY KEY, seen_stage INTEGER NOT NULL DEFAULT 0, seen INTEGER NOT NULL DEFAULT 0)`);
     this.lastPost = new Map();
   }
@@ -333,6 +338,8 @@ export class Game extends DurableObject {
       if (path === "/api/night/open" && method === "POST") return this.nightOpen(request);
       if (path === "/api/night/seen" && method === "POST") return this.nightSeen(request);
       if (path === "/api/night/seal" && method === "POST") return this.ladderSeal(request);
+      if (path === "/api/bet" && method === "GET") return this.betGet(request);
+      if (path === "/api/bet" && method === "POST") return this.betPlace(request);
       if (path === "/api/night/stage-seen" && method === "POST") return this.ladderStageSeen(request);
 
       if (path === "/api/claim" && method === "POST") return this.claim(request, url);
@@ -614,6 +621,8 @@ export class Game extends DurableObject {
       needsCommit: !inv.committed && !inv.out,
       // rooms the GM has opened. The betting room stays shut until the GM opens it.
       bettingOpen: this.bettingOpen(),
+      // while The Ladder is played the betting room takes bets on a player's own score, and nothing else
+      bets: this.betsBrief(inv),
       // behind the bell: news about the other players, newest first, and how far this player has read
       // what the GM has announced: the latest three and how many in all. They stay here after they are read.
       gm: {
@@ -1403,6 +1412,7 @@ export class Game extends DurableObject {
       rules: LADDER.RULES,
       result: result ? { out: result.out, last: result.last, prizes: result.prizes } : null,
       seen: row ? !!row.seen : true,
+      bet: (() => { const b = this.betOf(you); const mine = LADDER.table(players, duels).find((r) => r.n === you); return b ? { score: b.score, stake: b.stake, mult: b.mult, pays: b.stake * b.mult, won: night.status === "done" && !!mine ? mine.pts === b.score : null } : null; })(),
     };
   }
 
@@ -1461,6 +1471,7 @@ export class Game extends DurableObject {
     if (!endsAt && stageMinutes) endsAt = new Date(Date.now() + stageMinutes * 60000).toISOString();
     this.sql.exec(`DELETE FROM ladder_seals`);
     this.sql.exec(`DELETE FROM ladder_players`);
+    this.sql.exec(`DELETE FROM ladder_bets`);
     for (const n of players) this.sql.exec(`INSERT INTO ladder_players (number) VALUES (?)`, n);
     this.set("ladder_duels", "[]");
     this.set("night", JSON.stringify({ n: (before ? before.n : 0) + 1, game: "ladder", status: "open", startedAt: Date.now(), endsAt, stage: 1, stages: LADDER.stageCount(players), players, stageMinutes }));
@@ -1498,6 +1509,7 @@ export class Game extends DurableObject {
       const prizes = {};
       LADDER.RULES.prizes.forEach((coins, i) => { if (table[i]) prizes[table[i].n] = coins; });
       for (const n of Object.keys(prizes)) this.addCoins(Number(n), prizes[n]);
+      this.settleBets(table);
       if (lp.out != null) this.sql.exec(`UPDATE invites SET out = ? WHERE number = ?`, night.n, lp.out);
       this.set("night_result", JSON.stringify({ game: "ladder", out: lp.out, last: lp.last, undecided: lp.out == null ? lp.level : [], prizes, prize: prizes, endedAt: Date.now() }));
       this.set("night", JSON.stringify({ ...night, status: "done", endsAt: "" }));
@@ -1526,6 +1538,8 @@ export class Game extends DurableObject {
       if (night.status === "open") spent += (this.ladderSealOf(n, night.stage) || []).filter((p) => p.boost).length;
       if (spent) this.addCoins(n, spent * LADDER.RULES.boostPrice);
     }
+    for (const b of this.sql.exec(`SELECT * FROM ladder_bets`).toArray()) this.addCoins(b.number, b.stake - b.paid);
+    this.sql.exec(`DELETE FROM ladder_bets`);
     this.sql.exec(`UPDATE invites SET out = 0 WHERE out = ?`, night.n);
     this.sql.exec(`DELETE FROM ladder_seals`);
     this.sql.exec(`DELETE FROM ladder_players`);
@@ -1542,8 +1556,102 @@ export class Game extends DurableObject {
       ...night,
       sealed: night.status === "open" ? night.players.filter((n) => !!this.ladderSealOf(n, night.stage)) : [],
       table: LADDER.table(night.players, duels),
+      bets: this.sql.exec(`SELECT number, score, stake, stage, mult, paid FROM ladder_bets ORDER BY number`).toArray(),
       result: this.nightResult(),
     };
+  }
+
+  // ---------- the betting room during The Ladder: a bet on your own final score ----------
+  // One bet a player, final once placed. A right guess pays the stake times the stage's number:
+  // the earlier the bet, the more it pays. No bets once the last stage has opened.
+
+  betOf(n) {
+    const rows = this.sql.exec(`SELECT * FROM ladder_bets WHERE number = ?`, n).toArray();
+    return rows.length ? rows[0] : null;
+  }
+
+  // Are bets being taken on this game at all (even if this stage is too late)?
+  betsOn() {
+    const night = this.night();
+    return !!night && night.game === "ladder" && this.bettingOpen();
+  }
+
+  betsBrief(inv) {
+    if (!this.betsOn()) return null;
+    const night = this.night();
+    const stage = night.status === "open" ? night.stage : night.stages;
+    return { taking: night.status === "open" && stage <= BET_PAYS.length, stage, placed: !!this.betOf(inv.number) };
+  }
+
+  betView(inv) {
+    const night = this.night();
+    if (!this.betsOn()) return { on: false, coins: this.balance(inv) };
+    const players = night.players;
+    const duels = this.ladderDuels();
+    const row = LADDER.table(players, duels).find((r) => r.n === inv.number);
+    const playing = !!row && !!this.ladderPlayer(inv.number);
+    const played = row ? row.w + row.l + row.t : 0;
+    const left = playing ? players.length - 1 - played : 0;
+    const stage = night.status === "open" ? night.stage : night.stages + 1;
+    const bet = this.betOf(inv.number);
+    const done = night.status === "done";
+    return {
+      on: true,
+      n: night.n,
+      you: inv.number,
+      playing,
+      out: inv.out || 0,
+      done,
+      stage,
+      stages: night.stages,
+      pays: BET_PAYS,
+      mult: stage <= BET_PAYS.length ? BET_PAYS[stage - 1] : 0,
+      taking: !done && stage <= BET_PAYS.length && playing && !inv.out && !bet,
+      maxStake: BET_MAX,
+      coins: this.balance(inv),
+      pts: row ? row.pts : 0,
+      left,
+      low: row ? row.pts - left : 0,
+      high: row ? row.pts + left : 0,
+      bet: bet ? { score: bet.score, stake: bet.stake, stage: bet.stage, mult: bet.mult, pays: bet.stake * bet.mult, won: done ? row.pts === bet.score : null, paid: bet.paid } : null,
+    };
+  }
+
+  betGet(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    return json(this.betView(inv));
+  }
+
+  async betPlace(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    if (inv.out) return json({ error: "You are out of the game." }, 403);
+    const v = this.betView(inv);
+    if (!v.on) return json({ error: "The betting room is closed." }, 409);
+    if (v.bet) return json({ error: "You have already placed your bet. It cannot be changed." }, 409);
+    if (!v.playing) return json({ error: "You are not in this game." }, 409);
+    if (!v.taking) return json({ error: "Bets are closed for this game." }, 409);
+    const body = await readJson(request);
+    const score = Number(body.score);
+    const stake = Number(body.stake);
+    if (!Number.isInteger(score) || score < v.low || score > v.high) return json({ error: "Choose a score you can still finish on: from " + v.low + " to " + v.high + "." }, 400);
+    if (!Number.isInteger(stake) || stake < 1 || stake > BET_MAX) return json({ error: "Bet 1, 2 or " + BET_MAX + " coins." }, 400);
+    if ((v.coins || 0) < stake) return json({ error: "You do not have " + stake + " coins." }, 409);
+    this.addCoins(inv.number, -stake);
+    this.sql.exec(`INSERT INTO ladder_bets (number, score, stake, stage, mult, at) VALUES (?, ?, ?, ?, ?, ?)`, inv.number, score, stake, v.stage, v.mult, Date.now());
+    this.broadcast({ t: "news" });
+    return json(this.betView(this.inHall(request)));
+  }
+
+  // The game is over: every bet on the right score is paid.
+  settleBets(table) {
+    for (const b of this.sql.exec(`SELECT * FROM ladder_bets WHERE paid = 0`).toArray()) {
+      const row = table.find((r) => r.n === b.number);
+      if (!row || row.pts !== b.score) continue;
+      this.addCoins(b.number, b.stake * b.mult);
+      this.sql.exec(`UPDATE ladder_bets SET paid = ? WHERE number = ?`, b.stake * b.mult, b.number);
+    }
   }
 
   // ---------- the dungeon: who went down, and when ----------

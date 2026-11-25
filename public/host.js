@@ -631,10 +631,11 @@
     }
     out += "</div>";
     var prizes = (n.result && n.result.prizes) || {};
-    out += '<table class="table"><thead><tr><th>Place</th><th>Player</th><th>Points</th><th>Won</th><th>Lost</th><th>Level</th><th>' + (n.status === "open" ? "This stage" : "Prize") + "</th></tr></thead><tbody>" +
+    out += '<table class="table"><thead><tr><th>Place</th><th>Player</th><th>Points</th><th>Won</th><th>Lost</th><th>Level</th><th>' + (n.status === "open" ? "This stage" : "Prize") + "</th><th>Bet</th></tr></thead><tbody>" +
       n.table.map(function (row, i) {
         return "<tr><td>" + (i + 1) + "</td><td>" + esc(hwho(row.n)) + '</td><td class="num">' + (row.pts > 0 ? "+" : "") + row.pts + '</td><td class="num">' + row.w + '</td><td class="num">' + row.l + '</td><td class="num">' + row.t + "</td><td>" +
-          (n.status === "open" ? (n.sealed.indexOf(row.n) >= 0 ? "Sealed" : "Not yet") : prizes[row.n] ? "+" + prizes[row.n] + " coins" : "") + "</td></tr>";
+          (n.status === "open" ? (n.sealed.indexOf(row.n) >= 0 ? "Sealed" : "Not yet") : prizes[row.n] ? "+" + prizes[row.n] + " coins" : "") + "</td><td>" +
+          (function () { var b = (n.bets || []).filter(function (x) { return x.number === row.n; })[0]; return b ? b.stake + " on " + (b.score > 0 ? "+" : "") + b.score + " (×" + b.mult + ")" + (n.status === "open" ? "" : b.paid ? ": paid " + b.paid : ": lost") : ""; })() + "</td></tr>";
       }).join("") + "</tbody></table>";
     box.innerHTML = out;
   }

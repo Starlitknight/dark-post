@@ -178,3 +178,7 @@ The invitation and the animated welcome and number draw were measured at 320 × 
 ## The Ladder, server and console (NOT LIVE YET)
 - Game 1 is The Ladder: start, seal, close stage, prizes, elimination and undo on the server; console panel; arena shows four cards on a plinth; Ace marked High, 2 marked Low.
 - Tests: tests/test_ladder_game.py (whole 16-player game), tests/browser/ladder.mjs (console + phone player).
+
+## Betting room during The Ladder; rules additions (NOT LIVE YET)
+- One bet per player on their own final score: 1 to 3 coins, a coin pays 5/4/3/2 in stages 1 to 4, closed in stage 5, exact score only, final. Deals are hidden while a game takes bets. Lit room picture and odds on the wall.
+- Rules: "eliminated", walk to the yellow symbol, talk and strike deals.
