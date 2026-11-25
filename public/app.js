@@ -1882,10 +1882,10 @@
   function drawOnline() {
     var el = $("top-online");
     if (!el || !hall) return;
-    var n = onlineOthers().length;
-    el.classList.toggle("none", !n);
+    // the count includes the player looking at it: they are online too
+    var n = onlineOthers().length + 1;
     $("top-online-n").textContent = n + " online";
-    el.setAttribute("aria-label", (n ? plural(n, "other player is", "other players are") : "No other player is") + " online now. Show who.");
+    el.setAttribute("aria-label", plural(n, "player is", "players are") + " online now, counting you. Show who.");
   }
 
   function onlineHTML() {
@@ -1899,7 +1899,8 @@
     return '<div class="menu-sheet bell-sheet" role="dialog" aria-modal="true" aria-labelledby="online-heading">' +
       '<div class="menu-head"><h2 id="online-heading">Online now</h2>' +
       '<button type="button" class="menu-close" data-act="menuClose" aria-label="Close the list">×</button></div>' +
-      '<p class="bell-none">' + (list.length ? plural(list.length, "other player has", "other players have") + " the game open right now." : "Nobody else has the game open right now.") + "</p>" +
+      '<p class="bell-none">' + (list.length ? plural(list.length + 1, "player has", "players have") + " the game open right now, counting you." : "Only you have the game open right now.") + "</p>" +
+      '<div class="bell-row who"><span class="bell-face">' + faceHTML(hall.you) + '<i class="on-dot"></i></span><span class="bell-text"><b>Player ' + hall.you + " (you)</b><small>" + esc(whereLine(hall.you)) + "</small></span></div>" +
       rows.join("") +
       (away ? '<p class="bell-none who-away">' + plural(away, "player is", "players are") + " away. Their figures are faded.</p>" : "") +
       "</div>";

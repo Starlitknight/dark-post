@@ -100,22 +100,22 @@ ok("the solver gets no pop-up about themself", (await call("GET", "/api/hall", n
 
 // who is online right now
 const chipText = () => page.$eval("#top-online", (el) => el.innerText.trim().toLowerCase());
-ok("alone in the house, the top bar says nobody else is online", (await chipText()) === "0 online");
+ok("alone in the house, the top bar counts the player themself", (await chipText()) === "1 online");
 const ctx2 = await (browser.createBrowserContext ? browser.createBrowserContext() : browser.createIncognitoBrowserContext());
 const page2 = await ctx2.newPage();
 await page2.setCookie({ name: "dp_seat", value: tokens[1], url: BASE });
 await page2.goto(BASE + "/", { waitUntil: "networkidle2" });
-for (let i = 0; i < 15 && (await chipText()) !== "1 online"; i++) await sleep(1000);
-ok("when another player opens the game, the top bar counts them", (await chipText()) === "1 online");
+for (let i = 0; i < 15 && (await chipText()) !== "2 online"; i++) await sleep(1000);
+ok("when another player opens the game, the top bar counts them", (await chipText()) === "2 online");
 await tryClick("#top-online"); await sleep(600);
 const who = await page.$eval(".bell-sheet", (el) => el.innerText.replace(/\s+/g, " "));
 await snap("online-now");
-ok("the list names who is online and which room they are in, and offers to message them", who.includes("Online now") && who.includes("Player " + solver.number) && who.includes("In the hall") && who.includes("Message"));
+ok("the list names who is online and which room they are in, and offers to message them", who.includes("Online now") && who.includes("(you)") && who.includes("Player " + solver.number) && who.includes("In the hall") && who.includes("Message"));
 await page2.close(); await ctx2.close();
-for (let i = 0; i < 15 && !(await page.$eval(".bell-sheet", (el) => el.innerText)).includes("Nobody else"); i++) await sleep(1000);
-ok("when they leave, the open list empties by itself", (await page.$eval(".bell-sheet", (el) => el.innerText)).includes("Nobody else has the game open"));
+for (let i = 0; i < 15 && !(await page.$eval(".bell-sheet", (el) => el.innerText)).includes("Only you"); i++) await sleep(1000);
+ok("when they leave, the open list goes back to only you by itself", (await page.$eval(".bell-sheet", (el) => el.innerText)).includes("Only you have the game open"));
 await tryClick(".menu-close"); await sleep(400);
-ok("and the top bar goes back to nobody", (await chipText()) === "0 online");
+ok("and the top bar goes back to one", (await chipText()) === "1 online");
 
 // every menu page
 for (const [id, word] of [["whispers", "Messages"], ["study", "GM"], ["players", "Players"], ["table", "Broadcast"], ["standings", "Standings"], ["guide", "How to play"]]) {
