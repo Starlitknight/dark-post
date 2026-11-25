@@ -39,7 +39,8 @@ window.DP_WORLD = (function () {
       floor: [[58, 162, 1442, 1240], [650, 1230, 850, 1290]],
       blocks: [[390, 470, 1110, 866], [70, 430, 240, 1010], [1260, 430, 1430, 1010]],
       doors: [{ to: "hall", zone: [650, 1264, 850, 1294], center: [750, 1280], arrive: [750, 1150] }],
-      spots: [{ at: [750, 1010], mark: [750, 836], label: "See tonight's game", scene: "arena" }],
+      // the vaults are used from the floor in front of them, not from anywhere in the room
+      spots: [{ at: [750, 940], zone: [470, 866, 1030, 1040], mark: [750, 836], label: "See tonight's game", scene: "arena" }],
     },
     puzzle: {
       id: "puzzle", w: 1300, h: 1000, name: "Puzzle room", color: VIOLET,
@@ -416,15 +417,17 @@ window.DP_WORLD = (function () {
   }
 
   function fixtures(id) {
-    if (id === 'hall') return hallWall() + positions();
-    if (id === 'arena') return arenaSet === 'vaults' ? vaultSet() : '';
+    if (id === 'hall') return positions(); // the hall picture itself now has six doors, not eight
+    if (id === 'arena') return ''; // Night 1's vaults are painted into their own picture of the arena
     if (id === 'betting') return payoffBoard();
     if (id === 'studio') return '<circle cx="581" cy="82" r="6" fill="#e0a099"/>' + lettering(663, 93, 'ON AIR', 30, '#f0d3c6', 'middle', '3');
     if (id === 'gallery') return portraits();
     if (id === 'shop') {
+      // open: the shutter is up and a sign hangs in the picture, so only the word is added
+      if (shopOpen) return lettering(532, 80, 'Open', 26, '#ecd9a4');
       return line('M484 27l-7 24m103-24 8 24','#b8b8a0',2) +
         panel(450, 48, 165, 53, 6, '#1a2a2c', ' stroke="#96b0a7" stroke-width="2"') +
-        lettering(532,83,shopOpen ? 'Open' : 'Closed',28,shopOpen ? '#ecd9a4' : '#d8e8da');
+        lettering(532,83,'Closed',28,'#d8e8da');
     }
     if (id === 'dungeon') {
       var cells = CELLS.map(function (c, i) {
@@ -435,6 +438,13 @@ window.DP_WORLD = (function () {
     return '';
   }
 
+  // Some rooms have a second picture: the arena with the night's set in it, the shop with its shutter up.
+  function plateOf(id) {
+    if (id === 'arena' && arenaSet === 'vaults') return 'arena-vaults';
+    if (id === 'shop' && shopOpen) return 'shop-open';
+    return id;
+  }
+
   var roomsDrawn = {};
   function svg(id) {
     var drawn = id === 'arena' ? id + ':' + arenaSet : id === 'shop' ? id + ':' + shopOpen : id;
@@ -442,7 +452,7 @@ window.DP_WORLD = (function () {
       var room = ROOMS[id];
       roomsDrawn[drawn] = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + room.w + ' ' + room.h +
         '" width="' + room.w + '" height="' + room.h + '" class="map-art" data-room="' + id + '" aria-hidden="true">' +
-        '<image href="/art/rooms/' + id + '.webp" width="' + room.w + '" height="' + room.h + '" preserveAspectRatio="none"/>' +
+        '<image href="/art/rooms/' + plateOf(id) + '.webp" width="' + room.w + '" height="' + room.h + '" preserveAspectRatio="none"/>' +
         fixtures(id) + room.doors.map(function (d) { return exitSign(room,d); }).join('') + '</svg>';
     }
     return roomsDrawn[drawn];

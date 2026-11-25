@@ -31,7 +31,7 @@
   var INTRO = ["sixteen", "title", "coins", "bags", "bag1", "bag2"];
   var RULES = ["bags", "bag1", "bag2"];
   var REVEAL = ["gate", "crowd1", "crowd", "you"];
-  var HALL = ["tour", "hall", "table", "onair", "whispers", "whisper", "study", "board", "players", "standings", "arena", "puzzle", "deal", "sky", "shop", "doorlog", "cell", "tonight", "vbrief", "vreveal", "guide", "ledger", "face", "look"].concat(RULES);
+  var HALL = ["gamecall", "tour", "hall", "table", "onair", "whispers", "whisper", "study", "board", "players", "standings", "arena", "puzzle", "deal", "sky", "shop", "doorlog", "cell", "tonight", "vbrief", "vreveal", "guide", "ledger", "face", "look"].concat(RULES);
 
   // ---------- talking to the server ----------
 
@@ -836,6 +836,7 @@
           hintDue = firstVisit; // a pop-up must not cover the hint that is about to be typed
           buildRoom(true);
           hintDue = false;
+          if (!stage) return; // building the room found a game beginning, or a result to watch, and left for that screen
           if (firstVisit) {
             markHeard("hall");
             narrate(["Tap the floor to walk. Step through a marked door to enter its room."], { auto: 3200, fade: true });
@@ -989,13 +990,30 @@
       },
     },
 
+    // A game is beginning. Shown once to every player, wherever they are, the moment the GM starts it.
+    gamecall: {
+      html: function () {
+        var n = hall && hall.night ? hall.night.n : 1;
+        var nth = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh"][n - 1] || "next";
+        return '<section class="screen gamecall" id="gamecall"><div class="gc-beams" aria-hidden="true"><i></i><i></i></div>' +
+          '<p class="gc-kicker">The Crane Estate</p>' +
+          '<h1 class="gc-title">Game ' + n + "</h1>" +
+          '<div class="gc-pic"><img src="/art/night1/brief-1.webp" alt="Six numbered vault doors"></div>' +
+          '<h2 class="gc-name">Six Vaults</h2>' +
+          '<p class="gc-line">The ' + nth + " game is beginning.</p>" +
+          '<p class="gc-go">' + (hall && hall.out ? "Make your way to the arena to watch." : "Make your way to the arena. The attendant has the rules.") + "</p>" +
+          '<button type="button" class="btn gc-btn" data-act="callDone">Walk to the arena</button></section>';
+      },
+      mount: function () {},
+    },
+
     // Tonight's match, one picture at a time. Shown once before the Tonight page, and again on request.
     vbrief: {
       html: function () {
         return '<section class="screen vbrief" id="vbrief"><p class="vb-kicker" id="vb-kicker">Tonight</p>' +
           '<div class="vb-pic" id="vb-pic"></div><p class="vb-line" id="vb-line"></p><div class="vb-dots" id="vb-dots" aria-hidden="true"></div>' +
           '<div class="vb-foot"><button type="button" class="btn" id="vb-next" data-act="vbNext">Next</button>' +
-          '<button type="button" class="link" data-act="vbSkip">Skip</button></div></section>';
+          '<button type="button" class="link" id="vb-skip" data-act="vbSkip">Skip</button></div></section>';
       },
       mount: function () {
         ui.vb = 0;
@@ -1596,6 +1614,18 @@
     shop: { name: "Shopkeeper", at: [640, 282], look: { f: 1, s: 0, h: 13, c: 1, b: 4, m: 2, o: 8, t: 3 } },
   };
 
+  // Has a game begun that this player has not been told about?
+  function nightCall() {
+    var n = hall && hall.night;
+    return !!n && n.status === "open" && !heard("call" + n.n);
+  }
+
+  // Has this player been given the rules of the game being played?
+  function briefed() {
+    var n = hall && hall.night;
+    return !n || heard("vb" + n.n);
+  }
+
   // Which rooms are doing business. The GM decides; players cannot open anything.
   function roomOpen(id) {
     var n = hall && hall.night;
@@ -1622,7 +1652,16 @@
     }
     if (id === "arena") {
       if (!n) return { text: "The GM is preparing the next game, so this area is closed right now, but feel free to explore." };
-      return n.status === "open" ? { text: "Tonight’s match is on the stage.", go: ["arena", "Play tonight’s match"] } : { text: "Tonight’s match is over. The result is on the stage.", go: ["arena", "See the result"] };
+      if (n.status !== "open") return { text: "Game " + n.n + " is over. The result is at the vaults.", go: ["arena", "See the result"] };
+      // first visit: welcome, then the vaults, then the rules. Nothing else is offered until the rules are seen.
+      if (!briefed()) {
+        return ui.intro
+          ? { text: "These are the six vaults, in the middle of the arena. Three of them hold gold.", act: ["introRules", "Show me the rules"], solo: true }
+          : { text: "Welcome to Game " + n.n + ": Six Vaults. Let me show you the vaults.", act: ["introNext", "Show me"], solo: true };
+      }
+      if (hall.out) return { text: "Game " + n.n + " is being played at the vaults.", act: ["introRules", "Show me the rules"] };
+      if (n.opened) return { text: "Your two vaults are sealed. The result comes when the vaults close.", act: ["introRules", "The rules again"] };
+      return { text: "The vaults are open. Walk up to them when you are ready to open two.", act: ["introRules", "The rules again"] };
     }
     if (id === "shop") {
       return roomOpen(id)
@@ -1679,8 +1718,24 @@
       '<span class="npc-face">' + AV.draw(st.look, { ring: "#EFE8D6", ringWidth: 3, label: st.name }) + "</span>" +
       '<div class="npc-words"><b>' + st.name + "<i>House staff</i></b><p>" + esc(line.text) + '</p><div class="npc-acts">' +
       (line.go ? '<button type="button" class="btn" data-act="go" data-scene="' + line.go[0] + '">' + line.go[1] + "</button>" : "") +
-      '<button type="button" class="btn ghost" data-act="talkClose">' + (line.later || "OK") + "</button></div></div>";
+      (line.act ? '<button type="button" class="btn" data-act="' + line.act[0] + '">' + line.act[1] + "</button>" : "") +
+      (line.solo ? "" : '<button type="button" class="btn ghost" data-act="talkClose">' + (line.later || "OK") + "</button>") + "</div></div>";
     box.hidden = false;
+    // the vaults are ringed while the attendant talks about them; the camera goes to them only on the first showing
+    var n = hall && hall.night;
+    var pointing = id === "arena" && !!n && n.status === "open" && (briefed() ? !n.opened && !hall.out : !!ui.intro);
+    showVaults(pointing, pointing && !briefed());
+  }
+
+  // The attendant points at the vaults: the camera goes to them and they are ringed in light.
+  var VAULTS = { at: [750, 636], box: [538, 486, 424, 300] };
+  function showVaults(on, pan) {
+    if (!stage) return;
+    stage.focus = on && pan ? VAULTS.at : null;
+    var glow = $("vault-glow");
+    if (on && !glow && stage.world) {
+      stage.world.insertAdjacentHTML("beforeend", '<div class="vault-glow" id="vault-glow" style="left:' + VAULTS.box[0] + "px;top:" + VAULTS.box[1] + "px;width:" + VAULTS.box[2] + "px;height:" + VAULTS.box[3] + 'px"><span>The six vaults</span></div>');
+    } else if (!on && glow) glow.remove();
   }
   function openTalk(id) {
     if (!STAFF[id]) return;
@@ -1691,6 +1746,7 @@
   function closeTalk() {
     var box = $("npc-talk");
     if (box) box.hidden = true;
+    showVaults(false);
   }
 
   function buildActors() {
@@ -1757,7 +1813,7 @@
       var togo = ends - Date.now();
       return {
         revealed: true,
-        now: "Night " + night.n + ": Six Vaults",
+        now: "Game " + night.n + ": Six Vaults",
         next: "The vaults close",
         at: ends,
         count: isNaN(ends) ? "When the GM says" : togo <= 0 ? "Any moment" : span(togo),
@@ -1932,7 +1988,8 @@
   function todoList() {
     var out = [], u = hall.unread, n = hall.night;
     if (n && n.status === "open" && !n.opened && !hall.out) {
-      out.push({ title: "Play tonight’s match", sub: "Night " + n.n + ": Six Vaults. Open two vaults before it ends.", scene: "tonight", go: "Play" });
+      if (!briefed()) out.push({ title: "Game " + n.n + " has begun", sub: "Six Vaults.", walk: "Walk to the arena. The attendant has the rules." });
+      else out.push({ title: "Open two vaults", sub: "Game " + n.n + ": Six Vaults. Before the vaults close.", walk: "Walk to the vaults in the arena." });
     }
     if (puzzleOpen()) {
       var done = solvedToday().length;
@@ -2071,7 +2128,7 @@
     return '<div class="menu-sheet" role="dialog" aria-modal="true" aria-labelledby="menu-heading">' +
       '<div class="menu-head"><h2 id="menu-heading">Menu</h2>' + walletMarkup() +
       '<button type="button" class="menu-close" data-act="menuClose" aria-label="Close menu">×</button></div>' +
-      (hall.night ? '<button type="button" class="menu-night" data-act="go" data-scene="tonight"><span><i>' + (hall.night.status === "open" ? "Being played now" : "Finished") + "</i><b>Night " + hall.night.n + " · Six Vaults</b></span><small>" + (hall.night.status === "open" ? (hall.night.opened ? "Your vaults are sealed" : "Your clue and the rules") : "See the result") + "</small></button>" : "") +
+      (hall.night ? '<button type="button" class="menu-night" data-act="go" data-scene="tonight"><span><i>' + (hall.night.status === "open" ? "Being played now" : "Finished") + "</i><b>Game " + hall.night.n + " · Six Vaults</b></span><small>" + (hall.night.status === "open" ? (hall.night.opened ? "Your vaults are sealed" : "Your clue and the rules") : "See the result") + "</small></button>" : "") +
       menuNowHTML() +
       '<div class="menu-grid">' +
       '<button type="button" class="menu-tile wide" data-act="go" data-scene="board"><span class="menu-icon">' + ICON.board + "</span><b>GM notices</b><small>" + (gmTotal ? plural(gmTotal, "notice", "notices") + ", old and new" : "Nothing posted yet") + "</small>" + badge(u.board) + "</button>" +
@@ -2178,7 +2235,7 @@
     $("now").hidden = id !== "hall";
     if (id === "hall") flashNow();
     if (!STAFF[id]) { talkedIn = ""; closeTalk(); }
-    else if (talkedIn !== id) { talkedIn = id; openTalk(id); }
+    else if (talkedIn !== id) { talkedIn = id; ui.intro = 0; openTalk(id); }
     offerSpot();
     var name = $("room-name");
     name.textContent = first ? "" : PLACES[id].title;
@@ -2193,12 +2250,14 @@
     var a = actors[me.number];
     var at = a ? [a.x, a.y] : spotOf(me.number).slice(1);
     var spot = roomOpen(stage.room) ? WORLD.spotAt(stage.room, at[0], at[1]) : null;
+    // the vaults are not offered until the attendant has given the rules
+    if (spot && stage.room === "arena" && hall.night && hall.night.status === "open" && !briefed()) spot = null;
     if (spot === stage.spot) return;
     stage.spot = spot;
     var btn = $("hud-action");
     btn.hidden = !spot;
     if (spot) {
-      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? "Play tonight's match" : spot.label;
+      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? "Open the vaults" : spot.label;
       btn.style.setProperty("--place", PLACES[stage.room].color);
     }
     measureStage();
@@ -2227,6 +2286,8 @@
     }
     // a night has ended and this player has not watched the result yet
     if (hall.night && hall.night.unseen && ui.scene !== "vreveal") return go("vreveal");
+    // a game has begun and this player has not been told yet
+    if (nightCall()) return go("gamecall");
     // a night started or ended while this player stood in the arena or the shop: redraw the room
     var set = dressWorld();
     if (stage.dressed !== set) {
@@ -2259,6 +2320,7 @@
     var z = Math.max(Math.max(0.78, Math.min(1.15, sw / 500)), cover);
     var a = actors[hall.you];
     var fx = a ? a.x : R.w / 2, fy = a ? a.y - 50 : R.h / 2;
+    if (stage.focus) { fx = stage.focus[0]; fy = stage.focus[1]; } // someone is pointing at something
     var tx = Math.max(0, Math.min(R.w * z - sw, fx * z - sw / 2));
     var top = stage.padTop || 0, bottom = stage.padBottom || 0;
     var ty = Math.max(-top, Math.min(R.h * z - sh + bottom, fy * z - (sh + top - bottom) / 2));
@@ -2476,7 +2538,11 @@
       pollMe();
       if (!me || me.state !== "hall") return;
       if (room) pull(false).catch(function () {});
-      loadHall().then(function () { refreshStage(); if (!stage) showNotice(); drawThreads(); drawPlayers(); drawStandings(); }).catch(function () {});
+      loadHall().then(function () {
+        // the game is beginning: every player is told at once, whatever page they are on
+        if (!stage && nightCall() && HALL.indexOf(ui.scene) >= 0 && ui.scene !== "gamecall") return go("gamecall");
+        refreshStage(); if (!stage) showNotice(); drawThreads(); drawPlayers(); drawStandings();
+      }).catch(function () {});
     }, 500);
   }
 
@@ -2636,7 +2702,7 @@
     function row(label, value) { return '<div class="card-row"><span>' + label + "</span><b>" + value + "</b></div>"; }
     var rows = !s.avatar
       ? row("Status", "Not here yet")
-      : row("Status", s.out < 0 ? "Resigned. Watching." : s.out ? "Out on Night " + s.out : "In the game") +
+      : row("Status", s.out < 0 ? "Resigned. Watching." : s.out ? "Out in Game " + s.out : "In the game") +
         row("Coins", mine ? balance() : s.coins != null ? s.coins : revealed ? "Private" : "Bags not open yet") +
         row("Joined", ago(s.since)) +
         row("Last seen", mine || online[n] ? "Here now" : ago(s.seen)) +
@@ -2827,10 +2893,11 @@
   // ----- the night's match: Six Vaults -----
 
   var THROW = { r: "Rock", p: "Paper", s: "Scissors" };
+  // the three throws, as gloved hands
   var THROW_ICON = {
-    r: ic("M7 11.5c0-2.5 2-4.5 5-4.5s5 2 5 4.5v2c0 2.8-2.2 4.5-5 4.5s-5-1.7-5-4.5z"),
-    p: ic("M7 4h7l3 3v13H7zM14 4v3h3M10 11h4M10 14.5h4"),
-    s: ic("M8.6 15.4 19 5M8.6 8.6 19 19", '<circle cx="6.5" cy="6.5" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="6.5" cy="17.5" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/>'),
+    r: '<img src="/art/night1/rock.webp" alt="">',
+    p: '<img src="/art/night1/paper.webp" alt="">',
+    s: '<img src="/art/night1/scissors.webp" alt="">',
   };
   var ORDINAL = ["", "1st", "2nd", "3rd"];
 
@@ -2850,7 +2917,6 @@
         if (!hall.night) return drawSched();
         return fetchNight().then(function (n) {
           // the first look at a night is the picture briefing
-          if (!canAct && ui.scene === "tonight" && n && n.on && n.status === "open" && n.playing && !heard("vb" + n.n)) return go("vbrief");
           drawMatch();
         });
       })
@@ -2886,7 +2952,9 @@
       var picked = (opts.picks || []).indexOf(v) >= 0;
       var gold = opts.layout ? opts.layout[v - 1] : null;
       var cls = "vault" + (picked ? " on" : "") + (gold != null ? (gold ? " gold" : " bare") + " open" : "");
-      var inner = "<i>Vault</i><b>" + v + "</b>" + (gold != null ? "<em>" + (gold ? gold + " gold" : "Empty") + "</em>" : picked ? "<em>Chosen</em>" : "<em>&nbsp;</em>");
+      // the painted vault: shut, or open on what it holds. Its number sits on the brass plate.
+      var art = gold == null ? "vault-closed" : gold ? "vault-open-" + gold : "vault-open-empty";
+      var inner = '<img src="/art/night1/' + art + '.webp" alt=""><b>' + v + "</b>" + (gold != null ? "<em>" + (gold ? gold + " gold" : "Empty") + "</em>" : picked ? "<em>Chosen</em>" : "<em>Vault " + v + "</em>");
       out += opts.act
         ? '<button type="button" class="' + cls + '" data-act="vaultPick" data-v="' + v + '" aria-pressed="' + picked + '" style="--i: ' + v + '">' + inner + "</button>"
         : '<span class="' + cls + '" style="--i: ' + v + '">' + inner + "</span>";
@@ -2949,23 +3017,16 @@
       vbText(180, 150, "1st", 20) + vbText(80, 158, "2nd", 18, "#c9c2ab") + vbText(280, 164, "3rd", 18, "#c9c2ab") +
       vbCoin(164, 62, 17) + vbText(200, 70, "+" + r.prizes[0], 26, "#ecd9a4", "start") +
       vbCoin(66, 90, 13) + vbText(86, 97, "+" + r.prizes[1], 20, "#ecd9a4", "start") + vbCoin(266, 108, 13) + vbText(286, 115, "+" + r.prizes[2], 20, "#ecd9a4", "start");
+    function art(k, alt) { return '<img class="vb-art" src="/art/night1/brief-' + k + '.webp" alt="' + alt + '">'; }
     return [
-      { line: "Six vaults.", pic: vbSvg(six) },
-      { line: "Three are empty. Three hold " + gold + " gold.",
-        pic: vbSvg(empties + vbText(88, 150, "3 EMPTY", 16, "#aab4b8") + vbCoin(212, 96, 26, r.amounts[0]) + vbCoin(270, 100, 21, r.amounts[1]) + vbCoin(318, 104, 17, r.amounts[2]) + vbText(264, 150, "3 WITH GOLD", 16) + '<path d="M180 56v100" stroke="#3d4b52" stroke-width="2"/>' + vbText(180, 34, "Which is which? Nobody knows.", 15, "#aab4b8")) },
-      { line: "Open any two. The gold inside is your score tonight.",
-        pic: vbSvg(vbVault(96, 56, "?", true) + vbVault(218, 56, "?", true) + vbText(180, 104, "+", 34) + vbText(180, 176, "2 OF 6", 18, "#aab4b8")) },
-      { line: "You hold one true clue. Nobody else has it.",
-        pic: vbSvg(vbCard(110, 44, 140, 96, "#d4b471") + '<circle cx="250" cy="44" r="20" fill="#2f7d4f" stroke="#efe8d6" stroke-width="2"/><path d="m240 44 7 8 13-15" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>' + vbText(180, 176, "TRUE", 18)) },
-      { line: "The shop sells one more true clue for " + plural(r.cluePrice, "coin", "coins") + ".",
-        pic: vbSvg(vbCoin(92, 96, 26, r.cluePrice) + '<path d="M136 96h44m-14-12 14 12-14 12" fill="none" stroke="#ecd9a4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>' + vbCard(200, 48, 120, 96, "#35c2b0") + vbText(180, 180, "THE SHOP · BOTTOM DOOR OF THE HALL", 14, "#aab4b8")) },
-      { line: "Other players hold other clues. They may lie.",
-        pic: vbSvg(vbHead(70, 96, "#56666d") + vbHead(180, 96, "#56666d") + vbHead(290, 96, "#56666d") +
-          '<rect x="84" y="34" width="54" height="34" rx="8" fill="#efe8d6"/><path d="m100 50 8 8 14-16" fill="none" stroke="#2f7d4f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>' +
-          '<rect x="194" y="34" width="54" height="34" rx="8" fill="#efe8d6"/>' + vbText(221, 60, "?", 26, "#56666d") +
-          '<rect x="304" y="34" width="50" height="34" rx="8" fill="#efe8d6"/><path d="m320 42 18 18m0-18-18 18" stroke="#b3372b" stroke-width="4" stroke-linecap="round"/>') },
-      { line: "The least gold is out. A tie is settled by Rock Paper Scissors.", pic: vbSvg(bars) },
-      { line: "The three highest amounts win " + prizes + " coins.", pic: vbSvg(podium) },
+      { line: "There are six vaults.", pic: art(1, "Six numbered vault doors") },
+      { line: "Three are empty. Three hold gold: " + gold + ".", pic: art(2, "Six open vaults: three empty, three with gold") },
+      { line: "Open any two. The gold inside is your score.", pic: art(3, "A gloved hand opening one of six vaults") },
+      { line: "You hold one true clue. Only you were dealt it.", pic: art(4, "A gloved hand holding a sealed card") },
+      { line: "The shop sells one more true clue for " + plural(r.cluePrice, "coin", "coins") + ".", pic: art(5, "A coin pushed across a counter towards a tagged card") },
+      { line: "Other players hold other clues. They may lie.", pic: art(6, "Three players comparing cards") },
+      { line: "The least gold is out. A tie is settled by Rock, Paper, Scissors.", pic: art(7, "Piles of gold from most to least, and a figure leaving through a door") },
+      { line: "The three highest scores win " + prizes + " coins.", pic: art(8, "A podium with three coins") },
     ];
   }
 
@@ -2981,11 +3042,12 @@
     if (!n || !$("vb-pic")) return;
     var tiles = vbTiles(n);
     var i = Math.min(ui.vb || 0, tiles.length - 1);
-    $("vb-kicker").textContent = "Night " + n.n + " · Six Vaults";
+    $("vb-kicker").innerHTML = '<span class="vb-who">' + AV.draw(STAFF.arena.look, { ring: "#EFE8D6", ringWidth: 3, label: "Attendant" }) + "</span>Game " + n.n + " · Six Vaults · " + (i + 1) + " of " + tiles.length;
     $("vb-pic").innerHTML = tiles[i].pic;
     $("vb-line").textContent = tiles[i].line;
     $("vb-dots").innerHTML = tiles.map(function (t, k) { return '<i class="' + (k === i ? "on" : k < i ? "done" : "") + '"></i>'; }).join("");
     $("vb-next").textContent = i === tiles.length - 1 ? "Got it" : "Next";
+    $("vb-skip").hidden = !heard("vb" + n.n); // the first time, every rule is shown; after that the rules can be skipped
   }
 
   function drawMatch() {
@@ -2996,12 +3058,15 @@
     var out = "";
     if (n.status === "done") {
       out = resultHTML(n);
+    } else if (!heard("vb" + n.n)) {
+      // the rules are given in the arena, by the attendant, and nowhere else
+      out = '<div class="s-card now"><i>Game ' + n.n + " · being played now</i><h2>Six Vaults</h2><p>Walk to the arena. The attendant will show you the vaults and give you the rules.</p></div>";
     } else {
       var count = n.endsAt ? '<i>The vaults close in</i><b class="s-count small" id="v-count">' + span(Math.max(0, new Date(n.endsAt).getTime() - Date.now())) + "</b>" : "<p>The GM closes the vaults.</p>";
       var acting = ui.matchAct && n.playing && !n.out && !n.opened;
       var rules = '<div class="s-card"><i>The rules</i>' + rulesHTML(n) + '<button type="button" class="link" data-act="vbAgain">Play the briefing</button></div>';
-      if (acting) out += '<div class="s-card now"><i>Night ' + n.n + " · Six Vaults</i>" + count + "</div>";
-      else out += '<div class="s-card now"><i>Night ' + n.n + " · tonight's match</i><h2>Six Vaults</h2>" + count + "</div>";
+      if (acting) out += '<div class="s-card now"><i>Game ' + n.n + " · Six Vaults</i>" + count + "</div>";
+      else out += '<div class="s-card now"><i>Game ' + n.n + " · being played now</i><h2>Six Vaults</h2>" + count + "</div>";
       if (n.playing) {
         out += '<div class="s-card"><i>What you know</i>' + clueHTML(n.clue, "Your clue · true · only you were dealt it") +
           (n.bought ? clueHTML(n.bought, "From the shop · true", " shop")
@@ -3041,7 +3106,7 @@
   function resultHTML(n) {
     var res = n.result;
     var mine = res.gold[n.you];
-    var out = '<div class="s-card now"><i>Night ' + n.n + " · Six Vaults · result</i>" + vaultsHTML({ layout: res.layout, picks: res.plays[n.you] || [] });
+    var out = '<div class="s-card now"><i>Game ' + n.n + " · Six Vaults · result</i>" + vaultsHTML({ layout: res.layout, picks: res.plays[n.you] || [] });
     if (mine != null) {
       out += "<h2>You: " + mine + " gold</h2><p>" + (res.plays[n.you] ? "You opened Vault " + res.plays[n.you][0] + " and Vault " + res.plays[n.you][1] + "." : "You did not open a vault.") +
         (res.prize[n.you] ? " " + (ORDINAL[res.rank[n.you]] || "") + " place: +" + plural(res.prize[n.you], "coin", "coins") + "." : "") + "</p>";
@@ -3070,12 +3135,13 @@
     var tied = res.last.length > 1;
     var list = res.last.map(who).join(", ").replace(/, ([^,]*)$/, " and $1");
     var head = res.out != null ? (res.out === n.you ? "You are out" : who(res.out) + " is out") : "The GM will decide";
+    var stamp = res.out != null ? '<img class="v-stamp" src="/art/night1/stamp-out.webp" alt="Out">' : "";
     var why = !tied ? "The least gold: " + res.gold[res.last[0]] + "."
       : list + " tied for last on " + res.gold[res.last[0]] + " gold. " +
         (res.duel && res.duel.forfeit ? (res.out != null ? "A player who opened nothing has no throws, and loses the tie." : "None of them opened a vault, so there are no throws to play.")
           : res.out != null && res.duel && res.duel.out === res.out ? "Rock Paper Scissors settled it."
           : res.out != null ? "Rock Paper Scissors could not separate them, so the player with fewer coins goes." : "Rock Paper Scissors and coins could not separate them.");
-    return '<div class="s-card next"><i>Out</i><h2>' + head + "</h2><p>" + why + "</p>" + (tied ? roundsHTML(res) : "") + "</div>";
+    return '<div class="s-card next v-outcard"><i>Out</i>' + stamp + "<h2>" + head + "</h2>" + (res.out != null ? '<img class="v-car" src="/art/night1/out-car.webp" alt="A car waiting at the gate">' : "") + "<p>" + why + "</p>" + (tied ? roundsHTML(res) : "") + "</div>";
   }
 
   // the reveal, one step at a time, shown once
@@ -3090,7 +3156,7 @@
     var next = '<button type="button" class="btn" data-act="vNext">Next</button>';
     var out = "";
     if (step === 0) {
-      out = '<div class="v-gate"><p class="say big">Night ' + n.n + ' is over.<br>The vaults are open.</p><button type="button" class="btn narrow" data-act="vNext">Show me</button></div>';
+      out = '<div class="v-gate"><p class="say big">Game ' + n.n + ' is over.<br>The vaults are open.</p><button type="button" class="btn narrow" data-act="vNext">Show me</button></div>';
     } else if (step === 1) {
       out = '<div class="s-card now"><i>The six vaults</i>' + vaultsHTML({ layout: res.layout, picks: res.plays[n.you] || [] }) +
         (mine == null ? "<p>You watched this one.</p>" : res.plays[n.you] ? "<h2>You: " + mine + " gold</h2><p>You opened Vault " + res.plays[n.you][0] + " and Vault " + res.plays[n.you][1] + ".</p>" : "<h2>You: 0 gold</h2><p>You did not open a vault.</p>") + "</div>" + '<div class="page-foot flat">' + next + "</div>";
@@ -3526,6 +3592,13 @@
     else if (name === "commitResign") sendCommit(false);
     else if (name === "npc") { if (stage && STAFF[stage.room]) openTalk(stage.room); }
     else if (name === "talkClose") closeTalk();
+    else if (name === "introNext") { ui.intro = 1; if (stage) drawTalk(stage.room); }
+    else if (name === "introRules") { ui.vbBack = "hall"; go("vbrief"); }
+    else if (name === "callDone") {
+      if (hall && hall.night) markHeard("call" + hall.night.n);
+      go("hall");
+      setTimeout(function () { if (stage && stage.room === "hall" && !briefed()) narrate(["The arena door is at the top of the hall."], { auto: 4200, fade: true }); }, 700);
+    }
     else if (name === "actor") {
       var n = Number(el.getAttribute("data-n"));
       if (n !== me.number) approach(n);
@@ -3562,7 +3635,13 @@
     else if (name === "vbNext" || name === "vbSkip") {
       var tiles = ui.night ? vbTiles(ui.night).length : 0;
       if (name === "vbNext" && (ui.vb || 0) < tiles - 1) { ui.vb = (ui.vb || 0) + 1; drawVB(); }
-      else { if (ui.night) markHeard("vb" + ui.night.n); go("tonight"); }
+      else {
+        if (ui.night) markHeard("vb" + ui.night.n);
+        var back = ui.vbBack || "tonight";
+        ui.vbBack = "";
+        if (back === "hall") talkedIn = ""; // back in the arena, the attendant says what to do next
+        go(back);
+      }
     }
     else if (name === "vbAgain") go("vbrief");
     else if (name === "vNext") { ui.vstep += 1; drawVReveal(); }
@@ -4022,8 +4101,8 @@
           ds.notices.push({ id: ds.notices.length + 1, kind: "solved", n: solver, at: Date.now(), today: true });
           return loadHall().then(function () { refreshStage(); if (!stage) showNotice(); });
         },
-        startNight: function () { demoNightStart(); setMenu(false); return loadHall().then(function () { refreshStage(); go("tonight"); }); },
-        endNight: function () { demoNightEnd(); setMenu(false); return loadHall().then(refreshStage); },
+        startNight: function () { demoNightStart(); if (stage) setMenu(false); return loadHall().then(function () { if (stage) refreshStage(); else if (nightCall()) go("gamecall"); }); },
+        endNight: function () { if (!demoHallStore().night) return false; demoNightEnd(); if (stage) setMenu(false); return loadHall().then(function () { if (stage) refreshStage(); else go("hall"); }); },
       };
       if (query.get("with")) ui.withN = parseInt(query.get("with"), 10) || 0;
       if (query.get("tab")) ui.tab = query.get("tab");

@@ -262,3 +262,70 @@ body, body.desk { transition:none; }
 #app .bell-all:hover { background:#2a3632; }
 #app .bell-all:focus-visible { outline:2px solid #fff; outline-offset:2px; }
 #app .bell-all span { min-width:20px; height:20px; padding:0 6px; border-radius:10px; font:700 12px/20px var(--label); background:#34463e; color:#e6dcc3; }
+
+/* ----- a game is beginning: the announcement every player sees ----- */
+#app .screen.gamecall {
+  position:relative; overflow:hidden; min-height:100vh; min-height:100dvh; padding:26px 22px 30px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; text-align:center;
+  background:radial-gradient(120% 80% at 50% 38%, #26301f 0%, #10171a 46%, #07090a 100%);
+}
+#app .gc-beams { position:absolute; inset:0; pointer-events:none; }
+#app .gc-beams i { position:absolute; top:-12%; width:46%; height:120%; background:linear-gradient(#f3dc9d2e, transparent 78%); filter:blur(6px); transform-origin:50% 0; opacity:0; animation:gc-beam 1.6s .5s ease-out forwards; }
+#app .gc-beams i:first-child { left:6%; --tilt:13deg; }
+#app .gc-beams i:last-child { right:6%; --tilt:-13deg; }
+@keyframes gc-beam { from { opacity:0; transform:rotate(calc(var(--tilt) * 3)); } to { opacity:1; transform:rotate(var(--tilt)); } }
+#app .gc-kicker { position:relative; margin:0; font:700 13px/1 var(--label); letter-spacing:.3em; text-transform:uppercase; color:#cdb88d; opacity:0; animation:gc-fade .7s .2s ease forwards; }
+#app .gc-title {
+  position:relative; margin:4px 0 0; font:700 clamp(74px, 25vw, 150px)/.92 var(--label); letter-spacing:.03em; text-transform:uppercase; color:#f6e7bd;
+  text-shadow:0 0 38px #e9c56b66, 0 5px 0 #6d4f12; opacity:0; animation:gc-slam .7s .7s cubic-bezier(.2,1.5,.35,1) forwards;
+}
+@keyframes gc-slam { 0% { opacity:0; transform:scale(2.6); letter-spacing:.4em; filter:blur(8px); } 60% { opacity:1; filter:blur(0); } 100% { opacity:1; transform:scale(1); letter-spacing:.03em; } }
+#app .gc-pic { position:relative; width:min(100%, 430px); margin:6px 0 0; opacity:0; animation:gc-rise .9s 1.5s ease-out forwards; }
+#app .gc-pic img { display:block; width:100%; height:auto; filter:drop-shadow(0 14px 26px #000c) drop-shadow(0 0 30px #e9c56b3d); }
+@keyframes gc-rise { from { opacity:0; transform:translateY(34px) scale(.94); } to { opacity:1; transform:none; } }
+#app .gc-name { position:relative; margin:0; font:700 clamp(30px, 9.4vw, 46px)/1 var(--serif); letter-spacing:-.01em; color:#fff; opacity:0; animation:gc-fade .7s 2.2s ease forwards; }
+#app .gc-line { position:relative; margin:6px 0 0; font:600 18px/1.35 var(--sans); color:#f1ead8; opacity:0; animation:gc-fade .7s 2.9s ease forwards; }
+#app .gc-go { position:relative; max-width:330px; margin:0; font:500 16px/1.4 var(--sans); color:#cfd3ca; opacity:0; animation:gc-fade .7s 3.5s ease forwards; }
+#app .gc-btn { position:relative; margin-top:12px; min-width:230px; opacity:0; animation:gc-fade .6s 4.2s ease forwards; }
+@keyframes gc-fade { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+/* ----- the attendant points at the vaults ----- */
+#app .vault-glow { position:absolute; z-index:3; pointer-events:none; border:4px solid #f3d98f; border-radius:14px; box-shadow:0 0 0 6px #f3d98f33, 0 0 60px 14px #f3d98f73, inset 0 0 40px #f3d98f40; animation:vault-pulse 1.5s ease-in-out infinite; }
+#app .vault-glow span { position:absolute; left:50%; top:-46px; transform:translateX(-50%); padding:8px 14px; border-radius:8px; white-space:nowrap; font:700 15px/1 var(--label); letter-spacing:.14em; text-transform:uppercase; color:#221a08; background:#f3d98f; box-shadow:0 6px 18px #0009; }
+#app .vault-glow span::after { content:""; position:absolute; left:50%; bottom:-9px; margin-left:-9px; border:9px solid transparent; border-top-color:#f3d98f; border-bottom:0; }
+@keyframes vault-pulse { 0%,100% { box-shadow:0 0 0 6px #f3d98f33, 0 0 46px 8px #f3d98f55, inset 0 0 30px #f3d98f30; } 50% { box-shadow:0 0 0 10px #f3d98f4d, 0 0 80px 22px #f3d98f99, inset 0 0 50px #f3d98f55; } }
+
+/* ----- the rules, one picture to a screen ----- */
+#app .vb-art { display:block; width:100%; height:auto; }
+#app .vb-pic { border:0; background:none; padding:0; }
+#app .vb-kicker { display:flex; align-items:center; justify-content:center; gap:10px; }
+#app .vb-who { flex:0 0 34px; width:34px; height:34px; }
+#app .vb-who svg { width:100%; height:100%; }
+#app .vb-tile .vb-art { border-radius:6px; }
+
+/* ----- the painted vaults and clue cards on the play and result screens ----- */
+#app .vault { min-height:0; padding:6px 4px 8px; background:#11181a; border:2px solid #4b575b; border-radius:8px; }
+#app .vault img { display:block; width:100%; max-width:132px; height:auto; }
+#app .vault b { position:absolute; left:50%; top:calc(6px + 3.2%); transform:translateX(-50%); font:700 clamp(15px, 4.6vw, 21px)/1 var(--label); color:#2a1f08; }
+#app .vault em { margin-top:4px; }
+#app .vault.on { border-color:#f3d98f; background:#2a2412; box-shadow:0 0 0 2px #f3d98f55, 0 0 22px #f3d98f55; }
+#app .vault.open.bare { background:#0d1213; border-style:solid; border-color:#3a4447; }
+#app .vault.open.bare b { color:#2a1f08; }
+#app .clue { position:relative; min-height:118px; display:flex; flex-direction:column; justify-content:center; padding:20px 30px 20px 26px; border:0; background:url("/art/night1/clue-dealt.webp") center / 100% 100% no-repeat; }
+#app .clue.shop { padding:22px 26px 22px 40px; background-image:url("/art/night1/clue-shop.webp"); }
+#app .clue i { color:#7a5a1c; }
+#app .clue.shop i { color:#1f6b62; }
+#app .clue p { color:#221c12; font-weight:600; }
+#app .v-outcard { text-align:center; }
+#app .v-stamp { display:block; width:min(72%, 250px); height:auto; margin:6px auto 2px; transform:rotate(-7deg); animation:stamp-in .5s cubic-bezier(.2,1.6,.4,1) backwards; }
+#app .v-car { display:block; width:min(100%, 330px); height:auto; margin:6px auto 2px; }
+@keyframes stamp-in { from { opacity:0; transform:rotate(-7deg) scale(2.4); } to { opacity:1; transform:rotate(-7deg) scale(1); } }
+@media (prefers-reduced-motion:reduce) {
+  #app .gc-kicker, #app .gc-title, #app .gc-pic, #app .gc-name, #app .gc-line, #app .gc-go, #app .gc-btn, #app .gc-beams i { animation:none; opacity:1; }
+  #app .vault-glow, #app .v-stamp { animation:none; }
+}
+#app .screen.vbrief .vb-line { max-width:360px; font:600 21px/1.35 var(--sans); color:#f5f0dd; }
+#app .screen.vbrief .vb-pic { width:min(100%, 440px); }
+#app .throw-icon { width:38px; height:38px; }
+#app .throw-icon img { display:block; width:100%; height:100%; object-fit:contain; }
+#app .hand .throw-icon { width:30px; height:30px; }

@@ -63,23 +63,48 @@ await hostPage.$eval("#night-form", (f) => f.requestSubmit()); await sleep(1800)
 let t = await hostPage.$eval("#night-box", (el) => el.innerText);
 ok("the host starts Night 1 and sees every clue and the vaults", t.includes("Night 1 is being played.") && t.includes("0 of 6 players have opened") && t.includes("Vault 2: 10 gold") && (await hostPage.$$("#night-box tbody tr")).length === 6);
 
-// the guest
-await sleep(13000); // the hall checks for news every few seconds
-ok("the hall's clock turns to the match without a reload", (await guest.$eval("#now-a", (el) => el.textContent)) === "Night 1: Six Vaults" && (await guest.$eval("#now-b", (el) => el.textContent)) === "The vaults close" && (await guest.$eval("#now-do", (el) => el.textContent)).includes("Collect clues."));
+// the guest: told the game is beginning, sent to the arena, shown the vaults, then given the rules
+const sceneOf = () => guest.$eval("#app", (el) => el.dataset.scene);
+const said = () => guest.$eval("#npc-talk", (el) => (el.hidden ? "" : el.innerText.replace(/\s+/g, " ")));
+for (let i = 0; i < 20 && (await sceneOf()) !== "gamecall"; i++) await sleep(1000);
+t = await text(guest);
+ok("every player is told the game is beginning, without a reload", (await sceneOf()) === "gamecall" && /game 1/i.test(t) && /six vaults/i.test(t) && t.includes("The first game is beginning.") && t.includes("Make your way to the arena. The attendant has the rules."));
+await sleep(4500);
+await guest.screenshot({ path: SHOTS + "/nr-call.png" });
+await click('[data-act="callDone"]'); await sleep(1500);
+ok("then they stand in the hall, and its clock has turned to the game", (await sceneOf()) === "hall" && (await guest.$eval("#now-a", (el) => el.textContent)) === "Game 1: Six Vaults" && (await guest.$eval("#now-b", (el) => el.textContent)) === "The vaults close");
+await sleep(5000);
+await click("#bell-btn");
+t = await guest.$eval(".bell-sheet", (el) => el.innerText.replace(/\s+/g, " "));
+ok("the bell says to walk to the arena, and has no shortcut to the game", t.includes("Game 1 has begun") && t.includes("Walk to the arena. The attendant has the rules.") && (await guest.$('.bell-sheet [data-scene="tonight"], .bell-sheet [data-scene="arena"], .bell-sheet [data-scene="vbrief"]')) === null);
+await click('[data-act="menuClose"]');
 await click("#menu-btn");
-ok("the menu puts tonight's match on top", (await guest.$eval(".menu-night", (el) => el.textContent)).includes("Six Vaults"));
+ok("the menu puts the game on top", (await guest.$eval(".menu-night", (el) => el.textContent)).includes("Six Vaults"));
 await click(".menu-night"); await sleep(1200);
-ok("the first look at the night is the picture briefing", (await guest.$eval("#app", (el) => el.dataset.scene)) === "vbrief" && (await text(guest)).includes("Six vaults."));
+t = await text(guest);
+ok("away from the arena there are no rules yet: the page sends the player to the attendant", (await sceneOf()) === "tonight" && t.includes("Walk to the arena. The attendant will show you the vaults and give you the rules.") && !t.includes("Three are empty") && (await guest.$(".clue")) === null);
+await back();
+ok("the player walks to the arena, where the picture is the six vaults", (await walk("arena", "The arena")) && (await guest.$eval("#world .map-art image", (el) => el.getAttribute("href"))) === "/art/rooms/arena-vaults.webp");
+ok("the attendant welcomes them, and the vaults are not offered before the rules", (await said()).includes("Welcome to Game 1: Six Vaults.") && (await guest.$eval("#hud-action", (el) => el.hidden)) && (await guest.$('#npc-talk [data-act="talkClose"]')) === null);
+await click('[data-act="introNext"]'); await sleep(1600);
+ok("then shows them where the vaults are", (await said()).includes("These are the six vaults, in the middle of the arena.") && (await guest.$("#vault-glow")) !== null);
+await guest.screenshot({ path: SHOTS + "/nr-vaults.png" });
+await click('[data-act="introRules"]'); await sleep(1000);
+ok("then gives the rules, one picture to a screen, with no way to skip the first time", (await sceneOf()) === "vbrief" && (await text(guest)).includes("There are six vaults.") && (await guest.$eval("#vb-skip", (el) => el.hidden)) && (await guest.$eval(".vb-art", (el) => el.getAttribute("src"))) === "/art/night1/brief-1.webp");
 for (let i = 0; i < 7; i++) await click('[data-act="vbNext"]');
 ok("its last picture is the prizes", (await text(guest)).includes("win 5, 3 and 1 coins") && (await guest.$eval("#vb-next", (el) => el.textContent)) === "Got it");
 await guest.screenshot({ path: SHOTS + "/nr-brief.png" });
-await click('[data-act="vbNext"]'); await sleep(1200);
+await click('[data-act="vbNext"]'); await sleep(1500);
+ok("after the rules the player is back in the arena and told to walk up to the vaults", (await sceneOf()) === "hall" && (await guest.$eval("#top-room", (el) => el.textContent)) === "The arena" && (await said()).includes("Walk up to them when you are ready to open two."));
+await click('[data-act="talkClose"]');
+await click("#menu-btn"); await click(".menu-night"); await sleep(1200);
 t = await text(guest);
 const own = (await call("GET", "/api/night", null, seat(0))).clue;
-ok("tonight's page gives the rules, the clock and this player's clue", t.includes("Three are empty.") && t.includes("10, 5 and 2 gold") && t.includes("THE VAULTS CLOSE IN") && t.includes(own) && t.includes("They may lie."));
+ok("now the game's page gives the rules, the clock and this player's clue", t.includes("Three are empty.") && t.includes("10, 5 and 2") && t.includes("THE VAULTS CLOSE IN") && t.includes(own) && t.includes("They may lie."));
 ok("and sends the player to the arena to open vaults", t.includes("Its door is at the top of the hall.") && (await guest.$('[data-act="goto"]')) === null && (await guest.$('[data-act="vaultPick"]')) === null);
 await guest.screenshot({ path: SHOTS + "/nr-tonight.png" });
 await back();
+ok("the player walks back to the hall", await walk("hall", "The hall"));
 ok("the player walks to the shop, and its sign says Open", (await walk("shop", "The shop")) && (await guest.$eval("#world .map-art", (el) => el.textContent.includes("Open"))));
 await guest.screenshot({ path: SHOTS + "/nr-shop-room.png" });
 await click("#hud-action"); await sleep(1200);
@@ -91,7 +116,10 @@ ok("buying shows the second clue and takes the coin", t.includes(mine.bought) &&
 await back();
 ok("the player stands in the shop", (await guest.$eval("#top-room", (el) => el.textContent)) === "The shop" && (await guest.$eval("#top-coins", (el) => el.textContent)) === "19 coins");
 ok("then back through the hall to the arena", (await walk("hall", "The hall")) && (await walk("arena", "The arena")));
-ok("the arena offers tonight's match", (await guest.$eval("#hud-action", (el) => !el.hidden && el.textContent)) === "Play tonight's match");
+await click('[data-act="talkClose"]');
+ok("the vaults are not offered from the door", await guest.$eval("#hud-action", (el) => el.hidden));
+await guest.keyboard.down("ArrowUp"); await sleep(1600); await guest.keyboard.up("ArrowUp"); await sleep(700);
+ok("they are offered to a player standing in front of them", (await guest.$eval("#hud-action", (el) => !el.hidden && el.textContent)) === "Open the vaults");
 await click("#hud-action"); await sleep(1500);
 ok("the arena opens on the vaults, with both clues above them", (await guest.$$('[data-act="vaultPick"]')).length === 6 && (await guest.$$(".clue")).length === 2 && await guest.$eval('[data-act="vaultSeal"]', (b) => b.disabled));
 await click('[data-act="vaultPick"][data-v="1"]'); await click('[data-act="vaultPick"][data-v="4"]');
@@ -107,9 +135,9 @@ await click('[data-act="vaultSeal"]');
 ok("it asks before opening, and says it is final", (await text(guest)).includes("OPEN THEM?") && (await text(guest)).includes("It is final."));
 await click('[data-act="vaultSealYes"]'); await sleep(800);
 t = await text(guest);
-ok("the vaults are sealed and nothing inside is shown", t.includes("SEALED") && t.includes("VAULT 2 AND VAULT 4") && !/10 gold\b/i.test(t.replace("10, 5 and 2 gold", "").replace(mine.clue, "").replace(mine.bought, "")) && (await guest.$('[data-act="vaultPick"]')) === null);
+ok("the vaults are sealed and nothing inside is shown", t.includes("SEALED") && t.includes("VAULT 2 AND VAULT 4") && !/10 gold\b/i.test(t.replace(/10, 5 and 2( gold)?/g, "").replace(mine.clue, "").replace(mine.bought, "")) && (await guest.$('[data-act="vaultPick"]')) === null);
 await back();
-ok("the arena's set is six vaults, and the clock says to wait", (await guest.$eval("#top-room", (el) => el.textContent)) === "The arena" && (await guest.$eval("#world .map-art", (el) => el.querySelectorAll("circle").length >= 18)));
+ok("the arena's set is six vaults, and the clock says to wait", (await guest.$eval("#top-room", (el) => el.textContent)) === "The arena" && (await guest.$eval("#world .map-art image", (el) => el.getAttribute("href"))) === "/art/rooms/arena-vaults.webp");
 await guest.screenshot({ path: SHOTS + "/nr-arena.png" });
 
 // the others: one takes the two best, one ties with nothing and loses the throw
@@ -127,7 +155,7 @@ ok("the host closes the vaults and is told who is out", t.includes("Night 1 is o
 await hostPage.screenshot({ path: SHOTS + "/nr-host-done.png", fullPage: true });
 
 await sleep(13000);
-ok("the guest is taken to the result without a reload", (await text(guest)).includes("Night 1 is over.") && (await guest.$('[data-act="vNext"]')) !== null);
+ok("the guest is taken to the result without a reload", (await text(guest)).includes("Game 1 is over.") && (await guest.$('[data-act="vNext"]')) !== null);
 await click('[data-act="vNext"]'); await sleep(1200);
 t = await text(guest);
 ok("the six vaults are shown, with this player's two marked", (await guest.$$(".vault.open")).length === 6 && (await guest.$$(".vault.open.on")).length === 2 && t.includes("YOU: 10 GOLD"));

@@ -1,5 +1,17 @@
 # Dark Post
 
+## Game 1 opening, NOT LIVE YET, 25 Nov 2026 (the GM's instructions, done outside this agent)
+
+This is on the local branch `night1-start` and has not been pushed. The GM asked to see mock-ups first.
+
+- **The art agent's Night 1 pictures are in**: `public/art/night1/` (rule pictures, vault states, clue cards, gloves, stamp, car), and `arena-vaults.webp`, `shop-open.webp` and a repainted `hall.webp` in `public/art/rooms/`. `plateOf` in `public/world.js` picks the arena and shop picture. The drawn vault set and the paint-over of the two closed hall doorways are no longer used.
+- **A game is announced** (`gamecall` scene in `public/app.js`): when the GM starts it, every player sees an animated "Game 1 / Six Vaults" screen once, wherever they are (`nightCall`), and is sent to the arena.
+- **The rules are given only in the arena, by the attendant.** On the first visit the attendant welcomes the player, the view moves to the vaults and they are ringed (`showVaults`), then the eight rule pictures play (`vbrief`, with no Skip the first time). Until then the vaults are not offered, and the game's page and the bell only say to walk to the arena (`briefed`).
+- **The vaults are opened from the floor in front of them**: the arena's spot has a `zone` now.
+- The play and result screens use the painted vaults, clue cards, glove throws, the OUT stamp and the car.
+- On screen it is "Game 1", not "Night 1".
+- Before this goes live: unhide the Night 1 panel in the console (it shows only at `/host?night=1`), and move the vault layout out of the repository (`GOLD` in `src/vaults.js`), because the repository can be read by anyone who has its address.
+
 ## Pictures for the six keys, GM notices kept, 25 Nov 2026 (the GM's instructions, done outside this agent)
 
 - **The six keys puzzle is drawn, not written.** Each clue is a picture (`keyClueHTML` in `public/app.js`): a dashed arrow for "before", one frame around two keys for "side by side", the same frame struck through for "never side by side", empty circles for the places between two keys, and a strip of six places for first/last and the halves. A few words sit beside each picture. The server data did not change, so the puzzle in play is the same puzzle.
