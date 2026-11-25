@@ -294,20 +294,32 @@ status, body, _ = call("POST", "/api/puzzle", {"answer": "  "}, seat(B))
 check("an empty answer is not counted", status == 400 and call("GET", "/api/puzzle", cookies=seat(B))[1]["left"] == 3)
 status, body, _ = call("POST", "/api/puzzle", {"answer": "zzzz"}, seat(B))
 check("a wrong answer costs a try", status == 200 and body["right"] is False and body["left"] == 2 and "answer" not in body)
+check("a wrong answer tells nobody, and the game knows who has not tried", hall_of(A)["notices"] == [] and hall_of(A)["puzzle"] == {"solved": False, "left": 3, "reward": 1} and hall_of(B)["puzzle"]["left"] == 2)
 status, body, _ = call("POST", "/api/puzzle", {"answer": " " + solve(pz).lower() + " "}, seat(B))
 check("the right answer solves it", status == 200 and body["right"] is True and body["solved"] is True and body["paid"] is False)
 status, body, _ = call("POST", "/api/puzzle", {"answer": solve(pz)}, seat(B))
 check("it cannot be solved twice", status == 409)
+told = hall_of(A)["notices"]
+check("every other player is told who solved today's puzzle", len(told) == 1 and told[0]["kind"] == "solved" and told[0]["n"] == nB and told[0]["today"] is True and hall_of(A)["noticeMark"] == 0 and len(hall_of(C)["notices"]) == 1)
+check("the solver is not told their own news, and the game knows they are done", hall_of(B)["notices"] == [] and hall_of(B)["puzzle"]["solved"] is True and hall_of(A)["puzzle"]["solved"] is False)
 check("the answer is the same for everyone, and still hidden from a player who has not solved it", solve(others[5]) == solve(pz) and "answer" not in call("GET", "/api/puzzle", cookies=seat(tokens[7]))[1])
 for _ in range(3):
     status, body, _ = call("POST", "/api/puzzle", {"answer": "0"}, seat(C))
 check("after three wrong tries the answer is shown", body["left"] == 0 and body["solved"] is False and body.get("answer") == solve(others[0]))
 status, body, _ = call("POST", "/api/puzzle", {"answer": solve(others[0])}, seat(C))
 check("and no fourth try is allowed", status == 409)
+check("failing tells nobody, and the game knows that player has no tries left", len(hall_of(A)["notices"]) == 1 and hall_of(C)["puzzle"] == {"solved": False, "left": 0, "reward": 1})
 solved_all = True
 for i, t in enumerate(tokens[3:7]):
     solved_all = solved_all and call("POST", "/api/puzzle", {"answer": solve(others[i + 1])}, seat(t))[1].get("right") is True
 check("four more players solve their own puzzles", solved_all)
+told = hall_of(A)["notices"]
+check("the news is listed newest first", [x["n"] for x in told] == [numbers[6], numbers[5], numbers[4], numbers[3], nB])
+check("a solver is told about the others, not about themself", [x["n"] for x in hall_of(tokens[4])["notices"]] == [numbers[6], numbers[5], numbers[3], nB])
+status, body, _ = call("POST", "/api/notices/seen", {"upTo": told[0]["id"]}, seat(A))
+check("opening the bell marks the news as read, for that player only", status == 200 and hall_of(A)["noticeMark"] == told[0]["id"] and hall_of(C)["noticeMark"] == 0)
+check("a mark cannot run ahead of the news or go backwards", call("POST", "/api/notices/seen", {"upTo": 999999}, seat(A))[1]["noticeMark"] == told[0]["id"] and call("POST", "/api/notices/seen", {"upTo": 1}, seat(A))[0] == 200 and hall_of(A)["noticeMark"] == told[0]["id"])
+check("someone who is not a player cannot mark the news", call("POST", "/api/notices/seen", {"upTo": 1})[0] == 403)
 h = hall_of(A)
 check("every player card counts puzzles solved", seat_of(A, nB)["solved"] == 1 and seat_of(A, nC)["solved"] == 0)
 check("the coin is held back until the bags open", h["coins"] is None and hall_of(B)["coins"] is None and hall_of(B)["banked"] == 1)
@@ -541,6 +553,8 @@ check("undoing the reveal returns guests to the hall with no coins", me(A).get("
 call("POST", "/api/host/invite/reset", {"token": A}, host)
 check("resetting a player erases their messages", all(m["from"] != nA for m in read(B, "table", after=0)) and read(B, "whisper", **{"with": nA}) == [])
 check("and where they stood", str(nA) not in call("GET", "/api/hall", cookies=seat(B))[1]["pos"])
+call("POST", "/api/host/invite/reset", {"token": B}, host)
+check("resetting a player erases the news about them", [x["n"] for x in hall_of(C)["notices"]] == [numbers[6], numbers[5], numbers[4], numbers[3]])
 for t in tokens[:16]:
     call("POST", "/api/host/invite/reset", {"token": t}, host)
 for i, t in enumerate(tokens[:16]):

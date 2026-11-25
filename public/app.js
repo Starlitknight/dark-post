@@ -811,10 +811,12 @@
           "</div>" +
           '<div class="hud-say">' + sayHTML() + "</div>" +
           '<button type="button" class="onair" id="onair" data-act="go" data-scene="table" hidden></button>' +
+          '<button type="button" class="onair note" id="note" data-act="noteGo" hidden></button>' +
           '<div class="npc-talk" id="npc-talk" role="dialog" aria-live="polite" hidden></div>' +
           '<div class="commit" id="commit" role="dialog" aria-modal="true" aria-labelledby="commit-h" hidden></div>' +
           '<div class="hud-bottom">' +
           '<button type="button" class="btn hud-action" id="hud-action" data-act="use" hidden></button>' +
+          '<button type="button" class="bell-btn" id="bell-btn" data-act="bell" aria-haspopup="dialog" aria-expanded="false" aria-label="Notifications" disabled>' + BELL + '<span id="bell-n"></span></button>' +
           '<button type="button" class="menu-btn" id="menu-btn" data-act="menu" aria-haspopup="dialog" aria-expanded="false" disabled>Menu<span id="menu-n"></span></button>' +
           "</div>" +
           '<div class="menu" id="menu" hidden></div>' +
@@ -1859,6 +1861,124 @@
     if (c) c.textContent = s.count;
   }
 
+  // ----- the bell: what this player should do now, and news about the others -----
+
+  var BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2a5.8 5.8 0 0 0-5.8 5.8v3.5l-1.9 3.4a1 1 0 0 0 .9 1.5h13.6a1 1 0 0 0 .9-1.5l-1.9-3.4V9A5.8 5.8 0 0 0 12 3.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.7 20.2a2.5 2.5 0 0 0 4.6 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+
+  // Can this player still solve today's puzzle?
+  function puzzleOpen() {
+    var pz = hall && hall.puzzle;
+    return !!pz && !hall.out && !pz.solved && pz.left > 0;
+  }
+
+  function solvedToday() {
+    return ((hall && hall.notices) || []).filter(function (x) { return x.kind === "solved" && x.today; });
+  }
+
+  // The things waiting for this player, most pressing first. Each one has a button that takes them there.
+  function todoList() {
+    var out = [], u = hall.unread, n = hall.night;
+    if (n && n.status === "open" && !n.opened && !hall.out) {
+      out.push({ title: "Play tonight’s match", sub: "Night " + n.n + ": Six Vaults. Open two vaults before it ends.", scene: "tonight", go: "Play" });
+    }
+    if (puzzleOpen()) {
+      var done = solvedToday().length;
+      out.push({ title: "Solve today’s puzzle", sub: "Worth " + plural(hall.puzzle.reward, "coin", "coins") + "." + (done ? " " + plural(done, "player has", "players have") + " solved it." : ""), scene: "puzzle", go: "Solve it" });
+    }
+    if (u.whispers) out.push({ title: plural(u.whispers, "new message", "new messages"), sub: "From " + hall.whispers.filter(function (t) { return t.unread; }).map(function (t) { return who(t.with); }).join(", ") + ".", scene: "whispers", go: "Read" });
+    if (u.study) out.push({ title: "The GM wrote to you", sub: "Only you can read it.", scene: "study", go: "Read" });
+    if (u.board) out.push({ title: plural(u.board, "new notice", "new notices") + " from the GM", sub: "For every player.", scene: "board", go: "Read" });
+    if (u.table) out.push({ title: plural(u.table, "new broadcast", "new broadcasts"), sub: "Said to every player.", scene: "table", go: "Read" });
+    if (hall.bettingOpen && u.deals && !hall.out) out.push({ title: plural(u.deals, "player offers", "players offer") + " you a deal", sub: "Answer in the betting room.", scene: "deal", go: "Answer" });
+    return out;
+  }
+
+  function unseenNotices() {
+    var mark = hall.noticeMark || 0;
+    return (hall.notices || []).filter(function (x) { return x.id > mark; }).length;
+  }
+
+  var stampFormat = null, dayFormat = null;
+  function stamp(at, today) {
+    try {
+      stampFormat = stampFormat || new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+      dayFormat = dayFormat || new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" });
+      return (today ? "Today, " : dayFormat.format(new Date(at)) + ", ") + stampFormat.format(new Date(at));
+    } catch (err) {
+      return today ? "Today" : ago(at);
+    }
+  }
+
+  function noticeLine(x) {
+    return "Player " + x.n + (x.today ? " solved today’s puzzle" : " solved the daily puzzle");
+  }
+
+  function bellHTML() {
+    var todo = todoList(), fresh = stage.bellMark || 0;
+    var rows = todo.map(function (t) {
+      return '<button type="button" class="bell-row todo" data-act="go" data-scene="' + t.scene + '"><span class="bell-text"><b>' + esc(t.title) + "</b><small>" + esc(t.sub) + '</small></span><em>' + t.go + "</em></button>";
+    });
+    var news = (hall.notices || []).map(function (x) {
+      return '<div class="bell-row news' + (x.id > fresh ? " fresh" : "") + '"><span class="bell-face">' + faceHTML(x.n) + '</span><span class="bell-text"><b>' + esc(noticeLine(x)) + "</b><small>" + esc(stamp(x.at, x.today)) + "</small></span>" + (x.id > fresh ? '<i class="bell-new">New</i>' : "") + "</div>";
+    });
+    return '<div class="menu-sheet bell-sheet" role="dialog" aria-modal="true" aria-labelledby="bell-heading">' +
+      '<div class="menu-head"><h2 id="bell-heading">Notifications</h2>' +
+      '<button type="button" class="menu-close" data-act="menuClose" aria-label="Close notifications">×</button></div>' +
+      '<h3 class="bell-h">To do now' + (todo.length ? "<span>" + todo.length + "</span>" : "") + "</h3>" +
+      (rows.length ? rows.join("") : '<p class="bell-none">' + (hall.out ? "Nothing to read right now." : "Nothing is waiting for you. Explore the estate, or talk to the other players.") + "</p>") +
+      '<h3 class="bell-h">News</h3>' +
+      (news.length ? news.join("") : '<p class="bell-none">No news yet. When a player solves the puzzle, it shows here.</p>') +
+      "</div>";
+  }
+
+  // Opening the bell reads the news: tell the server, and stop counting it on the badge.
+  function readNotices(opening) {
+    var list = hall.notices || [];
+    var top = list.length ? list[0].id : 0;
+    if (opening) stage.bellMark = hall.noticeMark || 0; // what was new when the bell was opened stays marked New while it is open
+    if (top <= (hall.noticeMark || 0)) return;
+    hall.noticeMark = top;
+    api("POST", "/api/notices/seen", { upTo: top }).catch(function () {});
+  }
+
+  function drawBell() {
+    var btn = $("bell-btn");
+    if (!btn || !hall) return;
+    var n = todoList().length + unseenNotices();
+    $("bell-n").innerHTML = n ? '<span class="badge" aria-label="' + plural(n, "thing", "things") + ' waiting">' + n + "</span>" : "";
+    btn.disabled = false;
+  }
+
+  // News pops up once as it happens, and once for anyone who arrives after it happened.
+  var noteSeen = null, noteTimer = null;
+  function showNotice() {
+    if (!hall || !hall.notices) return;
+    var list = hall.notices, top = list.length ? list[0].id : 0;
+    if (noteSeen == null) noteSeen = hall.noticeMark || 0;
+    if (top <= noteSeen) return;
+    // not while a question or a panel covers the screen: it would be missed
+    var saying = $("say") && $("say").textContent.trim(); // the narrator's line sits where the pop-up goes
+    if (stage && (hall.needsCommit || saying || ($("menu") && !$("menu").hidden))) return;
+    var fresh = list.filter(function (x) { return x.id > noteSeen && x.kind === "solved" && x.today; });
+    noteSeen = top;
+    if (!fresh.length) return;
+    var names = fresh.length === 1 ? "Player " + fresh[0].n : fresh.length === 2 ? "Players " + fresh[1].n + " and " + fresh[0].n : "Player " + fresh[0].n + " and " + (fresh.length - 1) + " others";
+    var line = names + " solved today’s puzzle.";
+    var nudge = puzzleOpen() ? "You haven’t yet. Try it now." : hall.puzzle && hall.puzzle.solved ? "So have you." : "";
+    var el = stage && $("note");
+    if (!el) return toast(line + (nudge ? " " + nudge : ""));
+    if ($("onair")) $("onair").hidden = true;
+    el.innerHTML = '<span class="onair-face">' + faceHTML(fresh[0].n) + '</span><span class="onair-text"><i>Puzzle solved</i><b>' + esc(line) + "</b>" + (nudge ? "<small>" + esc(nudge) + "</small>" : "") + "</span>" + (puzzleOpen() ? '<em class="note-go">Solve it</em>' : "");
+    el.hidden = false;
+    el.classList.remove("on");
+    void el.offsetWidth;
+    el.classList.add("on");
+    var bell = $("bell-btn");
+    if (bell) { bell.classList.remove("ring"); void bell.offsetWidth; bell.classList.add("ring"); }
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { var x = $("note"); if (x) x.hidden = true; }, 9000);
+  }
+
   // These are the six things available wherever the player is standing.
   function menuHTML() {
     var u = hall.unread;
@@ -1876,10 +1996,16 @@
       '</div>';
   }
 
-  function setMenu(open) {
+  function setMenu(open, kind) {
     var el = $("menu");
     if (!el || (open && (!hall || !stage || !stage.room))) return;
     var wasOpen = !el.hidden;
+    var opener = $(stage && stage.menuKind === "bell" ? "bell-btn" : "menu-btn");
+    if (open) {
+      stage.menuKind = kind === "bell" ? "bell" : "menu";
+      opener = $(stage.menuKind === "bell" ? "bell-btn" : "menu-btn");
+      if (stage.menuKind === "bell") { readNotices(true); if ($("note")) $("note").hidden = true; }
+    }
     if (open) {
       stage.keys = {};
       stage.entering = null;
@@ -1890,16 +2016,17 @@
         setWalking(self, false);
         tellMove(stage.room, [self.x, self.y], "p");
       }
-      el.renderedMenu = menuHTML();
+      el.renderedMenu = stage.menuKind === "bell" ? bellHTML() : menuHTML();
       el.innerHTML = el.renderedMenu;
     }
     el.hidden = !open;
-    $("menu-btn").setAttribute("aria-expanded", String(open));
+    $("menu-btn").setAttribute("aria-expanded", String(open && stage.menuKind !== "bell"));
+    $("bell-btn").setAttribute("aria-expanded", String(open && stage.menuKind === "bell"));
     Array.prototype.forEach.call(el.parentNode.children, function (child) {
       if (child !== el) child.inert = open;
     });
-    if (open) el.querySelector(".menu-tile").focus({ preventScroll: true });
-    else if (wasOpen) $("menu-btn").focus({ preventScroll: true });
+    if (open) (el.querySelector(".menu-tile, .bell-row.todo") || el.querySelector("button")).focus({ preventScroll: true });
+    else if (wasOpen) { opener.focus({ preventScroll: true }); drawBell(); }
   }
 
   // Draw the room I am standing in: its art, its people, its light.
@@ -2012,9 +2139,11 @@
     var mark = $("mark-n");
     if (mark) mark.textContent = (stage.room === "betting" ? hall.unread.deals : 0) || "";
     $("menu-btn").disabled = false;
+    drawBell();
     var menu = $("menu");
     if (!menu.hidden) {
-      var nextMenu = menuHTML();
+      if (stage.menuKind === "bell") readNotices(false); // news that arrives while the bell is open is read too
+      var nextMenu = stage.menuKind === "bell" ? bellHTML() : menuHTML();
       if (menu.renderedMenu !== nextMenu) {
         menu.renderedMenu = nextMenu;
         var focused = document.activeElement;
@@ -2026,6 +2155,7 @@
     }
     drawStatus();
     showCast();
+    showNotice();
   }
 
   // The room always fills the screen; the camera follows me and stops at the walls.
@@ -2253,7 +2383,7 @@
       pollMe();
       if (!me || me.state !== "hall") return;
       if (room) pull(false).catch(function () {});
-      loadHall().then(function () { refreshStage(); drawThreads(); drawPlayers(); drawStandings(); }).catch(function () {});
+      loadHall().then(function () { refreshStage(); if (!stage) showNotice(); drawThreads(); drawPlayers(); drawStandings(); }).catch(function () {});
     }, 500);
   }
 
@@ -2476,6 +2606,7 @@
         api("POST", "/api/puzzle", { answer: value })
           .then(function (res) {
             ui.pz = res;
+            if (hall) hall.puzzle = { solved: !!res.solved, left: res.left, reward: res.reward };
             drawPuzzle();
             if (res.right) pzResult("win", res);
             else if (res.left <= 0) pzResult("lose", res);
@@ -3268,6 +3399,8 @@
     else if (name === "dealDecline") dealSend("/api/deal/answer", { id: Number(el.getAttribute("data-id")), decline: true });
     else if (name === "dealCancel") dealSend("/api/deal/answer", { id: Number(el.getAttribute("data-id")), cancel: true });
     else if (name === "menu") setMenu($("menu").hidden);
+    else if (name === "bell") setMenu(true, "bell");
+    else if (name === "noteGo") { if (puzzleOpen()) go("puzzle"); else { el.hidden = true; setMenu(true, "bell"); } }
     else if (name === "menuClose") setMenu(false);
     else if (name === "editFace") { ui.face = null; go("face"); }
     else if (name === "tab") { ui.tab = el.getAttribute("data-tab"); refreshFace(false); }
@@ -3464,6 +3597,9 @@
       lastCast: d.msgs.filter(function (m) { return m.room === "table"; }).slice(-1).map(function (m) { return { id: m.id, from: m.from, body: m.body, at: m.at }; })[0] || null,
       cell: 0,
       bettingOpen: !!d.bettingOpen,
+      notices: (d.notices || []).slice().reverse(),
+      noticeMark: d.noticeMark || 0,
+      puzzle: { solved: !!d.pz.solved, left: 3 - d.pz.tries, reward: 1 },
       needsCommit: !d.committed && !query.get("committed"),
       out: d.resigned ? -1 : d.night && d.night.result && d.night.result.out === me.number ? 1 : 0,
       night: d.night ? { n: 1, game: "vaults", status: d.night.status, endsAt: d.night.endsAt, opened: !!d.night.opened, unseen: d.night.status === "done" && !d.night.seen } : null,
@@ -3662,6 +3798,7 @@
     else if (path === "/api/doorlog") out = demoDoors();
     else if (path.indexOf("/api/night") === 0) out = demoNight(method, path, body);
     else if (path === "/api/commit") { var dc = demoHallStore(); dc.committed = true; dc.resigned = !body.play; }
+    else if (path === "/api/notices/seen") demoHallStore().noticeMark = body.upTo;
     else if (path.indexOf("/api/messages") === 0) out = demoMessages(method, path, body);
     return Promise.resolve(out);
   }
@@ -3687,6 +3824,16 @@
           return true;
         },
         betting: function (open) { demoHallStore().bettingOpen = !!open; return loadHall().then(refreshStage); },
+        // another player solves today's puzzle, as it would arrive from the server
+        solve: function (n) {
+          var ds = demoHallStore();
+          ds.notices = ds.notices || [];
+          var taken = ds.notices.map(function (x) { return x.n; });
+          var solver = n || [2, 16, 12, 5, 6, 13, 3, 8, 9, 14].filter(function (k) { return k !== me.number && taken.indexOf(k) < 0; })[0];
+          if (!solver) return false;
+          ds.notices.push({ id: ds.notices.length + 1, kind: "solved", n: solver, at: Date.now(), today: true });
+          return loadHall().then(function () { refreshStage(); if (!stage) showNotice(); });
+        },
         startNight: function () { demoNightStart(); setMenu(false); return loadHall().then(function () { refreshStage(); go("tonight"); }); },
         endNight: function () { demoNightEnd(); setMenu(false); return loadHall().then(refreshStage); },
       };

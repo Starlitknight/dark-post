@@ -1,5 +1,13 @@
 # Dark Post
 
+## The bell, 24 Nov 2026, night (the GM's instructions, done outside this agent)
+
+- **A solved puzzle is news for every other player.** `puzzleAnswer` in `src/worker.js` writes a row to the new `notices` table. `hall()` sends the last thirty (`notices`, newest first, never the player's own), how far the player has read (`noticeMark`, kept in `reads` under the key `notices`) and the player's own standing on today's puzzle (`puzzle`). `POST /api/notices/seen` moves the mark. Removing or resetting a player deletes the news about them.
+- **The bell** sits beside Menu in the hall (`#bell-btn`). It opens in the same overlay as the menu (`setMenu(true, "bell")`, `bellHTML` in `public/app.js`): "To do now" (`todoList`: tonight's match, today's puzzle, unread messages, GM notices, broadcasts, deals, each with a button that goes there) and "News". The number on the bell is the things to do plus the unread news.
+- **A pop-up** (`showNotice`, `#note`) names the solver when the news arrives, and once for a player who arrives later. Players who can still solve today's puzzle are told "You haven't yet. Try it now." and a tap opens the puzzle. On pages other than the hall it is a plain line of text. It waits while the first-visit question, the narrator's line or a panel is on screen.
+- These are notifications inside the game. Nothing is sent to a phone when the game is closed.
+- Styles are at the end of `public/play.css`. In the preview, `DP_PREVIEW.solve()` makes another player solve.
+
 ## The wall board, 24 Nov 2026, night (the GM's instructions, done outside this agent)
 
 - **The board on the hall's back wall says what is happening now** before the bags open: "Current / Player onboarding" (`drawStatus` in `public/app.js`, `.world-clock b.words` in `public/app.css`). After the bags open it goes back to "Next" and a countdown.

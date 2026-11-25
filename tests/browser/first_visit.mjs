@@ -74,6 +74,28 @@ ok("an opening time is set, but the GM opens the bags by hand, so players see no
 const me = await call("GET", "/api/me", null, seat(0));
 ok("the server has the bag sealed and a character saved", me.state === "hall" && !!me.avatar && (me.bag === 1 || me.sealed === true || me.choice === 1 || me.bag != null));
 
+// the bell: what to do now, and news about the other players
+const bellCount = () => page.$eval("#bell-n", (el) => el.textContent);
+const popup = () => page.$eval("#note", (el) => (el.hidden ? "" : el.innerText.replace(/\s+/g, " ")));
+await sleep(5500); // the walking hint clears first: the pop-up waits for it
+ok("the bell starts with one thing to do, today's puzzle", (await bellCount()) === "1" && (await popup()) === "");
+const answerNow = (await call("GET", "/api/host/activity", null, host)).puzzle.players[0].answer;
+const solver = await call("GET", "/api/me", null, seat(1));
+ok("another player solves today's puzzle", (await call("POST", "/api/puzzle", { answer: String(answerNow) }, seat(1))).right === true);
+for (let i = 0; i < 16 && !(await popup()); i++) await sleep(1000);
+const pop = await popup();
+ok("every other player sees a pop-up naming the solver, with a nudge to try it now", pop.includes("Player " + solver.number + " solved today’s puzzle.") && pop.includes("You haven’t yet. Try it now."));
+ok("and the bell counts the news", (await bellCount()) === "2");
+await snap("bell-popup");
+await tryClick("#bell-btn"); await sleep(700);
+const sheet = await page.$eval(".bell-sheet", (el) => el.innerText.replace(/\s+/g, " "));
+await snap("bell-open");
+ok("the bell lists what to do now, and the news", /to do now/i.test(sheet) && sheet.includes("Solve today’s puzzle") && sheet.includes("1 player has solved it.") && sheet.includes("Player " + solver.number + " solved today’s puzzle") && /new/i.test(sheet));
+ok("opening the bell marks the news as read on the server", (await call("GET", "/api/hall", null, seat(0))).noticeMark > 0);
+await tryClick(".menu-close"); await sleep(500);
+ok("once read, the bell still counts the puzzle that is waiting", (await bellCount()) === "1");
+ok("the solver gets no pop-up about themself", (await call("GET", "/api/hall", null, seat(1))).notices.length === 0);
+
 // every menu page
 for (const [id, word] of [["whispers", "Messages"], ["study", "GM"], ["players", "Players"], ["table", "Broadcast"], ["standings", "Standings"], ["guide", "How to play"]]) {
   await tryClick("#menu-btn"); await sleep(500);
@@ -151,6 +173,10 @@ for (const [id, title] of [["arena", "The arena"], ["puzzle", "Puzzle room"], ["
     ok("the game clock at the top shows Eastern time", /^\d{1,2}:\d\d [AP]M E[SD]T$/.test(await page.$eval("#top-clock", (el) => el.textContent)));
     ok("the coin shows at once, and the attendant says the puzzle is done", (await page.$eval("#top-coins", (el) => el.textContent)) === now + " coins" && (await talk()).includes("have done today’s puzzle"));
     await tryClick('[data-act="talkClose"]'); await sleep(300);
+    await tryClick("#bell-btn"); await sleep(600);
+    const after = await page.$eval(".bell-sheet", (el) => el.innerText.replace(/\s+/g, " "));
+    ok("with the puzzle solved, the bell no longer asks for it", !after.includes("Solve today’s puzzle") && after.includes("solved today’s puzzle"));
+    await tryClick(".menu-close"); await sleep(400);
   } else {
     let used = false, inside = "";
     if (got) { await snap("room-" + id); used = await tryClick("#hud-action"); await sleep(1300); inside = await sceneOf(); await snap("in-" + id); await tryClick('[data-act="hall"], [data-act="go"][data-scene="hall"]'); await sleep(900); }

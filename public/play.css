@@ -113,3 +113,55 @@ body, body.desk { transition:none; }
   #app .screen.enter, #app .menu-sheet { animation:none; }
   #app *, #app *::after, #app *::before { scroll-behavior:auto; }
 }
+
+/* ----- the bell: what to do now, and news about the other players ----- */
+#app .bell-btn {
+  position:relative; flex:0 0 auto; width:50px; min-height:48px; padding:0; display:grid; place-items:center;
+  color:#f5f0dd; background:#192322f5; border:1px solid #dacfaf80; border-radius:9px; cursor:pointer;
+  box-shadow:0 8px 28px #0005; -webkit-tap-highlight-color:transparent;
+}
+#app .bell-btn:disabled { opacity:.6; }
+#app .bell-btn:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+#app .bell-btn svg { width:23px; height:23px; }
+#app .bell-btn .badge {
+  position:absolute; top:-8px; right:-8px; min-width:22px; height:22px; padding:0 6px; border-radius:11px;
+  font:700 13px/22px var(--label); background:#e9d3a6; color:#171511; box-shadow:0 2px 6px #0008;
+}
+#app .bell-btn.ring svg { transform-origin:50% 12%; animation:bell-ring .8s ease-in-out 2; }
+@keyframes bell-ring { 0%,100% { transform:rotate(0); } 20% { transform:rotate(16deg); } 40% { transform:rotate(-14deg); } 60% { transform:rotate(9deg); } 80% { transform:rotate(-5deg); } }
+
+#app .bell-sheet .bell-h {
+  display:flex; align-items:center; gap:8px; margin:18px 0 9px;
+  font:700 13px/1 var(--label); letter-spacing:.14em; text-transform:uppercase; color:#cdb88d;
+}
+#app .bell-sheet .menu-head + .bell-h { margin-top:0; }
+#app .bell-sheet .bell-h span { min-width:20px; height:20px; padding:0 6px; border-radius:10px; font:700 12px/20px var(--label); letter-spacing:0; text-align:center; background:#e9d3a6; color:#171511; }
+#app .bell-row {
+  width:100%; display:flex; align-items:center; gap:12px; margin:0 0 7px; padding:11px 12px;
+  border:1px solid #a79e8640; border-radius:10px; background:#222d2b; color:var(--agent-paper); text-align:left;
+}
+#app button.bell-row { min-height:60px; cursor:pointer; border-color:#d9c79b80; background:#2a3632; -webkit-tap-highlight-color:transparent; }
+#app button.bell-row:hover { background:#34403b; border-color:#c3b389; }
+#app button.bell-row:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+#app .bell-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+#app .bell-text b { font:700 15.5px/1.25 var(--sans); letter-spacing:0; text-transform:none; }
+#app .bell-text small { font:500 13px/1.35 var(--sans); color:#b9bdb4; }
+#app .bell-row em { flex:0 0 auto; padding:9px 12px; border-radius:7px; font:700 14px/1 var(--sans); font-style:normal; color:#1b2523; background:#e9d3a6; }
+#app .bell-face { flex:0 0 38px; width:38px; }
+#app .bell-row.news { padding:8px 12px; background:transparent; }
+#app .bell-row.news.fresh { background:#272338; border-color:#a98bea8c; }
+#app .bell-new { flex:0 0 auto; font:700 11px/1 var(--label); font-style:normal; letter-spacing:.12em; text-transform:uppercase; color:#cbb6ff; }
+#app .bell-none { margin:0 0 6px; color:#b9bdb4; font:500 14px/1.45 var(--sans); }
+
+/* the pop-up when news arrives: same place as a broadcast, in the puzzle room's colour */
+#app .onair.note { border-color:#8d7bc0; border-left-color:#a98bea; background:#17131ff5; }
+#app .onair.note .onair-text i { color:#cbb6ff; }
+#app .onair.note .onair-text b { display:block; -webkit-line-clamp:unset; }
+#app .onair.note .onair-text small { font:500 13px/1.3 var(--sans); color:#d8d3e6; }
+#app .note-go { flex:0 0 auto; margin-left:auto; padding:9px 11px; border-radius:7px; font:700 14px/1 var(--sans); font-style:normal; color:#1b2523; background:#e9d3a6; }
+@media (min-width:900px) {
+  #app .bell-btn { width:56px; min-height:54px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  #app .bell-btn.ring svg { animation:none; }
+}

@@ -124,6 +124,8 @@ export class Game extends DurableObject {
     const messageColumns = this.sql.exec(`PRAGMA table_info(messages)`).toArray().map((c) => c.name);
     if (!messageColumns.includes("heard")) this.sql.exec(`ALTER TABLE messages ADD COLUMN heard TEXT`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS puzzle_tries (number INTEGER NOT NULL, day INTEGER NOT NULL, tries INTEGER NOT NULL DEFAULT 0, solved INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (number, day))`);
+    // News every player is told about, shown behind the bell. So far: a player solved the day's puzzle.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS notices (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, n INTEGER NOT NULL, day INTEGER NOT NULL, at INTEGER NOT NULL)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS deals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       day INTEGER NOT NULL,
@@ -301,6 +303,7 @@ export class Game extends DurableObject {
       if (path === "/api/messages" && method === "POST") return this.postMessage(request);
       if (path === "/api/puzzle" && method === "GET") return this.puzzle(request);
       if (path === "/api/puzzle" && method === "POST") return this.puzzleAnswer(request);
+      if (path === "/api/notices/seen" && method === "POST") return this.noticesSeen(request);
       if (path === "/api/deals" && method === "GET") return this.deals(request);
       if (path === "/api/deal" && method === "POST") return this.dealOffer(request);
       if (path === "/api/deal/answer" && method === "POST") return this.dealAnswer(request);
@@ -587,6 +590,11 @@ export class Game extends DurableObject {
       needsCommit: !inv.committed && !inv.out,
       // rooms the GM has opened. The betting room stays shut until the GM opens it.
       bettingOpen: this.bettingOpen(),
+      // behind the bell: news about the other players, newest first, and how far this player has read
+      notices: this.noticesFor(inv),
+      noticeMark: mark("notices"),
+      // this player's own standing on today's puzzle, so the game can nudge only those who have not done it
+      puzzle: this.puzzleStanding(inv),
       pos: this.positions(),
       online: this.onlineNumbers(),
       seats,
@@ -799,9 +807,42 @@ export class Game extends DurableObject {
     );
     if (right) {
       this.addCoins(inv.number, PUZZLE_REWARD);
+      // every other player is told, so those who have not tried today are nudged to
+      this.sql.exec(`INSERT INTO notices (kind, n, day, at) VALUES ('solved', ?, ?, ?)`, inv.number, day, Date.now());
       this.broadcast({ t: "news" });
     }
     return json(Object.assign({ right }, this.puzzleView(inv)));
+  }
+
+  // The last thirty pieces of news about the other players. A player is not told their own news.
+  noticesFor(inv) {
+    const today = this.today();
+    return this.sql
+      .exec(`SELECT id, kind, n, day, at FROM notices WHERE n != ? ORDER BY id DESC LIMIT 30`, inv.number)
+      .toArray()
+      .map((r) => ({ id: r.id, kind: r.kind, n: r.n, at: r.at, today: r.day === today }));
+  }
+
+  puzzleStanding(inv) {
+    const row = this.puzzleRow(inv.number, this.today());
+    return { solved: !!row.solved, left: Math.max(0, PUZZLE_TRIES - row.tries), reward: PUZZLE_REWARD };
+  }
+
+  // The player opened the bell: everything up to this piece of news has been read.
+  async noticesSeen(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const body = await readJson(request);
+    const newest = this.sql.exec(`SELECT COALESCE(MAX(id), 0) AS m FROM notices`).one().m;
+    const upTo = Math.min(newest, Math.max(0, Math.floor(Number(body.upTo) || 0)));
+    if (upTo > 0) {
+      this.sql.exec(
+        `INSERT INTO reads (who, key, last_id) VALUES (?, 'notices', ?) ON CONFLICT(who, key) DO UPDATE SET last_id = MAX(last_id, excluded.last_id)`,
+        "p" + inv.number,
+        upTo,
+      );
+    }
+    return json({ ok: true, noticeMark: upTo });
   }
 
   // ---------- the betting room: two players, two sealed choices ----------
@@ -1526,6 +1567,7 @@ export class Game extends DurableObject {
     this.sql.exec(`DELETE FROM reads WHERE who = ? OR key = ? OR key = ?`, "p" + number, "w:" + number, "study:" + number);
     this.sql.exec(`DELETE FROM places WHERE number = ?`, number);
     this.sql.exec(`DELETE FROM puzzle_tries WHERE number = ?`, number);
+    this.sql.exec(`DELETE FROM notices WHERE n = ?`, number);
     this.sql.exec(`DELETE FROM doorlog WHERE number = ?`, number);
     this.sql.exec(`DELETE FROM night_plays WHERE number = ?`, number);
     for (const d of this.sql.exec(`SELECT id, a FROM deals WHERE status = 'open' AND b = ?`, number).toArray()) this.addCoins(d.a, DEAL_STAKE);
