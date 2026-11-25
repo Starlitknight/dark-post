@@ -93,7 +93,7 @@ for (const c of ["9", "K", "4"]) { await click('.ld-card[data-c="' + c + '"]'); 
 await click('.ld-boost[data-i="0"]');
 await into(guest, ".ld-board"); await shot(guest, "stage1-laid");
 await into(guest, ".ld-hand"); await shot(guest, "stage1-hand");
-await click('[data-act="ldSeal"]'); await sleep(900);
+await click('[data-act="ldAsk"]'); await click('[data-act="ldSeal"]'); await sleep(900);
 ok("the cards are sealed and the boost cost one coin", (await guest.$(".ld-sealed")) !== null && (await coinsOf(0)) === before - 1);
 
 // the others play by API: random cards they still hold
@@ -112,6 +112,11 @@ await playOthers(1);
 for (let i = 0; i < 40 && (await guest.$$(".sub.done")).length < 15; i++) await sleep(250);
 ok("and the ticks fill in as the others submit", (await guest.$$(".sub.done")).length === 15);
 await shot(guest, "submitted-15");
+for (let i = 0; i < 40 && (await guest.$$(".ld-live .ld-duel:not(.wait)")).length < 2; i++) await sleep(250);
+t = await guest.$eval(".ld-live", (el) => el.innerText);
+ok("each duel is decided as the opponent submits: won or lost is shown, their card stays face down", (await guest.$$(".ld-live .ld-duel:not(.wait)")).length >= 2 && (await guest.$$(".ld-live .ld-them .pcard.down")).length >= 2 && /won|lost|level/i.test(t) && (await guest.$(".ld-card")) === null);
+await into(guest, ".ld-live"); await shot(guest, "live-duels");
+ok("the ladder is live", /live/i.test(await guest.$eval("#sched", (el) => el.innerText)) && (await guest.$(".ld-livecap")) !== null);
 await hostPage.reload({ waitUntil: "networkidle0" }); await sleep(1200);
 t = await hostPage.$eval("#night-box", (el) => el.innerText);
 ok("the GM sees fifteen sealed and who has not", t.includes("15 of 16 players have sealed") && t.includes("Not yet: Player " + numbers[ABSENT]));
@@ -136,7 +141,7 @@ ok("the absent player was given their three lowest cards, for all to see", used[
 for (let s = 2; s <= 5; s++) {
   const free = await guest.$$eval(".ld-card:not([disabled])", (els) => els.map((x) => x.getAttribute("data-c")));
   for (const c of free.slice(-3)) await click('.ld-card[data-c="' + c + '"]');
-  await click('[data-act="ldSeal"]'); await sleep(600);
+  await click('[data-act="ldAsk"]'); await click('[data-act="ldSeal"]'); await sleep(600);
   await playOthers(s);
   await call("POST", "/api/host/night/stage", {}, host);
   if (s < 5) {

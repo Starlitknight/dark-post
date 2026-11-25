@@ -91,9 +91,10 @@ before = coins(A)
 status, body, _ = seal(A, [{"opp": o[0], "card": "9", "boost": True}, {"opp": o[1], "card": "K"}, {"opp": o[2], "card": "4"}])
 check("three cards are sealed, and the boost costs a coin", status == 200 and coins(A) == before - 1 and len(body["sealed"]) == 3 and hall(A)["night"]["opened"] is True)
 status, body, _ = seal(A, [{"opp": o[0], "card": "9"}, {"opp": o[1], "card": "K"}, {"opp": o[2], "card": "4"}])
-check("the cards can be laid again, and taking the boost off returns the coin", status == 200 and coins(A) == before)
-seal(A, [{"opp": o[0], "card": "9", "boost": True}, {"opp": o[1], "card": "K"}, {"opp": o[2], "card": "4"}])
-check("nobody else is shown a sealed card", night(by[o[0]])["used"]["1"] == [] and night(by[o[0]])["sealed"] is None and night(by[o[0]])["results"] == [])
+check("submitted cards are final: a second try is refused and changes nothing", status == 409 and coins(A) == before - 1 and night(A)["sealed"][0]["boost"] == 1)
+check("nothing is decided while the opponents have not submitted", [d["r"] for d in night(A)["live"]] == [None, None, None] and night(A)["liveCount"] == 0)
+waits = [x for x in hall(by[o[0]])["notices"] if x["kind"] == "wait"]
+check("each opponent is told that Player 1 is waiting for them, and nobody else is", [x["n"] for x in waits] == [1] and not [x for x in hall(by[9 if 9 not in o else 10])["notices"] if x["kind"] == "wait"] and not [x for x in hall(A)["notices"] if x["kind"] == "wait"])
 check("everyone can see who has submitted, and only that", night(by[o[0]])["submitted"] == [1] and hall(by[o[0]])["night"]["subs"] == 1)
 hv = call("GET", "/api/host/activity", cookies=host)[1]["night"]
 check("the GM sees who has sealed", hv["sealed"] == [1] and hv["stage"] == 1)
@@ -115,6 +116,15 @@ def play_stage(stage):
         assert s == 200, (n, stage)
 
 play_stage(1)
+v = night(A)
+dec = {d["opp"]: d["r"] for d in v["live"]}
+check("a duel is decided as soon as both have submitted, and one against an absent player waits", all((dec[x] is None) == (x == 16) for x in dec) and v["liveCount"] == 21)
+check("the ladder counts the decided duels at once", sum(r["w"] + r["l"] + r["t"] for r in v["table"]) == 42 and sum(r["pts"] for r in v["table"]) == 0)
+check("but no card of this stage is shown to anyone yet", v["results"] == [] and all(v["used"][k] == [] for k in v["used"]) and "theirs" not in json.dumps(v) and '"ca"' not in json.dumps(v))
+mine = [x for x in hall(A)["notices"] if x["kind"] == "duel" and x["mine"]]
+other = [x for x in hall(A)["notices"] if x["kind"] == "duel" and not x["mine"]]
+check("the two who dueled are told it is decided; the rest see it as news", sorted(x["n"] for x in mine) == sorted(x for x in dec if x != 16) and len(mine) + len(other) == 21)
+check("the absent player has three players waiting on them", len([x for x in hall(by[16])["notices"] if x["kind"] == "wait"]) == 3)
 check("a player cannot close a stage", call("POST", "/api/host/night/stage", {}, seat(A))[0] == 401)
 status, body, _ = call("POST", "/api/host/night/stage", {}, host)
 check("the GM closes stage 1 and stage 2 opens", status == 200 and body["stage"] == 2)

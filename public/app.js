@@ -2036,7 +2036,7 @@
 
   function unseenNotices() {
     var mark = hall.noticeMark || 0;
-    return (hall.notices || []).filter(function (x) { return x.id > mark; }).length;
+    return (hall.notices || []).filter(function (x) { return x.id > mark && noticeMine(x); }).length;
   }
 
   var stampFormat = null, dayFormat = null;
@@ -2062,8 +2062,14 @@
   }
 
   function noticeLine(x) {
+    if (x.kind === "duel") return x.mine ? "Your duel with Player " + x.n + " is decided" : "Players " + x.n + " and " + x.m + " have dueled";
+    if (x.kind === "wait") return "Player " + x.n + " has submitted against you and is waiting";
     return "Player " + x.n + (x.today ? " solved today’s puzzle" : " solved the daily puzzle");
   }
+  // News that is about this player: it counts on the bell and pops up. Other players' duels are only listed.
+  // "Waiting for you" stops mattering once this player has submitted.
+  function noticeLive(x) { return x.kind !== "wait" || (hall.night && hall.night.status === "open" && !hall.night.opened); }
+  function noticeMine(x) { return x.kind === "solved" || (x.kind === "duel" && x.mine) || (x.kind === "wait" && noticeLive(x)); }
 
   function bellHTML() {
     var todo = todoList(), fresh = stage.bellMark || 0;
@@ -2073,7 +2079,7 @@
       return '<button type="button" class="bell-row todo" data-act="go" data-scene="' + t.scene + '"><span class="bell-text"><b>' + esc(t.title) + "</b><small>" + esc(t.sub) + '</small></span><em>' + t.go + "</em></button>";
     });
     // news is shown once: whatever was new when the bell was opened, and gone the next time
-    var news = (hall.notices || []).filter(function (x) { return x.id > fresh; }).map(function (x) {
+    var news = (hall.notices || []).filter(function (x) { return x.id > fresh && noticeLive(x); }).map(function (x) {
       return '<div class="bell-row news' + (x.id > fresh ? " fresh" : "") + '"><span class="bell-face">' + faceHTML(x.n) + '</span><span class="bell-text"><b>' + esc(noticeLine(x)) + "</b><small>" + esc(stamp(x.at, x.today)) + "</small></span>" + (x.id > fresh ? '<i class="bell-new">New</i>' : "") + "</div>";
     });
     // the GM's notices stay here after they are read: the latest three, and a way to all of them
@@ -2129,7 +2135,25 @@
       return;
     }
     var fresh = list.filter(function (x) { return x.id > noteSeen && x.kind === "solved" && x.today; });
+    var duels = list.filter(function (x) { return x.id > noteSeen && x.kind === "duel" && x.mine; });
+    var waits = list.filter(function (x) { return x.id > noteSeen && x.kind === "wait" && noticeLive(x); });
     noteSeen = top;
+    if (duels.length || waits.length) {
+      // the game comes first: a duel of mine is decided, or someone is waiting for my cards
+      var who = function (xs) { var ns = xs.map(function (x) { return x.n; }); return ns.length === 1 ? "Player " + ns[0] : "Players " + ns.slice(0, -1).join(", ") + " and " + ns[ns.length - 1]; };
+      var d1 = duels.length ? { tag: "Duel decided", line: (duels.length > 1 ? "Your duels with " : "Your duel with ") + who(duels) + (duels.length > 1 ? " are decided." : " is decided."), nudge: "Walk to the arena to see who won.", face: duels[0].n }
+        : { tag: "Waiting for you", line: who(waits) + (waits.length > 1 ? " have" : " has") + " submitted against you.", nudge: "Walk to the arena and submit your cards.", face: waits[0].n };
+      var el2 = stage && $("note");
+      if (!el2) return; // at the table the duels are on the screen already
+      if ($("onair")) $("onair").hidden = true;
+      el2.innerHTML = '<span class="onair-face">' + faceHTML(d1.face) + '</span><span class="onair-text"><i>' + d1.tag + "</i><b>" + esc(d1.line) + "</b><small>" + esc(d1.nudge) + "</small></span>";
+      el2.hidden = false; el2.classList.remove("on"); void el2.offsetWidth; el2.classList.add("on");
+      var bell2 = $("bell-btn");
+      if (bell2) { bell2.classList.remove("ring"); void bell2.offsetWidth; bell2.classList.add("ring"); }
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(function () { var x = $("note"); if (x) x.hidden = true; }, 9000);
+      return;
+    }
     if (!fresh.length) return;
     var names = fresh.length === 1 ? "Player " + fresh[0].n : fresh.length === 2 ? "Players " + fresh[1].n + " and " + fresh[0].n : "Player " + fresh[0].n + " and " + (fresh.length - 1) + " others";
     var line = names + " solved today’s puzzle.";
@@ -2297,7 +2321,7 @@
     var btn = $("hud-action");
     btn.hidden = !spot;
     if (spot) {
-      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? (isLadder() ? "Play your cards" : "Open the vaults") : spot.scene === "deal" && betsOn() ? (hall.bets.placed ? "See your bet" : "Place a bet") : spot.label;
+      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? (isLadder() ? (hall.night.opened ? "See your duels" : "Play your cards") : "Open the vaults") : spot.scene === "deal" && betsOn() ? (hall.bets.placed ? "See your bet" : "Place a bet") : spot.label;
       btn.style.setProperty("--place", PLACES[stage.room].color);
     }
     measureStage();
@@ -3041,10 +3065,23 @@
         out += '<div class="s-card"><p>' + (n.playing && !n.out ? "Your cards are played at the table in the arena. Its door is at the top of the hall." : "You are watching this game.") + "</p></div>";
       } else {
         var d = ladderDraft(n), placed = d.plays.filter(function (p) { return p.card; }).length, boostsUsed = d.plays.filter(function (p) { return p.boost; }).length;
-        var sealed = !!n.sealed && !d.dirty;
+        var sealed = !!n.sealed;
+        if (sealed) {
+          // submitted: the cards are final. A duel is decided as soon as the other player has submitted too;
+          // who won is shown at once, and the other card stays face down until the stage closes.
+          var liveOf = function (opp) { return (n.live || []).filter(function (x) { return x.opp === opp; })[0] || { r: null }; };
+          var decided = n.sealed.filter(function (p) { return liveOf(p.opp).r != null; }).length;
+          out += '<div class="s-card ld-shown ld-live"><i>Your duels this stage · ' + decided + " of " + n.sealed.length + ' decided</i><div class="ld-duels">' + n.sealed.map(function (p, i) {
+            var r = liveOf(p.opp).r, cls = r == null ? "wait" : r > 0 ? "won" : r < 0 ? "lost" : "level";
+            return '<div class="ld-duel ' + cls + '" style="--i:0"><span class="ld-me"><i>You</i>' + cardHTML(p.card, { boost: p.boost }) + "</span>" +
+              (r == null ? '<strong class="ld-wait">Waiting</strong>' : "<strong>" + (r > 0 ? "+1" : r < 0 ? "−1" : "0") + "<small>" + (r > 0 ? "Won" : r < 0 ? "Lost" : "Level") + "</small></strong>") +
+              '<span class="ld-them">' + (r == null ? '<span class="pcard ghost"></span>' : cardHTML("2", { down: true })) + '<i><span class="ld-face">' + faceHTML(p.opp) + "</span>Player " + p.opp + "</i></span></div>";
+          }).join("") + '</div><p class="ld-sealed">' + (decided === n.sealed.length ? "All three of your duels are decided. The cards are turned when the stage closes." : "Submitted and final. A duel is decided as soon as the other player submits. The cards are turned when the stage closes.") + "</p></div>";
+        } else {
         out += '<div class="s-card ld-board"><i>Your three opponents this stage</i><div class="ld-opps">' + d.plays.map(function (p, i) {
           var theirs = n.used[p.opp] || [];
-          return '<div class="ld-opp"><span class="ld-face">' + faceHTML(p.opp) + "</span><b>Player " + p.opp + "</b>" +
+          var inAlready = (n.submitted || []).indexOf(p.opp) >= 0;
+          return '<div class="ld-opp"><span class="ld-face">' + faceHTML(p.opp) + "</span><b>Player " + p.opp + "</b>" + (inAlready ? '<em class="ld-in">Submitted · waiting for you</em>' : '<em class="ld-in none">Not submitted yet</em>') +
             '<button type="button" class="ld-slot' + (p.card ? " full" : "") + '" data-act="ldSlot" data-i="' + i + '" aria-label="Your card against Player ' + p.opp + '">' + (p.card ? cardHTML(p.card, { boost: p.boost }) : "<span>Your card</span>") + "</button>" +
             '<button type="button" class="ld-boost' + (p.boost ? " on" : "") + '" data-act="ldBoost" data-i="' + i + '"' + (p.card && (p.boost || (n.boostsLeft - boostsUsed > 0 && (n.coins == null || (n.purse != null ? n.purse : n.coins) - boostsUsed * n.rules.boostPrice >= n.rules.boostPrice))) ? "" : " disabled") + ">+2 · 1 coin</button>" +
             '<span class="ld-left"><u>Cards they have left</u>' + LADDER.CARDS.map(function (c) { return cardHTML(c, { tiny: true, dim: theirs.indexOf(c) >= 0 }); }).join("") + "</span></div>";
@@ -3054,10 +3091,12 @@
           return '<button type="button" class="ld-card' + (down ? " placed" : "") + '" data-act="ldCard" data-c="' + c + '"' + (gone ? " disabled" : "") + ">" + cardHTML(c, { dim: gone }) + "</button>";
         }).join("") + "</div>" +
           '<p class="ld-boosts">Boosts left: <b>' + (n.boostsLeft - boostsUsed) + " of " + n.rules.boosts + "</b></p>" +
-          (sealed ? '<p class="ld-sealed">Submitted. The cards are turned as soon as every player has submitted.</p>'
-            : '<button type="button" class="btn" data-act="ldSeal"' + (placed === d.plays.length ? "" : " disabled") + ">" + (placed === d.plays.length ? "Submit these " + (placed === 3 ? "three" : placed) + " cards" : "Play a card against each opponent") + "</button>") + "</div>";
+          (d.ask ? '<div class="ld-ask"><p><b>Submit these cards?</b> They are final. You cannot change them afterwards.</p><div class="btn-row"><button type="button" class="btn" data-act="ldSeal">Submit</button><button type="button" class="btn ghost" data-act="ldBack">Back</button></div></div>'
+            : '<button type="button" class="btn" data-act="ldAsk"' + (placed === d.plays.length ? "" : " disabled") + ">" + (placed === d.plays.length ? "Submit these " + (placed === 3 ? "three" : placed) + " cards" : "Play a card against each opponent") + '</button><p class="ld-final">Submitted cards are final.</p>') + "</div>";
+        }
       }
-      out += '<div class="s-card"><i>The ladder' + (n.results.length ? " after stage " + n.results[n.results.length - 1].stage : "") + "</i>" + ladderTableHTML(n, false) + "</div>";
+      out += '<div class="s-card"><i>The ladder' + (n.liveCount ? " · live" : n.results.length ? " after stage " + n.results[n.results.length - 1].stage : "") + "</i>" +
+        (n.liveCount ? '<p class="ld-livecap">Stage ' + n.stage + " is still open. A duel counts here as soon as both players have submitted.</p>" : "") + ladderTableHTML(n, false) + "</div>";
       out += '<div class="s-card"><button type="button" class="link" data-act="vbAgain">The rules again</button></div>';
     }
     if (box.getAttribute("data-sig") === out) return;
@@ -3069,7 +3108,10 @@
     var n = ui.night, d = n && ladderDraft(n);
     if (!d) return;
     var i = Number(el.getAttribute("data-i"));
-    if (name === "ldCard") {
+    if (n.sealed && name !== "ldSeen") return; // submitted cards are final
+    if (name === "ldAsk") d.ask = true;
+    else if (name === "ldBack") d.ask = false;
+    else if (name === "ldCard") {
       var c = el.getAttribute("data-c"), at = -1;
       d.plays.forEach(function (p, k) { if (p.card === c) at = k; });
       if (at >= 0) { d.plays[at].card = null; d.plays[at].boost = false; } // tap a played card to take it back
