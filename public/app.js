@@ -2005,7 +2005,14 @@
   }
 
   // The things waiting for this player, most pressing first. Each one has a button that takes them there.
-  function todoList() {
+  // The bell's number counts only what the player has not yet been shown. Opening the bell shows everything, so the
+  // number clears whether or not they act. A row that is only an offer (once: a bet nobody has to place) is shown one time.
+  function todoKey(t) { return "td:" + t.title + "|" + (t.sub || ""); }
+  function todoNew() { return todoList().filter(function (t) { return !heard(todoKey(t)); }).length; }
+  function todoSeen() { todoList().forEach(function (t) { markHeard(todoKey(t)); }); }
+  function todoList() { return todoAll().filter(function (t) { return !t.once || !heard(todoKey(t)) || (stage && stage.bellKeep && stage.bellKeep[todoKey(t)]); }); }
+
+  function todoAll() {
     var out = [], u = hall.unread, n = hall.night;
     if (n && n.status === "open" && !n.opened && !hall.out) {
       if (!briefed()) out.push({ title: "Game " + n.n + " has begun", sub: gameName() + ".", walk: "Walk to the arena. The attendant has the rules." });
@@ -2020,7 +2027,7 @@
     if (u.study) out.push({ title: "The GM wrote to you", sub: "Only you can read it.", scene: "study", go: "Read" });
     if (u.board) out.push({ title: plural(u.board, "new notice", "new notices") + " from the GM", sub: "For every player.", scene: "board", go: "Read" });
     if (u.table) out.push({ title: plural(u.table, "new broadcast", "new broadcasts"), sub: "Said to every player.", scene: "table", go: "Read" });
-    if (betsOn() && hall.bets.taking && !hall.bets.placed && !hall.out) out.push({ title: "Bet on your Game 1 score", sub: "Pays " + [5, 4, 3, 2][hall.bets.stage - 1] + " coins a coin in this stage. Less in the next.", walk: "Walk to the betting room." });
+    if (betsOn() && hall.bets.taking && !hall.bets.placed && !hall.out) out.push({ once: true, title: "Bets are open on your Game 1 score", sub: "Pays " + [5, 4, 3, 2][hall.bets.stage - 1] + " coins a coin in this stage. Less in the next.", walk: "If you want to bet, walk to the betting room." });
     if (hall.bettingOpen && !betsOn() && u.deals && !hall.out) out.push({ title: plural(u.deals, "player offers", "players offer") + " you a deal", sub: "Answer in the betting room.", scene: "deal", go: "Answer" });
     return out;
   }
@@ -2099,7 +2106,7 @@
   function drawBell() {
     var btn = $("bell-btn");
     if (!btn || !hall) return;
-    var n = todoList().length + unseenNotices();
+    var n = todoNew() + unseenNotices();
     $("bell-n").innerHTML = n ? '<span class="badge" aria-label="' + plural(n, "thing", "things") + ' waiting">' + n + "</span>" : "";
     btn.disabled = false;
   }
@@ -2188,7 +2195,14 @@
     if (open) {
       stage.menuKind = OPENERS[kind] ? kind : "menu";
       opener = $(OPENERS[stage.menuKind]);
-      if (stage.menuKind === "bell") { readNotices(true); if ($("note")) $("note").hidden = true; }
+      if (stage.menuKind === "bell") {
+        readNotices(true);
+        if ($("note")) $("note").hidden = true;
+        // everything listed is now seen; offers shown this time stay on the list until the bell is closed
+        stage.bellKeep = {};
+        todoList().forEach(function (t) { stage.bellKeep[todoKey(t)] = true; });
+        todoSeen();
+      }
     }
     if (open) {
       stage.keys = {};
@@ -2209,7 +2223,7 @@
       if (child !== el) child.inert = open;
     });
     if (open) (el.querySelector(".menu-tile, button.bell-row.todo, .who-msg") || el.querySelector("button")).focus({ preventScroll: true });
-    else if (wasOpen) { opener.focus({ preventScroll: true }); drawBell(); }
+    else if (wasOpen) { stage.bellKeep = null; opener.focus({ preventScroll: true }); drawBell(); }
   }
 
   // Draw the room I am standing in: its art, its people, its light.

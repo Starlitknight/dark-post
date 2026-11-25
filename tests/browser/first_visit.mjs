@@ -95,7 +95,7 @@ ok("the bell keeps a place for the GM's notices", /from the gm/i.test(sheet));
 ok("the bell lists what to do now, and the news", /to do now/i.test(sheet) && sheet.includes("Solve today’s puzzle") && sheet.includes("1 player has solved it.") && sheet.includes("Player " + solver.number + " solved today’s puzzle") && /new/i.test(sheet));
 ok("opening the bell marks the news as read on the server", (await call("GET", "/api/hall", null, seat(0))).noticeMark > 0);
 await tryClick(".menu-close"); await sleep(500);
-ok("once read, the bell still counts the puzzle that is waiting", (await bellCount()) === "1");
+ok("once the bell has been opened its number clears, even with the puzzle still waiting", (await bellCount()) === "");
 ok("the solver gets no pop-up about themself", (await call("GET", "/api/hall", null, seat(1))).notices.length === 0);
 
 // who is online right now
