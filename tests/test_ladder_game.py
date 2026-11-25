@@ -106,6 +106,20 @@ check("no player is sent anyone's sealed cards or the GM's list", '"choices"' no
 if len(sys.argv) > 2 and sys.argv[2] == "keep":
     print("left open at stage 1"); sys.exit(0)
 
+# a coin on someone else's duel
+B = by[5]
+dbet = lambda t, a, b, pick: call("POST", "/api/bet/duel", {"a": a, "b": b, "pick": pick}, seat(t))
+dz = betv(B)["duels"]
+check("duels between other players are open for bets, never your own", len(dz["open"]) == 21 and all(5 not in (d["a"], d["b"]) for d in dz["open"]) and dz["left"] == 3 and (dz["stake"], dz["pays"]) == (1, 2))
+cB = coins(B)
+picks = [d for d in dz["open"] if 16 not in (d["a"], d["b"])][:3]
+status, body, _ = dbet(B, picks[0]["a"], picks[0]["b"], picks[0]["a"])
+check("a coin is placed on a duel", status == 200 and coins(B) == cB - 1 and body["duels"]["left"] == 2 and body["duels"]["mine"][0]["status"] == "open")
+check("not twice on the same duel, not on your own, not on a stranger", dbet(B, picks[0]["a"], picks[0]["b"], picks[0]["b"])[0] == 409 and dbet(B, 5, betv(B)["duels"]["open"][0]["a"], 5)[0] == 409 and dbet(B, picks[1]["a"], picks[1]["b"], 5)[0] == 400)
+dbet(B, picks[1]["a"], picks[1]["b"], picks[1]["b"]); dbet(B, picks[2]["a"], picks[2]["b"], picks[2]["a"])
+check("three duel bets a stage, no more", betv(B)["duels"]["left"] == 0 and dbet(B, *[(d["a"], d["b"], d["a"]) for d in betv(B)["duels"]["open"]][0])[0] == 409 and coins(B) == cB - 3)
+check("nobody else is shown them", betv(by[6])["duels"]["mine"] == [])
+
 # everyone but Player 16 plays random cards; Player 16 never shows up
 def play_stage(stage):
     for n in range(2, 16):
@@ -125,6 +139,10 @@ mine = [x for x in hall(A)["notices"] if x["kind"] == "duel" and x["mine"]]
 other = [x for x in hall(A)["notices"] if x["kind"] == "duel" and not x["mine"]]
 check("the two who dueled are told it is decided; the rest see it as news", sorted(x["n"] for x in mine) == sorted(x for x in dec if x != 16) and len(mine) + len(other) == 21)
 check("the absent player has three players waiting on them", len([x for x in hall(by[16])["notices"] if x["kind"] == "wait"]) == 3)
+mine5 = betv(B)["duels"]["mine"]
+check("each duel bet is settled the moment the duel is decided", all(m["status"] in ("won", "lost", "level") for m in mine5) and coins(B) == cB - 3 + sum(m["paid"] for m in mine5) and all(m["paid"] == {"won": 2, "level": 1, "lost": 0}[m["status"]] for m in mine5))
+check("and the bettor is told", len([x for x in hall(B)["notices"] if x["kind"] in ("betwon", "betlost", "betlevel")]) == 3 and not [x for x in hall(by[6])["notices"] if x["kind"].startswith("bet")])
+check("decided duels are closed for bets", all(16 in (d["a"], d["b"]) for d in betv(B)["duels"]["open"]))
 check("a player cannot close a stage", call("POST", "/api/host/night/stage", {}, seat(A))[0] == 401)
 status, body, _ = call("POST", "/api/host/night/stage", {}, host)
 check("the GM closes stage 1 and stage 2 opens", status == 200 and body["stage"] == 2)
@@ -132,6 +150,9 @@ v = night(A)
 r = v["results"][0]["duels"]
 check("the player sees their three duels, with the cards and the boost", len(r) == 3 and [d["mine"] for d in r] == ["9", "K", "4"] and r[0]["mb"] == 1 and v["seenStage"] == 0)
 check("played cards leave the hand and are public", v["hand"] == [c for c in CARDS if c not in ("9", "K", "4")] and sorted(night(by[5])["used"]["1"]) == sorted(["9", "K", "4"]))
+up = v["upset"]
+RANK = {c: i for i, c in enumerate(CARDS)}
+check("the talk of the stage is named for everyone", up and up["stage"] == 1 and up["kind"] in ("upset", "fall") and up == night(by[7])["upset"] and ((RANK[up["cw"]] < RANK[up["cl"]]) == (up["kind"] == "upset") or up["cw"][0] == "X"))
 check("the absent player was given their three lowest cards", sorted(v["used"]["16"]) == ["2", "3", "4"])
 check("one boost is left and the coin stays spent", v["boostsLeft"] == 1 and coins(A) == before - 1)
 check("the ladder adds up to nothing", sum(row["pts"] for row in v["table"]) == 0 and len(v["table"]) == 16)

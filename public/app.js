@@ -1689,6 +1689,7 @@
         var bs = hall.bets;
         return bs.placed ? { text: "Your bet is placed. It cannot be changed. It is settled when Game 1 ends.", go: ["deal", "See your bet"] }
           : bs.taking && !hall.out ? { text: "Bets are open on Game 1. Guess the score you will finish on. A bet in this stage pays " + [5, 4, 3, 2][bs.stage - 1] + " coins for every coin.", go: ["deal", "Place a bet"] }
+          : hall.night && hall.night.status === "open" && !hall.out ? { text: "Bets on your own score are closed. You can still bet a coin on other players\u2019 duels.", go: ["deal", "Bet on a duel"] }
           : { text: "Bets on Game 1 are closed.", go: ["deal", "How the bets work"] };
       }
       return roomOpen(id)
@@ -2053,7 +2054,9 @@
     var out = [], u = hall.unread, n = hall.night;
     if (n && n.status === "open" && !n.opened && !hall.out) {
       if (!briefed()) out.push({ title: "Game " + n.n + " has begun", sub: gameName() + ".", walk: "Walk to the arena. The attendant has the rules." });
-      else if (isLadder()) out.push({ title: "Play your three cards", sub: "Game " + n.n + ": The Ladder. Stage " + (n.stage || 1) + ".", walk: "Walk to the table in the arena." });
+      // the walk to the table is for the first time; after that the bell goes straight there
+      else if (isLadder()) out.push(heard("table" + n.n) ? { title: "Play your three cards", sub: "Game " + n.n + ": The Ladder. Stage " + (n.stage || 1) + ".", scene: "arena", go: "Play" }
+        : { title: "Play your three cards", sub: "Game " + n.n + ": The Ladder. Stage " + (n.stage || 1) + ".", walk: "Walk to the table in the arena." });
       else out.push({ title: "Open two vaults", sub: "Game " + n.n + ": Six Vaults. Before the vaults close.", walk: "Walk to the vaults in the arena." });
     }
     if (puzzleOpen()) {
@@ -2099,12 +2102,15 @@
   function noticeLine(x) {
     if (x.kind === "duel") return x.mine ? "Your duel with Player " + x.n + " is decided" : "Players " + x.n + " and " + x.m + " have dueled";
     if (x.kind === "wait") return "Player " + x.n + " has submitted against you and is waiting";
+    if (x.kind === "betwon") return "Your bet on Player " + x.n + " won: +2 coins";
+    if (x.kind === "betlost") return "Your bet on Player " + x.n + " lost";
+    if (x.kind === "betlevel") return "The duel you bet on was level: your coin is back";
     return "Player " + x.n + (x.today ? " solved today’s puzzle" : " solved the daily puzzle");
   }
   // News that is about this player: it counts on the bell and pops up. Other players' duels are only listed.
   // "Waiting for you" stops mattering once this player has submitted.
   function noticeLive(x) { return x.kind !== "wait" || (hall.night && hall.night.status === "open" && !hall.night.opened); }
-  function noticeMine(x) { return x.kind === "solved" || (x.kind === "duel" && x.mine) || (x.kind === "wait" && noticeLive(x)); }
+  function noticeMine(x) { return x.kind === "solved" || (x.kind === "duel" && x.mine) || (x.kind === "wait" && noticeLive(x)) || /^bet(won|lost|level)$/.test(x.kind); }
 
   function bellHTML() {
     var todo = todoList(), fresh = stage.bellMark || 0;
@@ -3071,11 +3077,25 @@
     var res = n.result || {}, prizes = res.prizes || {};
     return '<div class="ladder">' + n.table.map(function (row, i) {
       var mine = row.n === n.you, out = final && res.out === row.n;
-      return '<div class="rung' + (mine ? " me" : "") + (out ? " out" : "") + (i === n.table.length - 1 && !final ? " last" : "") + '" style="--i:' + i + '"><em>' + (i + 1) + '</em><span class="rung-face">' + faceHTML(row.n) + "</span><b>" + (mine ? "You" : "Player " + row.n) + "</b>" +
+      // the bottom three are in danger while the game is on: the last of them goes home
+      var danger = !final && n.table.length > 6 && i >= n.table.length - 3 && (row.w + row.l + row.t) > 0;
+      return (danger && i === n.table.length - 3 ? '<div class="danger-line"><span>Danger zone · the last player is eliminated</span></div>' : "") +
+        '<div class="rung' + (mine ? " me" : "") + (out ? " out" : "") + (danger ? " danger" : "") + (i === n.table.length - 1 && !final ? " last" : "") + '" style="--i:' + i + '"><em>' + (i + 1) + '</em><span class="rung-face">' + faceHTML(row.n) + "</span><b>" + (mine ? "You" : "Player " + row.n) + "</b>" +
         "<small>" + row.w + " won · " + row.l + " lost</small>" +
         (prizes[row.n] ? '<span class="rung-prize">+' + prizes[row.n] + "</span>" : "") +
         "<strong>" + (row.pts > 0 ? "+" : "") + row.pts + "</strong></div>";
     }).join("") + "</div>";
+  }
+
+  // The talk of the stage: the biggest upset, told to every player.
+  function upsetHTML(n) {
+    var u = n.upset;
+    if (!u) return "";
+    var name = function (k) { return k === n.you ? "You" : "Player " + k; };
+    var card = function (c, b) { return LADDER.isJoker(c) ? "a Joker" : (c === "A" || c === "8" ? "an " : "a ") + LADDER.label(c) + (b ? " +2" : ""); };
+    return '<div class="upset"><i>' + (u.kind === "upset" ? "Biggest upset of stage " : "Strongest card to fall in stage ") + u.stage + '</i><div class="upset-row"><span class="upset-face">' + faceHTML(u.w) + "</span>" + cardHTML(u.cw, { small: true, boost: u.bw }) +
+      '<strong>beat</strong>' + cardHTML(u.cl, { small: true, boost: u.bl }) + '<span class="upset-face">' + faceHTML(u.l) + "</span></div><p>" +
+      esc(name(u.w)) + " beat " + esc(name(u.l) === "You" ? "you" : name(u.l)) + ": " + esc(card(u.cw, u.bw)) + " over " + esc(card(u.cl, u.bl)) + ".</p></div>";
   }
 
   // One stage's three duels, turned over one after another.
@@ -3108,7 +3128,7 @@
       if (last && n.seenStage < last.stage) {
         var net = last.duels.reduce(function (s, d) { return s + d.r; }, 0);
         out += '<div class="s-card ld-shown"><i>Stage ' + last.stage + " · the cards are turned</i>" + ladderRevealHTML(last) +
-          '<p class="ld-net">This stage: <b>' + (net > 0 ? "+" : "") + net + '</b></p><button type="button" class="btn" data-act="ldSeen">Continue</button></div>';
+          '<p class="ld-net">This stage: <b>' + (net > 0 ? "+" : "") + net + "</b></p>" + upsetHTML(n) + '<button type="button" class="btn" data-act="ldSeen">Continue</button></div>';
       } else if (!acting) {
         out += '<div class="s-card"><p>' + (n.playing && !n.out ? "Your cards are played at the table in the arena. Its door is at the top of the hall." : "You are watching this game.") + "</p></div>";
       } else {
@@ -3145,6 +3165,7 @@
       }
       out += '<div class="s-card"><i>The ladder' + (n.liveCount ? " · live" : n.results.length ? " after stage " + n.results[n.results.length - 1].stage : "") + "</i>" +
         (n.liveCount ? '<p class="ld-livecap">Stage ' + n.stage + " is still open. A duel counts here as soon as both players have submitted.</p>" : "") + ladderTableHTML(n, false) + "</div>";
+      if (n.upset && !(last && n.seenStage < last.stage)) out += '<div class="s-card">' + upsetHTML(n) + "</div>";
       out += '<div class="s-card"><button type="button" class="link" data-act="vbAgain">The rules again</button></div>';
     }
     if (box.getAttribute("data-sig") === out) return;
@@ -3193,7 +3214,7 @@
     if (ui.vstep === 1 && lastSt && lastSt.stage === n.stages) {
       var net = lastSt.duels.reduce(function (t, d) { return t + d.r; }, 0);
       box.innerHTML = '<div class="s-card ld-shown"><i>Stage ' + lastSt.stage + " · the last cards are turned</i>" + ladderRevealHTML(lastSt) +
-        '<p class="ld-net">This stage: <b>' + (net > 0 ? "+" : "") + net + '</b></p><button type="button" class="btn" data-act="vNext">The final ladder</button></div>';
+        '<p class="ld-net">This stage: <b>' + (net > 0 ? "+" : "") + net + "</b></p>" + upsetHTML(n) + '<button type="button" class="btn" data-act="vNext">The final ladder</button></div>';
       return;
     }
     var out = res.out === n.you;
@@ -3228,6 +3249,7 @@
       { line: "Bet 1, 2 or " + v.maxStake + " coins on your guess.", pic: pic('<div class="bt-stakes"><span>' + coinsHTML(1) + "</span><span>" + coinsHTML(2) + "</span><span>" + coinsHTML(3) + "</span></div>") },
       { line: "Right: every coin comes back as more coins. Wrong: the coins you bet are gone.", pic: pic('<div class="bt-pay win"><em>✓</em>' + coinsHTML(1) + "<s></s>" + coinsHTML(5) + '</div><div class="bt-pay lose"><em>✕</em>' + coinsHTML(1) + "<s></s><b>0</b></div>") },
       { line: "The earlier you bet, the more one coin pays. After stage " + v.pays.length + " the room is closed.", pic: pic(betOddsHTML({ pays: v.pays, stage: 0, done: false })) },
+      { line: "You can also bet 1 coin on a duel between two other players. Pick the winner: 2 coins back if you are right.", pic: pic('<div class="bt-duel demo"><span class="bt-pick on"><span class="rung-face">' + faceHTML(v.you % 16 + 1) + '</span><b>Wins</b></span><em>vs</em><span class="bt-pick"><span class="rung-face">' + faceHTML((v.you + 4) % 16 + 1) + '</span><b>Loses</b></span></div><div class="bt-pay win" style="margin-top:12px"><em>✓</em>' + coinsHTML(1) + "<s></s>" + coinsHTML(2) + "</div>") },
       { line: "Your guess must be exact. You get one bet, and it cannot be changed.", pic: pic('<div class="bt-exact"><span class="no">+2<i>✕</i></span><span class="yes">+3<i>✓</i></span><span class="no">+4<i>✕</i></span></div><div class="walk-cap">You bet on +3</div>') },
     ];
   }
@@ -3273,6 +3295,23 @@
     } else {
       out += '<div class="s-card next"><i>Closed</i><p>' + (v.out ? "You are out of the game." : !v.playing ? "You are not playing in this game, so there is no score to bet on." : v.done ? "Game 1 is over. You placed no bet." : "Bets closed when stage " + (v.pays.length + 1) + " opened. You placed no bet.") + "</p></div>";
     }
+    var dz = v.duels;
+    if (dz && !v.done && !v.out) {
+      var canBet = dz.left > 0 && (v.coins || 0) >= dz.stake;
+      out += '<div class="s-card bt-duels"><i>Bet on another duel · ' + dz.left + " of " + dz.perStage + ' left this stage</i><p class="bt-now">Pick who wins a duel between two other players. It costs <b>' + plural(dz.stake, "coin", "coins") + "</b>. Right: <b>" + dz.pays + " coins</b> back. Level: your coin back. Wrong: it is gone. A duel closes for bets when both players have submitted.</p>" +
+        (dz.open.length ? dz.open.map(function (d) {
+          var side = function (k, isIn) { return '<button type="button" class="bt-pick" data-act="btDuel" data-a="' + d.a + '" data-b="' + d.b + '" data-k="' + k + '"' + (canBet ? "" : " disabled") + '><span class="rung-face">' + faceHTML(k) + "</span><b>Player " + k + "</b><small>" + (isIn ? "Submitted" : "Not yet") + "</small></button>"; };
+          return '<div class="bt-duel">' + side(d.a, d.aIn) + "<em>vs</em>" + side(d.b, d.bIn) + "</div>";
+        }).join("") : '<p class="bt-now">No duel is open for bets right now.</p>') +
+        (!canBet && dz.open.length ? '<p class="bt-now">' + (dz.left ? "You have no coin to bet." : "You have placed all your duel bets for this stage.") + "</p>" : "") + "</div>";
+    }
+    if (dz && dz.mine.length) {
+      out += '<div class="s-card"><i>Your duel bets</i>' + dz.mine.map(function (m) {
+        var other = m.pick === m.a ? m.b : m.a;
+        var tag = m.status === "open" ? ["Waiting", "wait"] : m.status === "won" ? ["Won +" + m.paid, "won"] : m.status === "level" ? ["Level · coin back", "level"] : ["Lost", "lost"];
+        return '<div class="bt-mineduel ' + tag[1] + '"><span class="rung-face">' + faceHTML(m.pick) + "</span><span>Player " + m.pick + " to beat Player " + other + "<small>Stage " + m.stage + "</small></span><b>" + tag[0] + "</b></div>";
+      }).join("") + "</div>";
+    }
     out += '<div class="s-card"><button type="button" class="link" data-act="btRules">How the bet works</button></div>';
     box.innerHTML = out;
   }
@@ -3285,6 +3324,14 @@
     else if (name === "btDown") b.score = Math.max(v.low, b.score - 1);
     else if (name === "btUp") b.score = Math.min(v.high, b.score + 1);
     else if (name === "btStake") b.stake = Number(el.getAttribute("data-k"));
+    else if (name === "btDuel") {
+      if (ui.busy) return;
+      ui.busy = true;
+      var pick = Number(el.getAttribute("data-k"));
+      api("POST", "/api/bet/duel", { a: Number(el.getAttribute("data-a")), b: Number(el.getAttribute("data-b")), pick: pick }).then(function (nv) { ui.bet = nv; syncWalletAfter(nv); drawBet(); toast("1 coin on Player " + pick + "."); })
+        .catch(function (err) { toast(err.message); return api("GET", "/api/bet").then(function (nv) { ui.bet = nv; drawBet(); }); }).then(function () { ui.busy = false; });
+      return;
+    }
     else if (name === "btAsk") b.ask = true;
     else if (name === "btBack") b.ask = false;
     else if (name === "btYes") {
@@ -3322,6 +3369,7 @@
 
   function mountMatch(canAct) {
     ui.matchAct = canAct;
+    if (canAct && hall && hall.night && isLadder() && briefed()) markHeard("table" + hall.night.n);
     ui.matchMark = matchMark();
     ui.v = null;
     $("sched").removeAttribute("data-sig");

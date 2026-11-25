@@ -708,7 +708,8 @@
       if (past) archive.push('<div class="choice"><div class="choice-top"><b>' + esc(hwho(c.n)) + "</b></div>" + past + "</div>");
       return '<div class="choice"><div class="choice-top"><b>' + esc(hwho(c.n)) + "</b><span>Last online: " + esc(et(c.seen)) + "</span></div>" +
         (n.status === "open" ? "<div><b>Stage " + n.stage + " (submitted, not yet turned):</b> " + esc(now) + "</div>" : "<div>The game is over. Every card is in the archive below.</div>") +
-        "<div><b>Bet:</b> " + (b ? b.stake + (b.stake === 1 ? " coin" : " coins") + " on finishing " + (b.score > 0 ? "+" : "") + b.score + ", placed in stage " + b.stage + " (pays " + b.stake * b.mult + ")" + (n.status === "open" ? "" : b.paid ? ": paid " + b.paid : ": lost") : "None") + "</div></div>";
+        "<div><b>Bet:</b> " + (b ? b.stake + (b.stake === 1 ? " coin" : " coins") + " on finishing " + (b.score > 0 ? "+" : "") + b.score + ", placed in stage " + b.stage + " (pays " + b.stake * b.mult + ")" + (n.status === "open" ? "" : b.paid ? ": paid " + b.paid : ": lost") : "None") + "</div>" +
+        (function () { var ds = (n.duelBets || []).filter(function (x) { return x.number === c.n && (n.status !== "open" || x.stage === n.stage); }); return ds.length ? "<div><b>Duel bets:</b> " + esc(ds.map(function (x) { return "P" + x.pick + " to beat P" + (x.pick === x.a ? x.b : x.a) + " (" + (x.status === "open" ? "waiting" : x.status === "won" ? "won " + x.paid : x.status === "level" ? "level" : "lost") + ")"; }).join(" \u00b7 ")) + "</div>" : ""; })() + "</div>";
     }).join("");
     // the stages that are over: kept, but folded away
     if (archive.length) out += '<details class="archive" data-k="stages"><summary>Archive: the cards of earlier stages</summary>' + archive.join("") + "</details>";
