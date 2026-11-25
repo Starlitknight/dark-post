@@ -563,7 +563,7 @@
       }
       $("activity").innerHTML = out;
       drawBoard(a.board);
-      drawNight1(a.night);
+      drawNight1(a.night); gmInit();
     }).catch(function () {});
   }
 
@@ -608,6 +608,59 @@
   // ---------- Night 1: Six Vaults ----------
 
   var THROWS = { r: "Rock", p: "Paper", s: "Scissors" };
+
+  // ----- the Gamemaster's figure: steered from a map of the room -----
+  var GMV = null, gmRoom = "hall", gmTimer = null;
+  var GM_ROOMS = ["hall", "arena", "puzzle", "betting", "studio", "sky", "gallery", "shop"].filter(function (r) { return window.DP_WORLD && DP_WORLD.ROOMS[r]; });
+
+  function gmDraw() {
+    if (!GMV || !window.DP_WORLD) return;
+    var on = !!GMV.gm;
+    $("gm-face").innerHTML = AV.executor();
+    $("gm-status").textContent = on ? "In " + DP_WORLD.ROOMS[GMV.gm[0]].name.replace(/^The /, "the ") : "Not in the estate";
+    $("gm-enter").hidden = on;
+    $("gm-leave").hidden = !on;
+    $("gm-walk").hidden = !on;
+    if (!on) return;
+    var sel = $("gm-room");
+    if (!sel.options.length) sel.innerHTML = GM_ROOMS.map(function (r) { return '<option value="' + r + '">' + esc(DP_WORLD.ROOMS[r].name) + "</option>"; }).join("");
+    if (document.activeElement !== sel) { gmRoom = sel.value = gmRoom; }
+    var room = DP_WORLD.ROOMS[gmRoom], here = [];
+    var dots = Object.keys(GMV.pos).map(function (k) {
+      var p = GMV.pos[k], n = Number(k);
+      if (p[0] !== gmRoom || n === 0) return "";
+      var live = GMV.online.indexOf(n) >= 0;
+      here.push("Player " + n + (live ? "" : " (away)"));
+      return '<span class="gm-dot' + (live ? "" : " away") + '" style="left:' + (p[1] / room.w * 100) + "%;top:" + (p[2] / room.h * 100) + '%">' + n + "</span>";
+    }).join("");
+    var me = GMV.gm[0] === gmRoom ? '<span class="gm-dot me" style="left:' + (GMV.gm[1] / room.w * 100) + "%;top:" + (GMV.gm[2] / room.h * 100) + '%">GM</span>' : "";
+    var map = $("gm-map");
+    if (map.getAttribute("data-room") !== gmRoom) { map.setAttribute("data-room", gmRoom); map.innerHTML = '<div class="gm-art">' + DP_WORLD.svg(gmRoom).replace(/ width="\d+" height="\d+" class/, ' class') + '</div><div class="gm-dots"></div>'; map.style.aspectRatio = room.w + " / " + room.h; }
+    map.querySelector(".gm-dots").innerHTML = dots + me;
+    $("gm-here").textContent = (GMV.gm[0] === gmRoom ? "You are in this room. " : "You are in another room: tap the map to walk in here. ") + (here.length ? "Here now: " + here.join(", ") + "." : "No players are in this room.");
+  }
+  function gmLoad() { return api("GET", "/api/host/gm").then(function (v) { GMV = v; if (v.gm && !gmLoad.once) { gmLoad.once = true; gmRoom = v.gm[0]; } gmDraw(); }).catch(function () {}); }
+  function gmGo(room, x, y) { return api("POST", "/api/host/gm", { on: true, r: room, x: x, y: y }).then(function (v) { GMV = v; gmDraw(); }).catch(function (err) { toast(err.message); }); }
+  function gmInit() {
+    if (gmInit.done || !$("gm-panel") || !window.DP_WORLD || !AV.executor) return;
+    gmInit.done = true;
+    $("gm-enter").addEventListener("click", function () { var m = DP_WORLD.nearest("hall", DP_WORLD.CX, DP_WORLD.CY + 260); gmRoom = "hall"; gmGo("hall", m[0], m[1]); });
+    $("gm-leave").addEventListener("click", function () { api("POST", "/api/host/gm", { on: false }).then(function (v) { GMV = v; gmDraw(); }).catch(function (err) { toast(err.message); }); });
+    $("gm-room").addEventListener("change", function () { gmRoom = $("gm-room").value; gmDraw(); });
+    $("gm-map").addEventListener("click", function (e) {
+      var box = $("gm-map").getBoundingClientRect(), room = DP_WORLD.ROOMS[gmRoom];
+      var p = DP_WORLD.nearest(gmRoom, (e.clientX - box.left) / box.width * room.w, (e.clientY - box.top) / box.height * room.h);
+      gmGo(gmRoom, p[0], p[1]);
+    });
+    $("gm-say-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var text = $("gm-say").value.trim();
+      if (!text) return;
+      api("POST", "/api/host/gm/say", { text: text }).then(function () { $("gm-say").value = ""; toast("Said in " + DP_WORLD.ROOMS[GMV.gm[0]].name.toLowerCase() + "."); }).catch(function (err) { toast(err.message); });
+    });
+    gmLoad();
+    gmTimer = setInterval(function () { if (!document.hidden) gmLoad(); }, 5000);
+  }
 
   function drawLadder1(n) {
     var box = $("night-box");

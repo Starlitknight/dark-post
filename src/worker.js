@@ -368,6 +368,9 @@ export class Game extends DurableObject {
         if (path === "/api/host/night/start" && method === "POST") return this.hostNightStart(request);
         if (path === "/api/host/night/end" && method === "POST") return this.hostNightEnd();
         if (path === "/api/host/night/stage" && method === "POST") return this.hostLadderStage();
+        if (path === "/api/host/gm" && method === "GET") return json(this.hostGmView());
+        if (path === "/api/host/gm" && method === "POST") return this.hostGmMove(request);
+        if (path === "/api/host/gm/say" && method === "POST") return this.hostGmSay(request);
         if (path === "/api/host/night/reset" && method === "POST") return this.hostNightReset();
         if (path === "/api/host/out" && method === "POST") return this.hostOut(request);
       }
@@ -1718,6 +1721,50 @@ export class Game extends DurableObject {
       this.addCoins(b.number, b.stake * b.mult);
       this.sql.exec(`UPDATE ladder_bets SET paid = ? WHERE number = ?`, b.stake * b.mult, b.number);
     }
+  }
+
+  // ---------- the Gamemaster's figure in the estate ----------
+  // The GM can stand in a room as a figure of their own, steered from the console. It is kept with the players'
+  // places under the number 0, so every page is told where it is the same way it is told about players.
+  // It never goes down to the dungeon, where standing in a cell means something.
+
+  gmPlace() {
+    const r = this.sql.exec(`SELECT room, x, y FROM places WHERE number = 0`).toArray();
+    return r.length ? [r[0].room, r[0].x, r[0].y] : null;
+  }
+
+  hostGmView() {
+    return { gm: this.gmPlace(), pos: this.positions(), online: this.onlineNumbers() };
+  }
+
+  async hostGmMove(request) {
+    const body = await readJson(request);
+    if (!body.on) {
+      this.sql.exec(`DELETE FROM places WHERE number = 0`);
+      this.broadcast({ t: "gmoff" });
+      return json(this.hostGmView());
+    }
+    const room = String(body.r || "");
+    const x = Math.round(Number(body.x) * 10) / 10, y = Math.round(Number(body.y) * 10) / 10;
+    if (!WORLD_ROOMS.includes(room) || room === "dungeon") return json({ error: "The Gamemaster cannot stand there." }, 400);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > WORLD_MAX || y > WORLD_MAX) return json({ error: "That is outside the set." }, 400);
+    this.sql.exec(
+      `INSERT INTO places (number, room, x, y, at) VALUES (0, ?, ?, ?, ?) ON CONFLICT(number) DO UPDATE SET room = excluded.room, x = excluded.x, y = excluded.y, at = excluded.at`,
+      room, x, y, Date.now(),
+    );
+    this.broadcast({ t: "m", n: 0, r: room, x, y });
+    return json(this.hostGmView());
+  }
+
+  // A line spoken aloud: a bubble over the figure, for everyone standing in that room. It is not kept.
+  async hostGmSay(request) {
+    const body = await readJson(request);
+    const text = String(body.text || "").trim().slice(0, 160);
+    const at = this.gmPlace();
+    if (!at) return json({ error: "The Gamemaster is not in the estate." }, 409);
+    if (!text) return json({ error: "Write something first." }, 400);
+    this.broadcast({ t: "gmsay", r: at[0], text });
+    return json({ ok: true });
   }
 
   // ---------- the dungeon: who went down, and when ----------

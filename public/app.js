@@ -241,7 +241,7 @@
 
   var faceMemo = {};
   function faceHTML(n) {
-    if (n === 0) return AV.gm();
+    if (n === 0) return AV.executor ? AV.executor() : AV.gm();
     var seat = seatOf(n);
     if (!seat || !seat.avatar) return AV.silhouette();
     var key = n + JSON.stringify(seat.avatar);
@@ -1786,6 +1786,11 @@
         '<button type="button" class="actor' + (n === hall.you ? " me" : "") + '" data-act="actor" data-n="' + n + '" aria-label="' + (n === hall.you ? "You, Player " : "Player ") + n + '">' +
         '<span class="actor-tag"></span><span class="actor-fig">' + spriteMemo[key] + "</span></button>";
     });
+    // the Gamemaster, when the GM has walked into this room: a figure of their own, not a player and not staff
+    if (spots[0] && spots[0][0] === stage.room) {
+      if (!spriteMemo.gm) spriteMemo.gm = AV.executor("sprite");
+      out += '<button type="button" class="actor npc gm" data-act="gmTalk" data-n="0" aria-label="The Gamemaster"><span class="actor-tag">Gamemaster</span><span class="gm-say" hidden></span><span class="actor-fig">' + spriteMemo.gm + "</span></button>";
+    }
     var box = $("actors");
     box.innerHTML = out;
     var old = actors;
@@ -2636,6 +2641,19 @@
       a = actors[m.n];
       if (m.r === stage.room && a && !a.empty && m.t !== "r") a.path = m.t === "m" ? WORLD.findPath(stage.room, [a.x, a.y], [m.x, m.y]) : [[m.x, m.y]];
       else if ((m.r === stage.room) !== !!a) buildActors(); // they came into my room, or left it
+    } else if (m.t === "gmoff") {
+      delete spots[0];
+      redrawMenu();
+      if (stage && hall && stage.room && actors[0]) buildActors();
+    } else if (m.t === "gmsay") {
+      var g = stage && actors[0];
+      if (!g || m.r !== stage.room) return;
+      var b = g.el.querySelector(".gm-say");
+      b.textContent = String(m.text || "");
+      b.hidden = false;
+      b.classList.remove("on"); void b.offsetWidth; b.classList.add("on");
+      clearTimeout(onLive.sayTimer);
+      onLive.sayTimer = setTimeout(function () { b.hidden = true; }, Math.min(14000, 5000 + b.textContent.length * 70));
     } else if (m.t === "news") news();
   }
 
@@ -3960,6 +3978,7 @@
     else if (name === "commitYes") sendCommit(true);
     else if (name === "commitAsk" || name === "commitBack") { ui.resignAsk = name === "commitAsk"; drawCommit(); }
     else if (name === "commitResign") sendCommit(false);
+    else if (name === "gmTalk") go("study");
     else if (name === "npc") { if (stage && STAFF[stage.room]) openTalk(stage.room); }
     else if (name === "talkClose") closeTalk();
     else if (name === "introNext") { ui.intro = 1; if (stage) drawTalk(stage.room); }
