@@ -1026,7 +1026,7 @@
         api("GET", "/api/puzzle").then(function (p) { ui.pz = p; drawPuzzle(); }).catch(function (err) { toast(err.message); });
         ticker = setInterval(function () {
           var el = $("pz-reset");
-          if (el && ui.pz) el.textContent = span(Math.max(0, ui.pz.resetAt - Date.now()));
+          if (el && ui.pz && !ui.pz.held) el.textContent = span(Math.max(0, ui.pz.resetAt - Date.now()));
         }, 1000);
       },
     },
@@ -1683,7 +1683,7 @@
   function openTalk(id) {
     if (!STAFF[id]) return;
     if (id !== "puzzle") return drawTalk(id);
-    drawTalk(id, ui.pz && ui.pz.resetAt > Date.now() ? ui.pz : null);
+    drawTalk(id, ui.pz && (ui.pz.held || ui.pz.resetAt > Date.now()) ? ui.pz : null);
     api("GET", "/api/puzzle").then(function (pz) { ui.pz = pz; if (stage && stage.room === id && !$("npc-talk").hidden) drawTalk(id, pz); }).catch(function () {});
   }
   function closeTalk() {
@@ -2604,7 +2604,10 @@
           '<button type="button" class="btn send" id="pz-send">Try</button></div><p class="pz-left">' + plural(p.left, "try", "tries") + " left today</p>";
     box.innerHTML =
       '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + '</h2><div class="pz-body">' + body + "</div><p>" + esc(p.ask) + "</p>" + end + "</div>" +
-      '<div class="s-card"><i>Next puzzle in</i><b class="s-count small" id="pz-reset">' + span(Math.max(0, p.resetAt - Date.now())) + "</b><p>Every player gets the same puzzle.</p>" +
+      (p.held
+        // the GM is holding this puzzle: it does not change at midnight, and nobody knows yet when it will
+        ? '<div class="s-card"><i>Next puzzle</i><b class="s-count small">TBD</b><p>This puzzle stays open until the GM starts the next one. Every player gets the same puzzle.</p>'
+        : '<div class="s-card"><i>Next puzzle in</i><b class="s-count small" id="pz-reset">' + span(Math.max(0, p.resetAt - Date.now())) + "</b><p>Every player gets the same puzzle.</p>") +
 "</div>";
     var form = $("pz-form");
     if (form) {
@@ -2612,7 +2615,7 @@
         var value = $("pz-answer").value.trim();
         if (!value || ui.busy) return;
         ui.busy = true;
-        api("POST", "/api/puzzle", { answer: value })
+        api("POST", "/api/puzzle", { answer: value, no: p.no })
           .then(function (res) {
             ui.pz = res;
             if (hall) hall.puzzle = { solved: !!res.solved, left: res.left, reward: res.reward };
@@ -2627,7 +2630,11 @@
               if (bal) bal.textContent = "Your balance: " + plural(balance(), "coin", "coins") + ".";
             }).catch(function () {});
           })
-          .catch(function (err) { toast(err.message); })
+          .catch(function (err) {
+            toast(err.message);
+            // the puzzle may have changed under the page: show whatever is in play now
+            return api("GET", "/api/puzzle").then(function (now) { ui.pz = now; if (currentScene() === "puzzle") drawPuzzle(); }).catch(function () {});
+          })
           .then(function () { ui.busy = false; });
       };
       $("pz-send").addEventListener("click", tryNow);
@@ -2650,7 +2657,7 @@
         '<p class="pz-plus">+' + plural(p.reward, "coin", "coins") + '</p><p class="pz-note" id="pz-bal">Paid into your balance.</p>' +
         '<button type="button" class="btn narrow" data-act="pzDone">Continue</button>'
       : '<div class="pz-x" aria-hidden="true"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="#ff5a4d" stroke-width="7"/><path d="M41 41l38 38M79 41 41 79" stroke="#ff5a4d" stroke-width="9" stroke-linecap="round"/></svg></div>' +
-        "<h2>Puzzle failed</h2><p class=\"pz-plus\">The answer was " + esc(p.answer) + '</p><p class="pz-note">No coin today. A new puzzle arrives at midnight EST.</p>' +
+        "<h2>Puzzle failed</h2><p class=\"pz-plus\">The answer was " + esc(p.answer) + '</p><p class="pz-note">' + (p.held ? "No coin this time. The GM will start the next puzzle." : "No coin today. A new puzzle arrives at midnight EST.") + "</p>" +
         '<button type="button" class="btn narrow" data-act="pzDone">Continue</button>';
     (root.firstElementChild || root).appendChild(el);
   }

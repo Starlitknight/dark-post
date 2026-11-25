@@ -1,5 +1,13 @@
 # Dark Post
 
+## Holding the puzzle, 24 Nov 2026, late (the GM's instructions, done outside this agent)
+
+- **The puzzle has its own day** (`puzzleDay` in `src/worker.js`), separate from the calendar day that deals use. While the GM holds it (`puzzle_hold` = "1", `puzzle_held_day`), it does not change at midnight EST. Released, it changes at each midnight from wherever it was (`puzzle_lag`), so the kinds still take turns in order.
+- **`POST /api/host/puzzle`**: `{hold: true}`, `{hold: false}` or `{next: true}` (one puzzle forward, now). The console has the switch and the button at the top of Rooms.
+- **A game that already had players when this code first ran starts held.** That is a one-time rule in the constructor, because the GM asked that the first puzzle stays until he says so. A new game starts with the daily change.
+- Players see "Next puzzle: TBD" on the puzzle page while it is held (`held` and `resetAt: 0` in the puzzle view).
+- An answer carries the number of the puzzle it was for (`no`). If the puzzle has changed under the page, the answer is refused without spending a try and the new puzzle is shown.
+
 ## The bell, 24 Nov 2026, night (the GM's instructions, done outside this agent)
 
 - **A solved puzzle is news for every other player.** `puzzleAnswer` in `src/worker.js` writes a row to the new `notices` table. `hall()` sends the last thirty (`notices`, newest first, never the player's own), how far the player has read (`noticeMark`, kept in `reads` under the key `notices`) and the player's own standing on today's puzzle (`puzzle`). `POST /api/notices/seen` moves the mark. Removing or resetting a player deletes the news about them.

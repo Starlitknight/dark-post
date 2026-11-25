@@ -62,6 +62,10 @@
   <section class="panel" id="rooms-panel">
     <h2>Rooms</h2>
     <p class="help">What players have done in the puzzle room and the betting room. Players never see each other's answers or deals. You see all of it.</p>
+    <div class="row puzzle-hold">
+      <label class="check wide"><input type="checkbox" id="puzzle-hold"> Hold this puzzle. It stays in play until you release it, and does not change at midnight EST</label>
+      <button type="button" class="btn ghost" id="puzzle-next">Start the next puzzle now</button>
+    </div>
     <div id="activity"><p class="table-empty">Loading.</p></div>
     <form id="coins-form" class="row coins-form">
       <div><label for="coins-n">Player</label><select id="coins-n"></select></div>

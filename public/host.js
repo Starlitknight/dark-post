@@ -343,6 +343,14 @@
     run(api("POST", "/api/host/settings", { showChoices: this.checked }), "Saved.");
   });
 
+  // The daily puzzle: hold it in play, release it to the daily change, or move on now.
+  $("puzzle-hold").addEventListener("change", function () {
+    run(api("POST", "/api/host/puzzle", { hold: this.checked }), this.checked ? "The puzzle is held. It will not change until you release it." : "Released. This puzzle stays until midnight EST, then changes every day.");
+  });
+  $("puzzle-next").addEventListener("click", function () {
+    if (!window.confirm("Start the next puzzle now? The puzzle in play ends for everyone, and players who have not solved it lose the chance.")) return;
+    run(api("POST", "/api/host/puzzle", { next: true }), "The next puzzle has started.");
+  });
   $("betting-open").addEventListener("change", function () {
     run(api("POST", "/api/host/settings", { bettingOpen: this.checked }), this.checked ? "The betting room is open." : "The betting room is closed.");
   });
@@ -537,8 +545,12 @@
             return "<tr><td>" + esc(hwho(p.n)) + "</td><td>" + (p.solved ? '<span class="chip gold">Solved</span>' : p.tries >= 3 ? '<span class="chip red">Out of tries</span>' : p.tries ? p.tries + " of 3 tries used" : "Not tried") +
               '</td><td class="num">' + esc(p.answer) + '</td><td class="num">' + p.total + "</td></tr>";
           }).join("") + "</tbody></table>" +
-          '<p class="help">A new puzzle arrives ' + esc(htime(a.resetAt)) + ", your time (midnight EST). Every player gets the same puzzle, so the answer is the same for all of them. One puzzle a day, three tries.</p>";
+          '<p class="help">' + (a.puzzle.held
+            ? "<b>This puzzle is held.</b> It stays in play until you release it or start the next one. "
+            : "A new puzzle arrives " + esc(htime(a.puzzle.endsAt)) + ", your time (midnight EST). ") +
+          "Every player gets the same puzzle, so the answer is the same for all of them. Three tries each.</p>";
       }
+      if (document.activeElement !== $("puzzle-hold")) $("puzzle-hold").checked = !!a.puzzle.held;
       out += "<h3>Deals</h3>";
       if (!a.deals.length) out += '<p class="table-empty">No deals yet. The betting room opens when the bags open.</p>';
       else {

@@ -320,6 +320,32 @@ status, body, _ = call("POST", "/api/notices/seen", {"upTo": told[0]["id"]}, sea
 check("opening the bell marks the news as read, for that player only", status == 200 and hall_of(A)["noticeMark"] == told[0]["id"] and hall_of(C)["noticeMark"] == 0)
 check("a mark cannot run ahead of the news or go backwards", call("POST", "/api/notices/seen", {"upTo": 999999}, seat(A))[1]["noticeMark"] == told[0]["id"] and call("POST", "/api/notices/seen", {"upTo": 1}, seat(A))[0] == 200 and hall_of(A)["noticeMark"] == told[0]["id"])
 check("someone who is not a player cannot mark the news", call("POST", "/api/notices/seen", {"upTo": 1})[0] == 403)
+
+# --- the GM holds the puzzle, releases it, or starts the next one ---
+before = call("GET", "/api/puzzle", cookies=seat(A))[1]
+act = call("GET", "/api/host/activity", cookies=host)[1]
+rowB = [p for p in act["puzzle"]["players"] if p["n"] == nB][0]
+rowC = [p for p in act["puzzle"]["players"] if p["n"] == nC][0]
+check("the host sees every player's puzzle, with its answer", rowB["solved"] is True and rowB["answer"] == solve(pz) and rowC["solved"] is False and rowC["tries"] == 3)
+check("a new game changes the puzzle every midnight EST", before["held"] is False and before["resetAt"] > time.time() * 1000 and act["puzzle"]["held"] is False and act["puzzle"]["endsAt"] == before["resetAt"])
+check("only the GM can hold the puzzle", call("POST", "/api/host/puzzle", {"hold": True})[0] == 401 and call("POST", "/api/host/puzzle", {"hold": True}, seat(A))[0] == 401)
+check("the GM has to say what to do with it", call("POST", "/api/host/puzzle", {}, host)[0] == 400)
+status, body, _ = call("POST", "/api/host/puzzle", {"hold": True}, host)
+held = call("GET", "/api/puzzle", cookies=seat(A))[1]
+check("held, the same puzzle stays in play with no end time", status == 200 and body["held"] is True and held["held"] is True and held["resetAt"] == 0 and held["no"] == before["no"] and held["data"] == before["data"] and call("GET", "/api/host/activity", cookies=host)[1]["puzzle"]["held"] is True)
+check("holding changes nothing for a player who has solved it", hall_of(B)["puzzle"]["solved"] is True and len(hall_of(A)["notices"]) == 5 and all(x["today"] for x in hall_of(A)["notices"]))
+status, body, _ = call("POST", "/api/host/puzzle", {"next": True}, host)
+after = call("GET", "/api/puzzle", cookies=seat(A))[1]
+check("the GM starts the next puzzle while holding: a new puzzle, still held", status == 200 and after["no"] == before["no"] + 1 and after["held"] is True and after["type"] != before["type"] and after["tries"] == 0)
+check("everyone can play the new puzzle, and the old news is no longer today's", hall_of(B)["puzzle"] == {"solved": False, "left": 3, "reward": 1} and not any(x["today"] for x in hall_of(A)["notices"]))
+status, body, _ = call("POST", "/api/puzzle", {"answer": "1", "no": before["no"]}, seat(A))
+check("an answer to a puzzle that has ended is not counted", status == 409 and call("GET", "/api/puzzle", cookies=seat(A))[1]["tries"] == 0)
+status, body, _ = call("POST", "/api/host/puzzle", {"hold": False}, host)
+freed = call("GET", "/api/puzzle", cookies=seat(A))[1]
+check("released, the same puzzle stays until the next midnight EST", status == 200 and freed["held"] is False and freed["no"] == after["no"] and freed["data"] == after["data"] and freed["resetAt"] == before["resetAt"])
+status, body, _ = call("POST", "/api/host/puzzle", {"next": True}, host)
+moved = call("GET", "/api/puzzle", cookies=seat(A))[1]
+check("the GM can also move on while the daily change is running", status == 200 and moved["no"] == after["no"] + 1 and moved["held"] is False and moved["type"] not in (before["type"], after["type"]))
 h = hall_of(A)
 check("every player card counts puzzles solved", seat_of(A, nB)["solved"] == 1 and seat_of(A, nC)["solved"] == 0)
 check("the coin is held back until the bags open", h["coins"] is None and hall_of(B)["coins"] is None and hall_of(B)["banked"] == 1)
@@ -448,7 +474,7 @@ check("the GM's live board counts all sixteen places", act["board"]["seats"] == 
 check("the GM's live board has every arrived player, where they stand and who is connected", len(act["board"]["players"]) >= 10 and all(k in act["board"] for k in ("pos", "online")) and all("avatar" in p and "name" in p for p in act["board"]["players"]))
 rowB = [p for p in act["puzzle"]["players"] if p["n"] == nB][0]
 rowC = [p for p in act["puzzle"]["players"] if p["n"] == nC][0]
-check("and every player's puzzle, with its answer", len(act["puzzle"]["players"]) == 14 and rowB["solved"] is True and rowB["answer"] == solve(pz) and rowC["solved"] is False and rowC["tries"] == 3)
+check("and every player's standing on the puzzle now in play, with its answer", len(act["puzzle"]["players"]) == 14 and rowB["solved"] is False and rowB["total"] == 1 and rowB["answer"] == solve(moved) and rowC["solved"] is False and rowC["tries"] == 0)
 check("and the door log", [(e["n"], e["cell"]) for e in act["doors"]] == [(nC, 2), (nC, 1), (nB, 1), (nA, 1)])
 status, body, _ = call("POST", "/api/host/coins", {"number": nG, "amount": 3}, host)
 check("the host can give a player coins", status == 200 and body["coins"] == 9 and hall_of(G)["coins"] == 9)

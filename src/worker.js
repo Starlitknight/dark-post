@@ -126,6 +126,14 @@ export class Game extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS puzzle_tries (number INTEGER NOT NULL, day INTEGER NOT NULL, tries INTEGER NOT NULL DEFAULT 0, solved INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (number, day))`);
     // News every player is told about, shown behind the bell. So far: a player solved the day's puzzle.
     this.sql.exec(`CREATE TABLE IF NOT EXISTS notices (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, n INTEGER NOT NULL, day INTEGER NOT NULL, at INTEGER NOT NULL)`);
+    // The puzzle can be held: it then stays the same until the GM releases it, instead of changing at midnight.
+    // Decided once, the first time this code runs. A game that already has players starts held, because the GM
+    // asked on 24 Nov 2026 that the puzzle in play stays until he says so. A new game starts with the daily change.
+    if (this.get("puzzle_hold", "") === "") {
+      const playing = this.sql.exec(`SELECT COUNT(*) AS n FROM invites WHERE status = 'accepted'`).one().n > 0;
+      if (playing) this.set("puzzle_held_day", String(this.today()));
+      this.set("puzzle_hold", playing ? "1" : "0");
+    }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS deals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       day INTEGER NOT NULL,
@@ -332,6 +340,7 @@ export class Game extends DurableObject {
         if (path === "/api/host/messages" && method === "POST") return this.hostPostMessage(request);
         if (path === "/api/host/message/remove" && method === "POST") return this.hostRemoveMessage(request);
         if (path === "/api/host/activity" && method === "GET") return this.hostActivity();
+        if (path === "/api/host/puzzle" && method === "POST") return this.hostPuzzle(request);
         if (path === "/api/host/coins" && method === "POST") return this.hostCoins(request);
         if (path === "/api/host/night/start" && method === "POST") return this.hostNightStart(request);
         if (path === "/api/host/night/end" && method === "POST") return this.hostNightEnd();
@@ -708,6 +717,49 @@ export class Game extends DurableObject {
     return (this.today() + 1) * DAY_MS + this.dayAnchor();
   }
 
+  // ---------- which puzzle is in play ----------
+
+  // The puzzle has its own day. While the GM holds it, that day does not move. Released, it moves on at
+  // each midnight EST from wherever it was, so the kinds still take their turns in order.
+  puzzleHeld() {
+    return this.get("puzzle_hold", "0") === "1";
+  }
+
+  puzzleDay() {
+    if (this.puzzleHeld()) {
+      const held = Number(this.get("puzzle_held_day", ""));
+      return Number.isFinite(held) && held > 0 ? held : this.today();
+    }
+    return this.today() - (Number(this.get("puzzle_lag", "0")) || 0);
+  }
+
+  // When the puzzle in play ends. Nobody knows while it is held.
+  puzzleEnds() {
+    return this.puzzleHeld() ? 0 : this.dayEnds();
+  }
+
+  // The GM holds the puzzle, releases it, or starts the next one now.
+  async hostPuzzle(request) {
+    const body = await readJson(request);
+    const day = this.puzzleDay();
+    if (body.next === true) {
+      // one puzzle forward, whether held or not
+      if (this.puzzleHeld()) this.set("puzzle_held_day", String(day + 1));
+      else this.set("puzzle_lag", String(this.today() - (day + 1)));
+    } else if (body.hold === true) {
+      this.set("puzzle_held_day", String(day));
+      this.set("puzzle_hold", "1");
+    } else if (body.hold === false) {
+      // the same puzzle stays until the next midnight EST, then the daily change carries on from here
+      this.set("puzzle_lag", String(this.today() - day));
+      this.set("puzzle_hold", "0");
+    } else {
+      return json({ error: "Say whether to hold the puzzle or start the next one." }, 400);
+    }
+    this.broadcast({ t: "news" });
+    return json({ ok: true, held: this.puzzleHeld() });
+  }
+
   // What a player holds: the bag's payout, plus everything won or lost since.
   balance(inv) {
     return this.phase() === "revealed" ? (inv.coins || 0) + (inv.extra || 0) : null;
@@ -763,7 +815,7 @@ export class Game extends DurableObject {
   }
 
   puzzleView(inv) {
-    const day = this.today();
+    const day = this.puzzleDay();
     const p = this.puzzleFor(inv.number, day);
     const row = this.puzzleRow(inv.number, day);
     return {
@@ -775,7 +827,10 @@ export class Game extends DurableObject {
       left: Math.max(0, PUZZLE_TRIES - row.tries),
       solved: !!row.solved,
       answer: row.solved || row.tries >= PUZZLE_TRIES ? p.answer : undefined,
-      resetAt: this.dayEnds(),
+      // which puzzle this is: sent back with an answer, so an answer to a puzzle that has ended is not counted
+      no: day,
+      held: this.puzzleHeld(),
+      resetAt: this.puzzleEnds(),
       reward: PUZZLE_REWARD,
       paid: this.phase() === "revealed",
     };
@@ -792,7 +847,9 @@ export class Game extends DurableObject {
     if (!inv) return json({ error: "You are not in the hall yet." }, 403);
     if (inv.out) return json({ error: "You are out of the game." }, 403);
     const body = await readJson(request);
-    const day = this.today();
+    const day = this.puzzleDay();
+    // the page was showing a puzzle that has since ended: do not spend a try on the new one
+    if (body.no != null && Number(body.no) !== day) return json({ error: "A new puzzle has started. Here it is." }, 409);
     const row = this.puzzleRow(inv.number, day);
     if (row.solved) return json({ error: "You have already solved today's puzzle." }, 409);
     if (row.tries >= PUZZLE_TRIES) return json({ error: "No tries left today." }, 409);
@@ -816,7 +873,7 @@ export class Game extends DurableObject {
 
   // The last thirty pieces of news about the other players. A player is not told their own news.
   noticesFor(inv) {
-    const today = this.today();
+    const today = this.puzzleDay();
     return this.sql
       .exec(`SELECT id, kind, n, day, at FROM notices WHERE n != ? ORDER BY id DESC LIMIT 30`, inv.number)
       .toArray()
@@ -824,7 +881,7 @@ export class Game extends DurableObject {
   }
 
   puzzleStanding(inv) {
-    const row = this.puzzleRow(inv.number, this.today());
+    const row = this.puzzleRow(inv.number, this.puzzleDay());
     return { solved: !!row.solved, left: Math.max(0, PUZZLE_TRIES - row.tries), reward: PUZZLE_REWARD };
   }
 
@@ -1459,7 +1516,7 @@ export class Game extends DurableObject {
   // Everything the rooms record: today's puzzle and every player's answer, every deal, and the door log.
   hostActivity() {
     this.expireDeals();
-    const day = this.today();
+    const day = this.puzzleDay();
     const players = this.sql.exec(`SELECT number, name FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL ORDER BY number`).toArray();
     const solvedEver = new Map(this.sql.exec(`SELECT number AS n, COUNT(*) AS c FROM puzzle_tries WHERE solved = 1 GROUP BY number`).toArray().map((r) => [r.n, r.c]));
     const sample = players.length ? this.puzzleFor(players[0].number, day) : null;
@@ -1468,6 +1525,8 @@ export class Game extends DurableObject {
     return json({
       resetAt: this.dayEnds(),
       puzzle: {
+        held: this.puzzleHeld(),
+        endsAt: this.puzzleEnds(),
         title: sample ? sample.title : "",
         players: players.map((p) => {
           const row = this.puzzleRow(p.number, day);

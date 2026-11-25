@@ -194,3 +194,4 @@ body.host { display: block; }
 .table td.word { font-family: "Courier Prime", ui-monospace, monospace; font-weight: 700; font-size: 17px; letter-spacing: 0.22em; color: #E0B040; white-space: nowrap; }
 .address-line b { color: #fff; font-weight: 700; user-select: all; }
 #wrong-words { color: #FF8A7A; }
+.host .puzzle-hold { align-items: center; gap: 14px; margin: 14px 0 18px; }
