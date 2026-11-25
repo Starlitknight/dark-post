@@ -1438,8 +1438,11 @@ export class Game extends DurableObject {
     if (cost > 0 && (this.balance(inv) || 0) < cost) return json({ error: "A boost costs " + LADDER.RULES.boostPrice + " coin. You do not have it." }, 409);
     if (cost) this.addCoins(you, -cost);
     this.sql.exec(`INSERT INTO ladder_seals (number, stage, plays, at) VALUES (?, ?, ?, ?) ON CONFLICT(number, stage) DO UPDATE SET plays = excluded.plays, at = excluded.at`, you, night.stage, JSON.stringify(plays), Date.now());
-    this.broadcast({ t: "news" });
-    return json(this.ladderView(this.inHall(request), night));
+    // the moment every player still in the game has sealed, the cards are turned and the next stage opens
+    const out = new Set(this.sql.exec(`SELECT number FROM invites WHERE out != 0`).toArray().map((r) => r.number));
+    if (night.players.every((n) => out.has(n) || !!this.ladderSealOf(n, night.stage))) this.closeLadderStage();
+    else this.broadcast({ t: "news" });
+    return json(this.ladderView(this.inHall(request), this.night()));
   }
 
   ladderStageSeen(request) {

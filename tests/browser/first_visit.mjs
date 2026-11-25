@@ -196,7 +196,7 @@ for (const [id, title] of [["arena", "The arena"], ["puzzle", "Puzzle room"], ["
     await tryClick('[data-act="talkClose"]'); await sleep(300);
     await tryClick("#bell-btn"); await sleep(600);
     const after = await page.$eval(".bell-sheet", (el) => el.innerText.replace(/\s+/g, " "));
-    ok("with the puzzle solved, the bell no longer asks for it", !after.includes("Solve today’s puzzle") && after.includes("solved today’s puzzle"));
+    ok("with the puzzle solved, the bell no longer asks for it", !after.includes("Solve today’s puzzle"));
     await tryClick(".menu-close"); await sleep(400);
   } else {
     let used = false, inside = "";

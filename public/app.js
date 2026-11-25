@@ -1658,7 +1658,7 @@
       if (isLadder()) {
         if (!briefed()) return { text: "Welcome to Game " + n.n + ": The Ladder. Let me show you how it is played.", act: ["introRules", "Show me the rules"], solo: true };
         if (hall.out) return { text: "Game " + n.n + " is being played at the table.", act: ["introRules", "Show me the rules"] };
-        return { text: n.opened ? "Your cards for this stage are sealed. You can change them until the stage closes." : "The table is open. Walk up to it and play your three cards.", act: ["introRules", "The rules again"] };
+        return { text: n.opened ? "Your cards for this stage are sealed. The stage closes as soon as everyone has sealed." : "The table is open. Walk up to it and play your three cards.", act: ["introRules", "The rules again"] };
       }
       // first visit: welcome, then the vaults, then the rules. Nothing else is offered until the rules are seen.
       if (!briefed()) {
@@ -2049,12 +2049,13 @@
       if (t.walk) return '<div class="bell-row todo walk"><span class="bell-text"><b>' + esc(t.title) + "</b><small>" + esc(t.sub) + '</small><small class="bell-walk">' + esc(t.walk) + "</small></span></div>";
       return '<button type="button" class="bell-row todo" data-act="go" data-scene="' + t.scene + '"><span class="bell-text"><b>' + esc(t.title) + "</b><small>" + esc(t.sub) + '</small></span><em>' + t.go + "</em></button>";
     });
-    var news = (hall.notices || []).map(function (x) {
+    // news is shown once: whatever was new when the bell was opened, and gone the next time
+    var news = (hall.notices || []).filter(function (x) { return x.id > fresh; }).map(function (x) {
       return '<div class="bell-row news' + (x.id > fresh ? " fresh" : "") + '"><span class="bell-face">' + faceHTML(x.n) + '</span><span class="bell-text"><b>' + esc(noticeLine(x)) + "</b><small>" + esc(stamp(x.at, x.today)) + "</small></span>" + (x.id > fresh ? '<i class="bell-new">New</i>' : "") + "</div>";
     });
     // the GM's notices stay here after they are read: the latest three, and a way to all of them
     var gm = hall.gm || { total: 0, notes: [] };
-    var gmRows = gm.notes.map(function (m) {
+    var gmRows = gm.notes.filter(function (m) { return m.fresh; }).map(function (m) {
       return '<button type="button" class="bell-row gm' + (m.fresh ? " fresh" : "") + '" data-act="go" data-scene="board"><span class="bell-seal" aria-hidden="true">GM</span><span class="bell-text"><b>' + esc(m.body) + "</b><small>" + esc(stamp(m.at, sameGameDay(m.at, Date.now()))) + "</small></span>" + (m.fresh ? '<i class="bell-new">New</i>' : "") + "</button>";
     });
     return '<div class="menu-sheet bell-sheet" role="dialog" aria-modal="true" aria-labelledby="bell-heading">' +
@@ -2065,9 +2066,9 @@
       '<h3 class="bell-h">From the GM</h3>' +
       (gm.total
         ? gmRows.join("") + '<button type="button" class="bell-all" data-act="go" data-scene="board">All GM notices<span>' + gm.total + "</span></button>"
-        : '<p class="bell-none">No notices from the GM yet. They are kept here after you read them.</p>') +
+        : '<p class="bell-none">No notices from the GM yet.</p>') +
       '<h3 class="bell-h">News</h3>' +
-      (news.length ? news.join("") : '<p class="bell-none">No news yet. When a player solves the puzzle, it shows here.</p>') +
+      (news.length ? news.join("") : '<p class="bell-none">Nothing new.</p>') +
       "</div>";
   }
 
@@ -3010,7 +3011,7 @@
           return '<button type="button" class="ld-card' + (down ? " placed" : "") + '" data-act="ldCard" data-c="' + c + '"' + (gone ? " disabled" : "") + ">" + cardHTML(c, { dim: gone }) + "</button>";
         }).join("") + "</div>" +
           '<p class="ld-boosts">Boosts left: <b>' + (n.boostsLeft - boostsUsed) + " of " + n.rules.boosts + "</b></p>" +
-          (sealed ? '<p class="ld-sealed">Sealed. You can change your cards until the stage closes.</p>'
+          (sealed ? '<p class="ld-sealed">Sealed. The cards are turned as soon as every player has sealed.</p>'
             : '<button type="button" class="btn" data-act="ldSeal"' + (placed === d.plays.length ? "" : " disabled") + ">" + (placed === d.plays.length ? "Seal these " + (placed === 3 ? "three" : placed) + " cards" : "Play a card against each opponent") + "</button>") + "</div>";
       }
       out += '<div class="s-card"><i>The ladder' + (n.results.length ? " after stage " + n.results[n.results.length - 1].stage : "") + "</i>" + ladderTableHTML(n, false) + "</div>";
@@ -3036,7 +3037,7 @@
     else if (name === "ldSeal") {
       if (ui.busy) return;
       ui.busy = true;
-      api("POST", "/api/night/seal", { plays: d.plays }).then(function (v) { ui.night = v; d.dirty = false; if (hall && hall.night) hall.night.opened = true; drawLadder(); toast("Sealed."); })
+      api("POST", "/api/night/seal", { plays: d.plays }).then(function (v) { ui.night = v; d.dirty = false; var moved = v.status !== "open" || v.stage !== n.stage; if (hall && hall.night) hall.night.opened = !moved; drawLadder(); toast(moved ? "Everyone has sealed. The cards are turned." : "Sealed."); if (moved) news(); })
         .catch(function (err) { toast(err.message); }).then(function () { ui.busy = false; });
       return;
     } else if (name === "ldSeen") {

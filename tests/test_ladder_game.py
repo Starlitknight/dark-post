@@ -145,5 +145,15 @@ paid = {int(k): c for k, c in res["prizes"].items()}
 bal = {n: coins(by[n]) for n in range(1, 17)}
 check("the GM can undo the game: prizes and boosts go back, the player returns", call("POST", "/api/host/night/reset", {}, host)[0] == 200 and night(A)["on"] is False and coins(A) == bal[1] - paid.get(1, 0) + 2 and all(hall(by[n])["out"] == 0 for n in range(1, 17)))
 
+# a new game where nobody is missing: the last seal closes the stage by itself
+call("POST", "/api/host/night/start", {"game": "ladder"}, host)
+for n in range(1, 17):
+    v = night(by[n])
+    status, body, _ = seal(by[n], [{"opp": opp, "card": v["hand"][i + (n % 5)]} for i, opp in enumerate(v["opponents"][0])])
+    if n == 15:
+        check("with one player still to seal, the stage stays open", body["stage"] == 1 and night(A)["results"] == [])
+check("when the last player seals, the cards are turned and stage 2 opens at once", status == 200 and body["stage"] == 2 and len(body["results"]) == 1 and night(A)["stage"] == 2 and len(night(A)["results"][0]["duels"]) == 3)
+call("POST", "/api/host/night/reset", {}, host)
+
 print("\n%d failed" % check.failed)
 sys.exit(1 if check.failed else 0)
