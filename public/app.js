@@ -831,7 +831,9 @@
           if (stage.room) return refreshStage();
           stage.room = spotOf(hall.you)[0];
           var firstVisit = !heard("hall") && !hall.needsCommit; // the question comes first; the walking hint follows a yes
+          hintDue = firstVisit; // a pop-up must not cover the hint that is about to be typed
           buildRoom(true);
+          hintDue = false;
           if (firstVisit) {
             markHeard("hall");
             narrate(["Tap the floor to walk. Step through a marked door to enter its room."], { auto: 3200, fade: true });
@@ -1657,7 +1659,9 @@
     api("POST", "/api/commit", { play: play })
       .then(function () { ui.resignAsk = false; return loadHall(); })
       .then(function () {
+        hintDue = play && !heard("hall");
         refreshStage();
+        hintDue = false;
         if (!play) return toast("You have resigned your spot. You can still watch.");
         if (!heard("hall")) { markHeard("hall"); narrate(["Tap the floor to walk. Step through a marked door to enter its room."], { auto: 3200, fade: true }); }
       })
@@ -1950,7 +1954,7 @@
   }
 
   // News pops up once as it happens, and once for anyone who arrives after it happened.
-  var noteSeen = null, noteTimer = null, noteRetry = null;
+  var noteSeen = null, noteTimer = null, noteRetry = null, hintDue = false;
   function showNotice() {
     if (!hall || !hall.notices || !me || me.state !== "hall") return;
     var list = hall.notices, top = list.length ? list[0].id : 0;
@@ -1958,7 +1962,7 @@
     if (top <= noteSeen) return;
     // not while a question or a panel covers the screen: it would be missed
     var saying = $("say") && $("say").textContent.trim(); // the narrator's line sits where the pop-up goes
-    if (stage && (hall.needsCommit || saying || ($("menu") && !$("menu").hidden))) {
+    if (stage && (hall.needsCommit || hintDue || saying || ($("menu") && !$("menu").hidden))) {
       // try again shortly, so the pop-up follows as soon as the screen is clear
       clearTimeout(noteRetry);
       noteRetry = setTimeout(showNotice, 2000);
