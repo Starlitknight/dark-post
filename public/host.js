@@ -549,19 +549,20 @@
           "Every player gets the same puzzle, so the answer is the same for all of them. Three tries each.</p>";
       }
       if (document.activeElement !== $("puzzle-hold")) $("puzzle-hold").checked = !!a.puzzle.held;
+      var waitingDeals = a.deals.filter(function (d) { return d.status === "open"; }).length;
       out += "<h3>Deals</h3>";
-      if (!a.deals.length) out += '<p class="table-empty">No deals yet. The betting room opens when the bags open.</p>';
+      if (!a.deals.length) out += '<p class="table-empty">No deals yet.</p>';
       else {
-        out += '<table class="table"><thead><tr><th>When</th><th>Offered by</th><th>To</th><th>Result</th></tr></thead><tbody>' +
+        out += '<p class="help">' + (waitingDeals ? waitingDeals + " waiting for an answer." : "None waiting.") + '</p><details class="archive" data-k="deals"><summary>Archive: all ' + a.deals.length + ' deals</summary><table class="table"><thead><tr><th>When</th><th>Offered by</th><th>To</th><th>Result</th></tr></thead><tbody>' +
           a.deals.map(function (d) {
             var result = d.status === "done"
               ? "Player " + d.a + " " + WORD[d.aChoice] + " (" + signed(d.aNet) + "). Player " + d.b + " " + WORD[d.bChoice] + " (" + signed(d.bNet) + ")."
               : d.status === "open" ? "Waiting. Player " + d.a + " sealed: " + (d.aChoice === "c" ? "cooperate" : "betray") + "."
               : d.status === "cancelled" ? "Taken back." : d.status === "declined" ? "Declined." : "Ran out of time.";
             return "<tr><td>" + esc(htime(d.at)) + "</td><td>" + esc(hwho(d.a)) + "</td><td>" + esc(hwho(d.b)) + "</td><td>" + esc(result) + "</td></tr>";
-          }).join("") + "</tbody></table>";
+          }).join("") + "</tbody></table></details>";
       }
-      $("activity").innerHTML = out;
+      setKeepingOpen($("activity"), out);
       drawBoard(a.board);
       drawNight1(a.night); gmInit();
     }).catch(function () {});
@@ -695,19 +696,31 @@
     var et = function (at) { return at ? new Date(at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET" : "Never"; };
     var bets = {};
     (n.bets || []).forEach(function (b) { bets[b.number] = b; });
-    out += '<h3 class="choices-h">Every player\u2019s choices (only you see this)</h3>' + (n.choices || []).map(function (c) {
+    var archive = [];
+    out += '<h3 class="choices-h">' + (n.status === "open" ? "Stage " + n.stage + ": every player\u2019s choices (only you see this)" : "Every player (only you see this)") + "</h3>" + (n.choices || []).map(function (c) {
       var b = bets[c.n];
       var now = n.status !== "open" ? "" : c.sealed
         ? c.sealed.map(function (p) { return lab(p.card) + (p.boost ? " +2" : "") + " vs P" + p.opp; }).join(" \u00b7 ")
-        : "Nothing sealed yet";
+        : "Nothing submitted yet";
       var byStage = {};
       c.played.forEach(function (d) { (byStage[d.stage] = byStage[d.stage] || []).push(lab(d.card) + (d.boost ? " +2" : "") + " vs P" + d.opp + " (" + (d.r > 0 ? "won" : d.r < 0 ? "lost" : "level") + ")"); });
       var past = Object.keys(byStage).map(function (st) { return "<div><b>Stage " + st + ":</b> " + esc(byStage[st].join(" \u00b7 ")) + "</div>"; }).join("");
+      if (past) archive.push('<div class="choice"><div class="choice-top"><b>' + esc(hwho(c.n)) + "</b></div>" + past + "</div>");
       return '<div class="choice"><div class="choice-top"><b>' + esc(hwho(c.n)) + "</b><span>Last online: " + esc(et(c.seen)) + "</span></div>" +
-        (n.status === "open" ? "<div><b>Stage " + n.stage + " (sealed, not yet turned):</b> " + esc(now) + "</div>" : "") + past +
+        (n.status === "open" ? "<div><b>Stage " + n.stage + " (submitted, not yet turned):</b> " + esc(now) + "</div>" : "<div>The game is over. Every card is in the archive below.</div>") +
         "<div><b>Bet:</b> " + (b ? b.stake + (b.stake === 1 ? " coin" : " coins") + " on finishing " + (b.score > 0 ? "+" : "") + b.score + ", placed in stage " + b.stage + " (pays " + b.stake * b.mult + ")" + (n.status === "open" ? "" : b.paid ? ": paid " + b.paid : ": lost") : "None") + "</div></div>";
     }).join("");
-    box.innerHTML = out;
+    // the stages that are over: kept, but folded away
+    if (archive.length) out += '<details class="archive" data-k="stages"><summary>Archive: the cards of earlier stages</summary>' + archive.join("") + "</details>";
+    setKeepingOpen(box, out);
+  }
+
+  // Redrawing a box must not fold an archive the GM has opened.
+  function setKeepingOpen(box, html) {
+    var open = {};
+    Array.prototype.forEach.call(box.querySelectorAll("details[data-k]"), function (d) { if (d.open) open[d.getAttribute("data-k")] = true; });
+    box.innerHTML = html;
+    Array.prototype.forEach.call(box.querySelectorAll("details[data-k]"), function (d) { if (open[d.getAttribute("data-k")]) d.open = true; });
   }
 
   function drawNight1(n) {

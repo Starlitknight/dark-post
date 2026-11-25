@@ -26,7 +26,7 @@ const browser = await puppeteer.launch({ executablePath: process.env.CHROME || "
 const page = await browser.newPage();
 page.on("pageerror", (e) => problems.push("pageerror: " + e.message));
 page.on("console", (m) => { if (m.type() === "error" && !/40[13479]|429/.test(m.text())) problems.push("console: " + m.text().slice(0, 200)); });
-page.on("requestfailed", (r) => { if (!/ws$|\/live/.test(r.url())) problems.push("request failed: " + r.url().replace(BASE, "")); });
+page.on("requestfailed", (r) => { if (r.method() !== "HEAD" && !/ws$|\/live/.test(r.url())) problems.push("request failed: " + r.url().replace(BASE, "")); });
 page.on("response", (r) => { if (r.status() === 404) problems.push("404: " + r.url().replace(BASE, "")); });
 await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 // one address for everyone: the front page asks for this player's word

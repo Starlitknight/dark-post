@@ -253,6 +253,36 @@
     return n === 0 ? "GM" : n === me.number ? "You" : "Player " + n;
   }
 
+  // The game is updated while pages are open. Every minute and a half this page asks whether the files it is
+  // made of have changed on the server. If they have, it is running old code, so it loads itself again: but only
+  // while the player is standing in a room with nothing open and nothing half typed, or is not looking at the page.
+  var codeSeen = {}, codeStale = false;
+  var CODE_FILES = ["/app.js", "/world.js", "/avatar.js", "/ladder.js", "/play.css", "/app.css"];
+  function codeIdle() {
+    if (document.hidden) return true;
+    var el = document.activeElement;
+    if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return false;
+    if (ui.busy || !stage || !stage.room || stage.entering) return false; // only in the walking world, never on a game or rules screen
+    if ($("menu") && !$("menu").hidden) return false;
+    var talk = $("npc-talk");
+    return !(talk && !talk.hidden);
+  }
+  function codeCheck() {
+    if (demo || typeof fetch !== "function") return;
+    if (codeStale) { if (codeIdle()) window.location.reload(); return; }
+    CODE_FILES.forEach(function (f) {
+      fetch(f, { method: "HEAD", cache: "no-store" }).then(function (r) {
+        var tag = r.ok && r.headers.get("ETag");
+        if (!tag) return;
+        if (!codeSeen[f]) codeSeen[f] = tag;
+        else if (codeSeen[f] !== tag) codeStale = true;
+      }).catch(function () {});
+    });
+  }
+  setTimeout(codeCheck, 4000);
+  setInterval(codeCheck, 90000);
+  setInterval(function () { if (codeStale && codeIdle()) window.location.reload(); }, 3000);
+
   function loadHall() {
     return api("GET", "/api/hall").then(function (data) {
       hall = data;

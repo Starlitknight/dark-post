@@ -211,3 +211,7 @@ body.host { display: block; }
 .gm-dot.away { opacity: .45; }
 .gm-dot.me { background: #c2262e; color: #fff; border: 2px solid #ddb65a; line-height: 18px; }
 #gm-room { width: auto; min-width: 180px; }
+
+details.archive { margin: 18px 0; border: 1px solid #333; border-radius: 6px; padding: 0 12px; }
+details.archive > summary { cursor: pointer; padding: 12px 0; font-weight: 700; color: #c9a85a; }
+details.archive[open] > summary { border-bottom: 1px solid #333; margin-bottom: 10px; }
