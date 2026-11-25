@@ -285,6 +285,9 @@ check("the host posts a notice", status == 200)
 check("a player is told there is a new notice", hall_of(B)["unread"]["board"] == 1)
 board = read(B, "board")
 check("every player reads it, from the GM", [(m["from"], m["body"]) for m in board] == [(0, "Notice: be kind to the furniture.")])
+gmB = hall_of(B)["gm"]
+check("a notice is kept for a player who has read it", hall_of(B)["unread"]["board"] == 0 and gmB["total"] == 1 and [(m["id"], m["body"], m["fresh"]) for m in gmB["notes"]] == [(board[0]["id"], "Notice: be kind to the furniture.", False)])
+check("and is marked new for a player who has not", hall_of(A)["gm"]["notes"][0]["fresh"] is True and hall_of(A)["unread"]["board"] == 1)
 cast = hall_of(C).get("lastCast") or {}
 check("the latest broadcast is carried to every screen", cast.get("from") == nA and cast.get("body") == "Good evening, strangers.")
 status, body, _ = call("POST", "/api/host/messages", {"room": "table", "body": "Welcome, all of you."}, host)

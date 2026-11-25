@@ -1,5 +1,11 @@
 # Dark Post
 
+## Pictures for the six keys, GM notices kept, 25 Nov 2026 (the GM's instructions, done outside this agent)
+
+- **The six keys puzzle is drawn, not written.** Each clue is a picture (`keyClueHTML` in `public/app.js`): a dashed arrow for "before", one frame around two keys for "side by side", the same frame struck through for "never side by side", empty circles for the places between two keys, and a strip of six places for first/last and the halves. A few words sit beside each picture. The server data did not change, so the puzzle in play is the same puzzle.
+- **Keys are tapped into place** (`bindKeys`): tap a key to put it in the next place, tap a placed key to take it out. The answer box below stays and always matches the slots. The GM wants visual puzzles, not text: keep to that for any new kind.
+- **GM notices are kept after they are read.** `hall()` sends `gm: { total, notes }` (the latest three notices and the count). The bell has a "From the GM" section that always shows them, with "All GM notices" opening the notice board. The Menu has a wide "GM notices" tile. Before this, a read notice could only be found through a small link at the foot of the Broadcast page.
+
 ## Six keys, who is online, no puzzle shortcut, 25 Nov 2026 (the GM's instructions, done outside this agent)
 
 - **A new kind of puzzle, the six keys** (`keys` in `src/puzzles.js`): six numbered keys, five to seven clues about the order they are used in, exactly one order fits, and no clue is spare. The answer is the six numbers in order. `keyClueFits` and `keyClueText` are exported for the tests.

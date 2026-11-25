@@ -1961,6 +1961,17 @@
     }
   }
 
+  // Are two moments on the same day of the game clock?
+  var dateFormat = null;
+  function sameGameDay(a, b) {
+    try {
+      dateFormat = dateFormat || new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "numeric", day: "numeric" });
+      return dateFormat.format(new Date(a)) === dateFormat.format(new Date(b));
+    } catch (err) {
+      return Math.abs(a - b) < 12 * 3600 * 1000;
+    }
+  }
+
   function noticeLine(x) {
     return "Player " + x.n + (x.today ? " solved today’s puzzle" : " solved the daily puzzle");
   }
@@ -1975,11 +1986,20 @@
     var news = (hall.notices || []).map(function (x) {
       return '<div class="bell-row news' + (x.id > fresh ? " fresh" : "") + '"><span class="bell-face">' + faceHTML(x.n) + '</span><span class="bell-text"><b>' + esc(noticeLine(x)) + "</b><small>" + esc(stamp(x.at, x.today)) + "</small></span>" + (x.id > fresh ? '<i class="bell-new">New</i>' : "") + "</div>";
     });
+    // the GM's notices stay here after they are read: the latest three, and a way to all of them
+    var gm = hall.gm || { total: 0, notes: [] };
+    var gmRows = gm.notes.map(function (m) {
+      return '<button type="button" class="bell-row gm' + (m.fresh ? " fresh" : "") + '" data-act="go" data-scene="board"><span class="bell-seal" aria-hidden="true">GM</span><span class="bell-text"><b>' + esc(m.body) + "</b><small>" + esc(stamp(m.at, sameGameDay(m.at, Date.now()))) + "</small></span>" + (m.fresh ? '<i class="bell-new">New</i>' : "") + "</button>";
+    });
     return '<div class="menu-sheet bell-sheet" role="dialog" aria-modal="true" aria-labelledby="bell-heading">' +
       '<div class="menu-head"><h2 id="bell-heading">Notifications</h2>' +
       '<button type="button" class="menu-close" data-act="menuClose" aria-label="Close notifications">×</button></div>' +
       '<h3 class="bell-h">To do now' + (todo.length ? "<span>" + todo.length + "</span>" : "") + "</h3>" +
       (rows.length ? rows.join("") : '<p class="bell-none">' + (hall.out ? "Nothing to read right now." : "Nothing is waiting for you. Explore the estate, or talk to the other players.") + "</p>") +
+      '<h3 class="bell-h">From the GM</h3>' +
+      (gm.total
+        ? gmRows.join("") + '<button type="button" class="bell-all" data-act="go" data-scene="board">All GM notices<span>' + gm.total + "</span></button>"
+        : '<p class="bell-none">No notices from the GM yet. They are kept here after you read them.</p>') +
       '<h3 class="bell-h">News</h3>' +
       (news.length ? news.join("") : '<p class="bell-none">No news yet. When a player solves the puzzle, it shows here.</p>') +
       "</div>";
@@ -2041,7 +2061,8 @@
   // These are the six things available wherever the player is standing.
   function menuHTML() {
     var u = hall.unread;
-    var counts = { whispers: u.whispers, study: u.study, table: u.table + u.board };
+    var counts = { whispers: u.whispers, study: u.study, table: u.table };
+    var gmTotal = (hall.gm && hall.gm.total) || 0;
     var items = PAGES.map(function (id) {
       return '<button type="button" class="menu-tile" data-act="go" data-scene="' + id + '">' +
         '<span class="menu-icon">' + ICON[id] + '</span><b>' + PLACES[id].title + '</b>' + badge(counts[id]) + '</button>';
@@ -2051,7 +2072,9 @@
       '<button type="button" class="menu-close" data-act="menuClose" aria-label="Close menu">×</button></div>' +
       (hall.night ? '<button type="button" class="menu-night" data-act="go" data-scene="tonight"><span><i>' + (hall.night.status === "open" ? "Being played now" : "Finished") + "</i><b>Night " + hall.night.n + " · Six Vaults</b></span><small>" + (hall.night.status === "open" ? (hall.night.opened ? "Your vaults are sealed" : "Your clue and the rules") : "See the result") + "</small></button>" : "") +
       menuNowHTML() +
-      '<div class="menu-grid">' + items.join("") + '</div>' +
+      '<div class="menu-grid">' +
+      '<button type="button" class="menu-tile wide" data-act="go" data-scene="board"><span class="menu-icon">' + ICON.board + "</span><b>GM notices</b><small>" + (gmTotal ? plural(gmTotal, "notice", "notices") + ", old and new" : "Nothing posted yet") + "</small>" + badge(u.board) + "</button>" +
+      items.join("") + '</div>' +
       '</div>';
   }
 
@@ -2643,6 +2666,7 @@
     var p = ui.pz;
     if (!box || !p) return;
     var body = "";
+    var open = !p.solved && p.left > 0;
     if (p.type === "code") {
       body = '<p class="pz-hint">Each row is a wrong guess. Beside it: how close that guess was.</p>' +
         p.data.clues.map(function (c) {
@@ -2657,11 +2681,12 @@
         return '<div class="pz-sum">' + r.shapes.map(function (k) { return SHAPES[k]; }).join("<i>+</i>") + "<i>=</i><b>" + r.sum + "</b></div>";
       }).join("") + '<div class="pz-sum ask">' + SHAPES.a + "<i>×</i>" + SHAPES.b + "<i>×</i>" + SHAPES.c + "<i>=</i><b>?</b></div>";
     } else if (p.type === "keys") {
-      // six numbered keys, clues about the order they are used in, and one order that fits them all
-      body = '<p class="pz-hint">Six keys open the vault, but only when used in the right order. Every clue is true. Only one order fits them all.</p>' +
-        '<div class="pz-keys" aria-hidden="true">' + [1, 2, 3, 4, 5, 6].map(function (k) { return "<b>" + k + "</b>"; }).join("") + "</div>" +
-        '<ol class="pz-rules">' + p.data.lines.map(function (line) { return "<li><span>" + esc(line).replace(/\d/g, function (d) { return '<b class="pz-keyno">' + d + "</b>"; }) + "</span></li>"; }).join("") + "</ol>" +
-        '<div class="pz-order" aria-hidden="true"><span>First</span><i>?</i><i>?</i><i>?</i><i>?</i><i>?</i><i>?</i><span>Last</span></div>';
+      // six numbered keys, a picture for each clue about the order they are used in, and one order that fits them all
+      body = '<p class="pz-hint">Find the order that fits every picture. Read each one left to right: first to last.</p>' +
+        '<div class="pz-clues">' + (p.data.clues || []).map(keyClueHTML).join("") + "</div>" +
+        '<p class="pz-hint">' + (open ? "Tap the keys in the order they are used." : "The six keys.") + "</p>" +
+        '<div class="pz-keys" id="pz-keys">' + [1, 2, 3, 4, 5, 6].map(function (k) { return '<button type="button" class="pz-disc" data-k="' + k + '"' + (open ? "" : " disabled") + ">" + k + "</button>"; }).join("") + "</div>" +
+        '<div class="pz-order" id="pz-order"><span>First</span>' + [0, 1, 2, 3, 4, 5].map(function (i) { return '<button type="button" class="pz-slot" data-i="' + i + '"' + (open ? "" : " disabled") + ' aria-label="Place ' + (i + 1) + '"></button>'; }).join("") + "<span>Last</span></div>";
     } else if (p.type === "cipher") {
       body = tiles(p.data.text) + '<p class="pz-hint">A B C D E F G H I J K L M N O P Q R S T U V W X Y Z</p>';
     } else {
@@ -2674,12 +2699,13 @@
         : '<div class="composer pz-form" id="pz-form"><input type="text" id="pz-answer" maxlength="24" autocomplete="off" autocapitalize="characters" enterkeyhint="send" inputmode="' + (p.type === "cipher" ? "text" : "numeric") + '" placeholder="Your answer" aria-label="Your answer">' +
           '<button type="button" class="btn send" id="pz-send">Try</button></div><p class="pz-left">' + plural(p.left, "try", "tries") + " left today</p>";
     box.innerHTML =
-      '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + '</h2><div class="pz-body">' + body + "</div><p>" + esc((p.data && p.data.ask) || p.ask) + "</p>" + end + "</div>" +
+      '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + '</h2><div class="pz-body">' + body + "</div><p>" + esc(p.type === "keys" ? (open ? "Or type the six numbers in order." : "") : (p.data && p.data.ask) || p.ask) + "</p>" + end + "</div>" +
       (p.held
         // the GM is holding this puzzle: it does not change at midnight, and nobody knows yet when it will
         ? '<div class="s-card"><i>Next puzzle</i><b class="s-count small">TBD</b><p>This puzzle stays open until the GM starts the next one. Every player gets the same puzzle.</p>'
         : '<div class="s-card"><i>Next puzzle in</i><b class="s-count small" id="pz-reset">' + span(Math.max(0, p.resetAt - Date.now())) + "</b><p>Every player gets the same puzzle.</p>") +
 "</div>";
+    if (p.type === "keys") bindKeys();
     var form = $("pz-form");
     if (form) {
       var tryNow = function () {
@@ -2713,6 +2739,70 @@
         if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); tryNow(); }
       });
     }
+  }
+
+  // One clue of the six keys, as a picture. Left is earlier, right is later.
+  function keyClueHTML(c) {
+    function disc(k) { return '<b class="pz-keyno">' + k + "</b>"; }
+    function strip(lit, crossed) {
+      var out = "";
+      for (var i = 0; i < 6; i++) out += '<i class="' + (lit(i) ? "lit" : crossed && crossed(i) ? "no" : "") + '"></i>';
+      return '<span class="kc-is">is</span><span class="kc-strip">' + out + "</span>";
+    }
+    var swap = '<svg class="kc-swap" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14l-3-3M20 16H6l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var pic, says;
+    if (c.k === "before") { pic = disc(c.a) + '<span class="kc-arrow"></span>' + disc(c.b); says = "before"; }
+    else if (c.k === "next") { pic = '<span class="kc-pair">' + disc(c.a) + disc(c.b) + "</span>"; says = "side by side, in this order"; }
+    else if (c.k === "apart") { pic = '<span class="kc-pair no">' + disc(c.a) + disc(c.b) + "</span>" + swap; says = "never side by side"; }
+    else if (c.k === "gap") { pic = disc(c.a) + new Array(c.n + 1).join('<i class="kc-hole"></i>') + disc(c.b) + swap; says = "this far apart, either way round"; }
+    else if (c.k === "ends") { pic = disc(c.a) + strip(function (i) { return i === 0 || i === 5; }); says = "first or last"; }
+    else if (c.k === "mid") { pic = disc(c.a) + strip(function (i) { return i > 0 && i < 5; }, function (i) { return i === 0 || i === 5; }); says = "not first, not last"; }
+    else if (c.k === "early") { pic = disc(c.a) + strip(function (i) { return i < 3; }); says = "in the first three"; }
+    else { pic = disc(c.a) + strip(function (i) { return i > 2; }); says = "in the last three"; }
+    return '<div class="kc"><span class="kc-pic">' + pic + "</span><small>" + says + "</small></div>";
+  }
+
+  // The six keys are answered by tapping them into place. The slots always show what is in the answer box.
+  function bindKeys() {
+    var input = $("pz-answer"), keys = $("pz-keys"), order = $("pz-order");
+    if (!keys || !order) return;
+    function digits() {
+      var seen = {}, out = [];
+      String(input ? input.value : (ui.pz.solved || ui.pz.left <= 0) && ui.pz.answer ? ui.pz.answer : "").split("").forEach(function (ch) {
+        if (/[1-6]/.test(ch) && !seen[ch] && out.length < 6) { seen[ch] = true; out.push(ch); }
+      });
+      return out;
+    }
+    function show() {
+      var d = digits();
+      Array.prototype.forEach.call(order.querySelectorAll(".pz-slot"), function (slot, i) {
+        slot.innerHTML = d[i] ? '<b class="pz-keyno">' + d[i] + "</b>" : "";
+        slot.classList.toggle("full", !!d[i]);
+      });
+      Array.prototype.forEach.call(keys.querySelectorAll(".pz-disc"), function (b) {
+        b.classList.toggle("used", d.indexOf(b.getAttribute("data-k")) >= 0);
+      });
+    }
+    if (input) {
+      keys.addEventListener("click", function (event) {
+        var b = event.target.closest(".pz-disc");
+        if (!b) return;
+        var d = digits(), k = b.getAttribute("data-k"), at = d.indexOf(k);
+        if (at >= 0) d.splice(at, 1); else if (d.length < 6) d.push(k);
+        input.value = d.join("");
+        show();
+      });
+      order.addEventListener("click", function (event) {
+        var slot = event.target.closest(".pz-slot");
+        if (!slot) return;
+        var d = digits();
+        d.splice(Number(slot.getAttribute("data-i")), 1); // tap a placed key to take it out
+        input.value = d.join("");
+        show();
+      });
+      input.addEventListener("input", show);
+    }
+    show();
   }
 
   // The moment a puzzle is settled: solved, with the coin; or failed, with the answer.
@@ -3685,6 +3775,10 @@
       lastCast: d.msgs.filter(function (m) { return m.room === "table"; }).slice(-1).map(function (m) { return { id: m.id, from: m.from, body: m.body, at: m.at }; })[0] || null,
       cell: 0,
       bettingOpen: !!d.bettingOpen,
+      gm: (function () {
+        var posts = d.msgs.filter(function (m) { return m.room === "board" && m.from === 0 && m.parent == null; });
+        return { total: posts.length, notes: posts.slice(-3).reverse().map(function (m) { return { id: m.id, body: m.body, at: m.at, fresh: m.id > mark("board") }; }) };
+      })(),
       notices: (d.notices || []).slice().reverse(),
       noticeMark: d.noticeMark || 0,
       puzzle: { solved: !!d.pz.solved, left: 3 - d.pz.tries, reward: 1 },
@@ -3724,7 +3818,7 @@
   // The preview's puzzle, deals and door log: fixed samples that behave like the real ones.
   var DEMO_PUZZLES = [
     { type: "code", title: "Crack the code", ask: "The code has three different digits, from 1 to 9. What is it?", data: { clues: [{ guess: "358", place: 1, digit: 1 }, { guess: "641", place: 0, digit: 1 }, { guess: "924", place: 0, digit: 0 }, { guess: "692", place: 0, digit: 1 }, { guess: "837", place: 0, digit: 1 }, { guess: "643", place: 0, digit: 2 }] }, answer: "365" },
-    { type: "keys", title: "The six keys", ask: "Type the six numbers in the order the keys are used.", data: { ask: "Type the six numbers in the order the keys are used.", lines: ["Key 2 is used before key 6.", "Exactly two keys are used between keys 3 and 5.", "Key 4 is used before key 2.", "Exactly three keys are used between keys 3 and 6.", "Key 2 is used right after key 3."] }, answer: "432156" },
+    { type: "keys", title: "The six keys", ask: "Type the six numbers in the order the keys are used.", data: { ask: "Type the six numbers in the order the keys are used.", clues: [{ k: "before", a: 2, b: 6 }, { k: "gap", a: 3, b: 5, n: 2 }, { k: "before", a: 4, b: 2 }, { k: "gap", a: 3, b: 6, n: 3 }, { k: "next", a: 3, b: 2 }], lines: ["Key 2 is used before key 6.", "Exactly two keys are used between keys 3 and 5.", "Key 4 is used before key 2.", "Exactly three keys are used between keys 3 and 6.", "Key 2 is used right after key 3."] }, answer: "432156" },
     { type: "cipher", title: "Break the cipher", ask: "Every letter was moved the same number of places along the alphabet. What is the word?", data: { text: "THYISL" }, answer: "MARBLE" },
   ];
 
@@ -3911,6 +4005,12 @@
           return true;
         },
         betting: function (open) { demoHallStore().bettingOpen = !!open; return loadHall().then(refreshStage); },
+        // the GM posts a notice to every player
+        notice: function (text) {
+          var dn = demoHallStore();
+          dn.msgs.push({ id: dn.next++, room: "board", from: 0, to: null, parent: null, body: text || "The bags open at 9 PM EST. Take your bag before then.", at: Date.now() });
+          return loadHall().then(refreshStage);
+        },
         // another player solves today's puzzle, as it would arrive from the server
         solve: function (n) {
           var ds = demoHallStore();

@@ -199,25 +199,66 @@ body, body.desk { transition:none; }
 #app .who-msg:focus-visible { outline:2px solid #fff; outline-offset:2px; }
 #app .who-away { margin-top:12px; }
 
-/* ----- the six keys puzzle ----- */
-#app .pz-keys { display:flex; gap:8px; margin:12px 0 4px; }
-#app .pz-keys b {
-  width:38px; height:38px; display:grid; place-items:center; border-radius:50%;
-  font:700 19px/1 var(--label); color:#221a08; background:radial-gradient(circle at 35% 30%,#f6dd9c,#d9b25c 70%); box-shadow:inset 0 0 0 2px #8a5f14, 0 2px 6px #0006;
-}
-#app .pz-rules { margin:14px 0 6px; padding:0; list-style:none; counter-reset:rule; display:grid; gap:8px; }
-#app .pz-rules li {
-  counter-increment:rule; display:flex; align-items:baseline; gap:10px; padding:10px 12px; border:1px solid #a79e8640; border-radius:9px; background:#1c2423;
-  font:500 15.5px/1.45 var(--sans); color:var(--agent-paper);
-}
-#app .pz-rules li::before { content:counter(rule); flex:0 0 auto; font:700 12px/1 var(--label); letter-spacing:.08em; color:#cdb88d; }
+/* ----- the six keys puzzle: every clue is a picture, left is earlier, right is later ----- */
 #app .pz-keyno {
-  display:inline-grid; place-items:center; width:22px; height:22px; margin:0 1px; border-radius:50%; vertical-align:-3px;
-  font:700 13px/1 var(--label); color:#221a08; background:#e2bf6c; box-shadow:inset 0 0 0 1.5px #8a5f14;
+  flex:0 0 auto; display:inline-grid; place-items:center; width:30px; height:30px; border-radius:50%;
+  font:700 16px/1 var(--label); color:#221a08; background:radial-gradient(circle at 35% 30%,#f6dd9c,#d9b25c 72%); box-shadow:inset 0 0 0 2px #8a5f14;
 }
-#app .pz-order { display:flex; align-items:center; gap:6px; margin:14px 0 2px; }
+#app .pz-clues { display:grid; gap:8px; margin:12px 0 16px; }
+#app .kc { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; min-height:54px; padding:10px 12px; border:1px solid #a79e8640; border-radius:10px; background:#1c2423; }
+#app .kc-pic { display:flex; align-items:center; gap:7px; }
+#app .kc small { font:600 13px/1.3 var(--sans); color:#b9bdb4; }
+/* somewhere before: a dashed arrow, because the distance is not known */
+#app .kc-arrow { position:relative; width:46px; height:0; margin-right:5px; border-top:2px dashed #e2bf6c; }
+#app .kc-arrow::after { content:""; position:absolute; right:-6px; top:-7px; border:6px solid transparent; border-left:9px solid #e2bf6c; border-right:0; }
+/* side by side: one frame around both */
+#app .kc-pair { position:relative; display:inline-flex; gap:3px; padding:4px; border:2px solid #e2bf6c; border-radius:999px; }
+#app .kc-pair.no { border-color:#e5544b; }
+#app .kc-pair.no::after { content:""; position:absolute; left:-5px; right:-5px; top:50%; height:3px; margin-top:-1.5px; border-radius:2px; background:#e5544b; transform:rotate(-24deg); }
+/* an empty place between two keys */
+#app .kc-hole { flex:0 0 auto; width:28px; height:28px; border:2px dashed #cdb88daa; border-radius:50%; }
+#app .kc-swap { flex:0 0 auto; width:20px; height:20px; margin-left:3px; color:#cdb88d; }
+/* the six places, first on the left */
+#app .kc-is { font:700 11px/1 var(--label); letter-spacing:.1em; text-transform:uppercase; color:#cdb88d; }
+#app .kc-strip { display:inline-flex; gap:3px; }
+#app .kc-strip i { position:relative; width:19px; height:26px; border:1.5px solid #5f6865; border-radius:4px; }
+#app .kc-strip i.lit { background:#e2bf6c; border-color:#e2bf6c; }
+#app .kc-strip i.no { border-color:#e5544b99; }
+#app .kc-strip i.no::before, #app .kc-strip i.no::after { content:""; position:absolute; left:2px; right:2px; top:50%; height:2px; margin-top:-1px; background:#e5544b; transform:rotate(52deg); }
+#app .kc-strip i.no::after { transform:rotate(-52deg); }
+/* tap a key to place it; tap a placed key to take it out */
+#app .pz-keys { display:flex; gap:8px; margin:8px 0 10px; }
+#app .pz-disc {
+  flex:0 0 auto; width:44px; height:44px; padding:0; display:grid; place-items:center; border:0; border-radius:50%; cursor:pointer;
+  font:700 21px/1 var(--label); color:#221a08; background:radial-gradient(circle at 35% 30%,#f6dd9c,#d9b25c 72%); box-shadow:inset 0 0 0 2px #8a5f14, 0 2px 6px #0006;
+  -webkit-tap-highlight-color:transparent;
+}
+#app .pz-disc.used { opacity:.28; box-shadow:inset 0 0 0 2px #8a5f14; }
+#app .pz-disc:disabled { cursor:default; }
+#app .pz-disc:focus-visible, #app .pz-slot:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+#app .pz-order { display:flex; align-items:center; gap:5px; margin:4px 0 2px; }
 #app .pz-order span { font:700 11px/1 var(--label); letter-spacing:.12em; text-transform:uppercase; color:#cdb88d; }
-#app .pz-order i { flex:1 1 0; max-width:40px; height:40px; display:grid; place-items:center; border:1px dashed #cdb88d99; border-radius:7px; font:700 17px/1 var(--label); font-style:normal; color:#cdb88d; }
+#app .pz-slot { flex:1 1 0; max-width:44px; height:44px; padding:0; display:grid; place-items:center; border:1.5px dashed #cdb88d99; border-radius:8px; background:transparent; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+#app .pz-slot.full { border-style:solid; border-color:#e2bf6c; background:#2a2412; }
+#app .pz-slot:disabled { cursor:default; }
 /* a thing to do that has no shortcut: it says where to walk */
 #app .bell-row.todo.walk { border-color:#d9c79b80; background:#2a3632; }
 #app .bell-walk { color:#e9d3a6 !important; font-weight:700 !important; }
+
+/* ----- the GM's notices, kept after they are read ----- */
+#app .menu-sheet .menu-tile.wide { grid-column:1 / -1; border-color:#d9c79b66; }
+#app .menu-sheet .menu-tile.wide small { margin-left:2px; font:500 13px/1.3 var(--sans); color:#b9bdb4; }
+#app button.bell-row.gm { min-height:0; align-items:flex-start; background:#222d2b; border-color:#a79e8640; }
+#app button.bell-row.gm.fresh { background:#2e2a1c; border-color:#e9d3a699; }
+#app .bell-row.gm .bell-text b { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; font-weight:600; white-space:pre-line; }
+#app .bell-seal {
+  flex:0 0 34px; width:34px; height:34px; display:grid; place-items:center; border-radius:50%;
+  font:700 12px/1 var(--label); letter-spacing:.06em; color:#221a08; background:#e2bf6c; box-shadow:inset 0 0 0 2px #8a5f14;
+}
+#app .bell-all {
+  width:100%; min-height:44px; display:flex; align-items:center; justify-content:center; gap:9px; margin:1px 0 4px; padding:0 12px;
+  border:1px solid #d9c79b80; border-radius:10px; background:transparent; color:#e9d3a6; font:700 14px/1 var(--sans); cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+#app .bell-all:hover { background:#2a3632; }
+#app .bell-all:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+#app .bell-all span { min-width:20px; height:20px; padding:0 6px; border-radius:10px; font:700 12px/20px var(--label); background:#34463e; color:#e6dcc3; }

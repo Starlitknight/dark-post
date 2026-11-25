@@ -607,6 +607,14 @@ export class Game extends DurableObject {
       // rooms the GM has opened. The betting room stays shut until the GM opens it.
       bettingOpen: this.bettingOpen(),
       // behind the bell: news about the other players, newest first, and how far this player has read
+      // what the GM has announced: the latest three and how many in all. They stay here after they are read.
+      gm: {
+        total: count(`SELECT COUNT(*) AS n FROM messages WHERE room = 'board' AND from_n = ? AND parent IS NULL AND removed = 0`, GM),
+        notes: this.sql
+          .exec(`SELECT id, body, at FROM messages WHERE room = 'board' AND from_n = ? AND parent IS NULL AND removed = 0 ORDER BY id DESC LIMIT 3`, GM)
+          .toArray()
+          .map((m) => ({ id: m.id, body: m.body.slice(0, 240), at: m.at, fresh: m.id > mark("board") })),
+      },
       notices: this.noticesFor(inv),
       noticeMark: mark("notices"),
       // this player's own standing on today's puzzle, so the game can nudge only those who have not done it
