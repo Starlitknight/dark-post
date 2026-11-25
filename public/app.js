@@ -998,8 +998,10 @@
         return '<section class="screen gamecall" id="gamecall"><div class="gc-beams" aria-hidden="true"><i></i><i></i></div>' +
           '<p class="gc-kicker">The Crane Estate</p>' +
           '<h1 class="gc-title">Game ' + n + "</h1>" +
-          '<div class="gc-pic"><img src="/art/night1/brief-1.webp" alt="Six numbered vault doors"></div>' +
-          '<h2 class="gc-name">Six Vaults</h2>' +
+          (isLadder()
+            ? '<div class="gc-pic gc-cards">' + ["10", "Q", "A", "X1", "K"].map(function (c) { return cardHTML(c); }).join("") + "</div>"
+            : '<div class="gc-pic"><img src="/art/night1/brief-1.webp" alt="Six numbered vault doors"></div>') +
+          '<h2 class="gc-name">' + gameName() + "</h2>" +
           '<p class="gc-line">The ' + nth + " game is beginning.</p>" +
           '<p class="gc-go">' + (hall && hall.out ? "Make your way to the arena to watch." : "Make your way to the arena. The attendant has the rules.") + "</p>" +
           '<button type="button" class="btn gc-btn" data-act="callDone">Walk to the arena</button></section>';
@@ -1630,7 +1632,7 @@
   function roomOpen(id) {
     var n = hall && hall.night;
     if (id === "arena") return !!n;
-    if (id === "shop") return !!(n && n.status === "open");
+    if (id === "shop") return !!(n && n.status === "open" && n.game !== "ladder");
     if (id === "betting") return !!(hall && hall.bettingOpen);
     return true;
   }
@@ -1652,7 +1654,12 @@
     }
     if (id === "arena") {
       if (!n) return { text: "The GM is preparing the next game, so this area is closed right now, but feel free to explore." };
-      if (n.status !== "open") return { text: "Game " + n.n + " is over. The result is at the vaults.", go: ["arena", "See the result"] };
+      if (n.status !== "open") return { text: "Game " + n.n + " is over. The result is " + (isLadder() ? "on the table." : "at the vaults."), go: ["arena", "See the result"] };
+      if (isLadder()) {
+        if (!briefed()) return { text: "Welcome to Game " + n.n + ": The Ladder. Let me show you how it is played.", act: ["introRules", "Show me the rules"], solo: true };
+        if (hall.out) return { text: "Game " + n.n + " is being played at the table.", act: ["introRules", "Show me the rules"] };
+        return { text: n.opened ? "Your cards for this stage are sealed. You can change them until the stage closes." : "The table is open. Walk up to it and play your three cards.", act: ["introRules", "The rules again"] };
+      }
       // first visit: welcome, then the vaults, then the rules. Nothing else is offered until the rules are seen.
       if (!briefed()) {
         return ui.intro
@@ -1723,7 +1730,7 @@
     box.hidden = false;
     // the vaults are ringed while the attendant talks about them; the camera goes to them only on the first showing
     var n = hall && hall.night;
-    var pointing = id === "arena" && !!n && n.status === "open" && (briefed() ? !n.opened && !hall.out : !!ui.intro);
+    var pointing = id === "arena" && !!n && n.game !== "ladder" && n.status === "open" && (briefed() ? !n.opened && !hall.out : !!ui.intro);
     showVaults(pointing, pointing && !briefed());
   }
 
@@ -1813,8 +1820,8 @@
       var togo = ends - Date.now();
       return {
         revealed: true,
-        now: "Game " + night.n + ": Six Vaults",
-        next: "The vaults close",
+        now: "Game " + night.n + ": " + gameName(),
+        next: isLadder() ? "Stage " + (night.stage || 1) + " closes" : "The vaults close",
         at: ends,
         count: isNaN(ends) ? "When the GM says" : togo <= 0 ? "Any moment" : span(togo),
         todo: hall.out ? outLine(hall.out) : night.opened ? "Your two vaults are sealed. Wait for the night to end." : "Collect clues. Then open two vaults in the arena.",
@@ -1988,7 +1995,8 @@
   function todoList() {
     var out = [], u = hall.unread, n = hall.night;
     if (n && n.status === "open" && !n.opened && !hall.out) {
-      if (!briefed()) out.push({ title: "Game " + n.n + " has begun", sub: "Six Vaults.", walk: "Walk to the arena. The attendant has the rules." });
+      if (!briefed()) out.push({ title: "Game " + n.n + " has begun", sub: gameName() + ".", walk: "Walk to the arena. The attendant has the rules." });
+      else if (isLadder()) out.push({ title: "Play your three cards", sub: "Game " + n.n + ": The Ladder. Stage " + (n.stage || 1) + ".", walk: "Walk to the table in the arena." });
       else out.push({ title: "Open two vaults", sub: "Game " + n.n + ": Six Vaults. Before the vaults close.", walk: "Walk to the vaults in the arena." });
     }
     if (puzzleOpen()) {
@@ -2128,7 +2136,7 @@
     return '<div class="menu-sheet" role="dialog" aria-modal="true" aria-labelledby="menu-heading">' +
       '<div class="menu-head"><h2 id="menu-heading">Menu</h2>' + walletMarkup() +
       '<button type="button" class="menu-close" data-act="menuClose" aria-label="Close menu">×</button></div>' +
-      (hall.night ? '<button type="button" class="menu-night" data-act="go" data-scene="tonight"><span><i>' + (hall.night.status === "open" ? "Being played now" : "Finished") + "</i><b>Game " + hall.night.n + " · Six Vaults</b></span><small>" + (hall.night.status === "open" ? (hall.night.opened ? "Your vaults are sealed" : "Your clue and the rules") : "See the result") + "</small></button>" : "") +
+      (hall.night ? '<button type="button" class="menu-night" data-act="go" data-scene="tonight"><span><i>' + (hall.night.status === "open" ? "Being played now" : "Finished") + "</i><b>Game " + hall.night.n + " · " + gameName() + "</b></span><small>" + (hall.night.status === "open" ? (hall.night.opened ? "Your vaults are sealed" : "Your clue and the rules") : "See the result") + "</small></button>" : "") +
       menuNowHTML() +
       '<div class="menu-grid">' +
       '<button type="button" class="menu-tile wide" data-act="go" data-scene="board"><span class="menu-icon">' + ICON.board + "</span><b>GM notices</b><small>" + (gmTotal ? plural(gmTotal, "notice", "notices") + ", old and new" : "Nothing posted yet") + "</small>" + badge(u.board) + "</button>" +
@@ -2194,7 +2202,7 @@
   function dressWorld() {
     var n = hall && hall.night;
     WORLD.setArena(n ? n.game : "");
-    WORLD.setShop(!!(n && n.status === "open"));
+    WORLD.setShop(!!(n && n.status === "open" && n.game !== "ladder")); // the shop sells clues, and only Six Vaults has them
     return (n ? n.game + ":" + n.status : "") + (hall && hall.bettingOpen ? "+b" : "");
   }
 
@@ -2257,7 +2265,7 @@
     var btn = $("hud-action");
     btn.hidden = !spot;
     if (spot) {
-      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? "Open the vaults" : spot.label;
+      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? (isLadder() ? "Play your cards" : "Open the vaults") : spot.label;
       btn.style.setProperty("--place", PLACES[stage.room].color);
     }
     measureStage();
@@ -2890,6 +2898,164 @@
     (root.firstElementChild || root).appendChild(el);
   }
 
+  // ----- Game: The Ladder. Fifteen cards, one against every other player, in stages of three -----
+
+  function isLadder() { var n = (ui.night && ui.night.on && ui.night) || (hall && hall.night); return !!n && n.game === "ladder"; }
+  function gameName() { return isLadder() ? "The Ladder" : "Six Vaults"; }
+
+  // One playing card. o: small, down (face down), dim (already played), boost, cls
+  function cardHTML(c, o) {
+    o = o || {};
+    var size = o.small ? " small" : o.tiny ? " tiny" : "";
+    if (o.down) return '<span class="pcard down' + size + '"></span>';
+    var j = LADDER.isJoker(c);
+    return '<span class="pcard' + (j ? " joker" : "") + size + (o.dim ? " dim" : "") + (o.cls ? " " + o.cls : "") + '">' +
+      "<b>" + (j ? "★" : c) + "</b>" + (o.tiny ? "" : "<i>" + (j ? "Joker" : "♠") + "</i>") + (o.boost ? "<em>+2</em>" : "") + "</span>";
+  }
+
+  // The rules of The Ladder, one picture to a screen. The pictures are made of the same cards the game is played with.
+  function ladderTiles(n) {
+    var r = n.rules, pr = r.prizes.join(", ").replace(/, ([^,]*)$/, " and $1");
+    function pic(inner, cls) { return '<div class="vb-draw' + (cls ? " " + cls : "") + '">' + inner + "</div>"; }
+    function versus(a, b, ra, rb, oa, ob) {
+      return '<div class="vs"><span class="vs-side' + (ra > 0 ? " won" : ra < 0 ? " lost" : "") + '">' + cardHTML(a, oa) + "<u>" + (ra > 0 ? "+1" : ra < 0 ? "−1" : "0") + '</u></span><span class="vs-x">vs</span>' +
+        '<span class="vs-side' + (rb > 0 ? " won" : rb < 0 ? " lost" : "") + '">' + cardHTML(b, ob) + "<u>" + (rb > 0 ? "+1" : rb < 0 ? "−1" : "0") + "</u></span></div>";
+    }
+    var all = LADDER.CARDS.map(function (c) { return cardHTML(c, { small: true }); }).join("");
+    var used = LADDER.CARDS.map(function (c, i) { return cardHTML(c, { small: true, dim: [1, 4, 8, 11, 13].indexOf(i) >= 0 }); }).join("");
+    var faces = "";
+    for (var s = 0; s < 5; s++) faces += '<span class="stage-box"><i>Stage ' + (s + 1) + "</i><span><b></b><b></b><b></b></span></span>";
+    return [
+      { line: "Everyone holds the same fifteen cards.", pic: pic('<div class="fan-all">' + all + "</div>") },
+      { line: "You meet every other player once, and play one card against them.", pic: pic(versus("9", "6", 0, 0, {}, { down: true }).replace(/<u>0<\/u>/g, ""), "meet") },
+      { line: "The higher card wins a point. The lower card loses one. Equal cards score nothing.", pic: pic(versus("J", "8", 1, -1) + versus("7", "7", 0, 0), "two") },
+      { line: "A Joker beats every card. Except a 2.", pic: pic(versus("X1", "A", 1, -1) + versus("2", "X1", 1, -1), "two") },
+      { line: "Each card is played once. Everyone can see which cards you have used.", pic: pic('<div class="fan-all">' + used + "</div>") },
+      { line: plural(r.boostPrice, "coin", "coins") + " adds " + r.boost + " to a card. You can do it " + (r.boosts === 2 ? "twice" : r.boosts + " times") + " in the whole game.", pic: pic(versus("9", "10", 1, -1, { boost: true }, {}), "boost") },
+      { line: "There are five stages. Each stage you play three opponents.", pic: pic('<div class="stages">' + faces + "</div>") },
+      { line: "The three highest scores win " + pr + " coins. The lowest is out.", pic: '<img class="vb-art" src="/art/night1/brief-8.webp" alt="A podium with three coins">' },
+    ];
+  }
+
+  // What the player has laid out for this stage, before sealing.
+  function ladderDraft(n) {
+    var opps = n.opponents[n.stage - 1] || [];
+    if (!ui.ld || ui.ld.stage !== n.stage || ui.ld.game !== n.n) {
+      ui.ld = { game: n.n, stage: n.stage, dirty: false, plays: opps.map(function (o) {
+        var was = (n.sealed || []).filter(function (p) { return p.opp === o; })[0];
+        return { opp: o, card: was ? was.card : null, boost: was ? !!was.boost : false };
+      }) };
+    }
+    return ui.ld;
+  }
+
+  function ladderTableHTML(n, final) {
+    var res = n.result || {}, prizes = res.prizes || {};
+    return '<div class="ladder">' + n.table.map(function (row, i) {
+      var mine = row.n === n.you, out = final && res.out === row.n;
+      return '<div class="rung' + (mine ? " me" : "") + (out ? " out" : "") + (i === n.table.length - 1 && !final ? " last" : "") + '" style="--i:' + i + '"><em>' + (i + 1) + '</em><span class="rung-face">' + faceHTML(row.n) + "</span><b>" + (mine ? "You" : "Player " + row.n) + "</b>" +
+        "<small>" + row.w + " won · " + row.l + " lost</small>" +
+        (prizes[row.n] ? '<span class="rung-prize">+' + prizes[row.n] + "</span>" : "") +
+        "<strong>" + (row.pts > 0 ? "+" : "") + row.pts + "</strong></div>";
+    }).join("") + "</div>";
+  }
+
+  // One stage's three duels, turned over one after another.
+  function ladderRevealHTML(st) {
+    return '<div class="ld-duels">' + st.duels.map(function (d, i) {
+      return '<div class="ld-duel ' + (d.r > 0 ? "won" : d.r < 0 ? "lost" : "level") + '" style="--i:' + i + '"><span class="ld-me"><i>You</i>' + cardHTML(d.mine, { boost: d.mb }) + '</span><strong>' + (d.r > 0 ? "+1" : d.r < 0 ? "−1" : "0") + "</strong>" +
+        '<span class="ld-them">' + cardHTML(d.theirs, { boost: d.tb }) + '<i><span class="ld-face">' + faceHTML(d.opp) + "</span>Player " + d.opp + "</i></span></div>";
+    }).join("") + "</div>";
+  }
+
+  function drawLadder() {
+    var box = $("sched"), n = ui.night;
+    if (!box || !n) return;
+    var acting = ui.matchAct && n.playing && !n.out;
+    var out = "";
+    if (n.status === "done") {
+      out = '<div class="s-card now"><i>Game ' + n.n + " · The Ladder · result</i>" + ladderTableHTML(n, true) + "</div>";
+    } else if (!heard("vb" + n.n)) {
+      out = '<div class="s-card now"><i>Game ' + n.n + " · being played now</i><h2>The Ladder</h2><p>Walk to the arena. The attendant will give you the rules.</p></div>";
+    } else {
+      var last = n.results[n.results.length - 1];
+      var count = n.endsAt ? '<i>This stage closes in</i><b class="s-count small" id="v-count">' + span(Math.max(0, new Date(n.endsAt).getTime() - Date.now())) + "</b>" : "<p>The GM closes each stage.</p>";
+      out += '<div class="s-card now"><i>Game ' + n.n + " · The Ladder</i><h2>Stage " + n.stage + " of " + n.stages + "</h2>" + count + "</div>";
+      // what happened in the stage that just closed, shown once before the next cards are laid
+      if (last && n.seenStage < last.stage) {
+        var net = last.duels.reduce(function (s, d) { return s + d.r; }, 0);
+        out += '<div class="s-card ld-shown"><i>Stage ' + last.stage + " · the cards are turned</i>" + ladderRevealHTML(last) +
+          '<p class="ld-net">This stage: <b>' + (net > 0 ? "+" : "") + net + '</b></p><button type="button" class="btn" data-act="ldSeen">Continue</button></div>';
+      } else if (!acting) {
+        out += '<div class="s-card"><p>' + (n.playing && !n.out ? "Your cards are played at the table in the arena. Its door is at the top of the hall." : "You are watching this game.") + "</p></div>";
+      } else {
+        var d = ladderDraft(n), placed = d.plays.filter(function (p) { return p.card; }).length, boostsUsed = d.plays.filter(function (p) { return p.boost; }).length;
+        var sealed = !!n.sealed && !d.dirty;
+        out += '<div class="s-card ld-board"><i>Your three opponents this stage</i><div class="ld-opps">' + d.plays.map(function (p, i) {
+          var theirs = n.used[p.opp] || [];
+          return '<div class="ld-opp"><span class="ld-face">' + faceHTML(p.opp) + "</span><b>Player " + p.opp + "</b>" +
+            '<button type="button" class="ld-slot' + (p.card ? " full" : "") + '" data-act="ldSlot" data-i="' + i + '" aria-label="Your card against Player ' + p.opp + '">' + (p.card ? cardHTML(p.card, { boost: p.boost }) : "<span>Your card</span>") + "</button>" +
+            '<button type="button" class="ld-boost' + (p.boost ? " on" : "") + '" data-act="ldBoost" data-i="' + i + '"' + (p.card && (p.boost || (n.boostsLeft - boostsUsed > 0 && (n.coins == null || n.coins - boostsUsed * n.rules.boostPrice >= n.rules.boostPrice))) ? "" : " disabled") + ">+2 · 1 coin</button>" +
+            '<span class="ld-left"><u>Cards they have left</u>' + LADDER.CARDS.map(function (c) { return cardHTML(c, { tiny: true, dim: theirs.indexOf(c) >= 0 }); }).join("") + "</span></div>";
+        }).join("") + "</div></div>";
+        out += '<div class="s-card ld-hand"><i>Your cards · tap one to play it</i><div class="ld-cards">' + LADDER.CARDS.map(function (c) {
+          var gone = n.hand.indexOf(c) < 0, down = d.plays.some(function (p) { return p.card === c; });
+          return '<button type="button" class="ld-card' + (down ? " placed" : "") + '" data-act="ldCard" data-c="' + c + '"' + (gone ? " disabled" : "") + ">" + cardHTML(c, { dim: gone }) + "</button>";
+        }).join("") + "</div>" +
+          '<p class="ld-boosts">Boosts left: <b>' + (n.boostsLeft - boostsUsed) + " of " + n.rules.boosts + "</b></p>" +
+          (sealed ? '<p class="ld-sealed">Sealed. You can change your cards until the stage closes.</p>'
+            : '<button type="button" class="btn" data-act="ldSeal"' + (placed === d.plays.length ? "" : " disabled") + ">" + (placed === d.plays.length ? "Seal these " + (placed === 3 ? "three" : placed) + " cards" : "Play a card against each opponent") + "</button>") + "</div>";
+      }
+      out += '<div class="s-card"><i>The ladder' + (n.results.length ? " after stage " + n.results[n.results.length - 1].stage : "") + "</i>" + ladderTableHTML(n, false) + "</div>";
+      out += '<div class="s-card"><button type="button" class="link" data-act="vbAgain">The rules again</button></div>';
+    }
+    if (box.getAttribute("data-sig") === out) return;
+    box.setAttribute("data-sig", out);
+    box.innerHTML = out;
+  }
+
+  function ladderAct(name, el) {
+    var n = ui.night, d = n && ladderDraft(n);
+    if (!d) return;
+    var i = Number(el.getAttribute("data-i"));
+    if (name === "ldCard") {
+      var c = el.getAttribute("data-c"), at = -1;
+      d.plays.forEach(function (p, k) { if (p.card === c) at = k; });
+      if (at >= 0) { d.plays[at].card = null; d.plays[at].boost = false; } // tap a played card to take it back
+      else { var free = d.plays.filter(function (p) { return !p.card; })[0]; if (free) free.card = c; }
+      d.dirty = true;
+    } else if (name === "ldSlot") { d.plays[i].card = null; d.plays[i].boost = false; d.dirty = true; }
+    else if (name === "ldBoost") { d.plays[i].boost = !d.plays[i].boost; d.dirty = true; }
+    else if (name === "ldSeal") {
+      if (ui.busy) return;
+      ui.busy = true;
+      api("POST", "/api/night/seal", { plays: d.plays }).then(function (v) { ui.night = v; d.dirty = false; if (hall && hall.night) hall.night.opened = true; drawLadder(); toast("Sealed."); })
+        .catch(function (err) { toast(err.message); }).then(function () { ui.busy = false; });
+      return;
+    } else if (name === "ldSeen") {
+      api("POST", "/api/night/stage-seen", {}).then(function (v) { ui.night = v; drawLadder(); window.scrollTo(0, 0); }).catch(function (err) { toast(err.message); });
+      return;
+    }
+    drawLadder();
+  }
+
+  // The end of The Ladder, shown once: the whole ladder, the prizes, and who is out.
+  function drawLadderEnd() {
+    var box = $("vr"), n = ui.night, res = n.result;
+    var mine = n.table.filter(function (r) { return r.n === n.you; })[0];
+    var place = n.table.indexOf(mine) + 1;
+    if (!ui.vstep) {
+      box.innerHTML = '<div class="v-gate"><p class="say big">Game ' + n.n + ' is over.<br>The last cards are turned.</p><button type="button" class="btn narrow" data-act="vNext">Show me</button></div>';
+      return;
+    }
+    var out = res.out === n.you;
+    box.innerHTML = '<div class="s-card now"><i>Game ' + n.n + " · The Ladder · final</i>" + (mine ? "<h2>You finished " + place + ORD(place) + " with " + (mine.pts > 0 ? "+" : "") + mine.pts + "</h2>" : "") + ladderTableHTML(n, true) + "</div>" +
+      '<div class="s-card next v-outcard"><i>Out</i><img class="v-stamp" src="/art/night1/stamp-out.webp" alt="Out"><h2>' + (res.out == null ? "The GM will decide" : out ? "You are out" : "Player " + res.out + " is out") + "</h2>" +
+      (res.out != null ? '<img class="v-car" src="/art/night1/out-car.webp" alt="A car waiting at the gate">' : "") + "<p>" + (res.last.length > 1 ? "Level on points at the bottom. The duels between those players decided it." : "The fewest points on the ladder.") + "</p></div>" +
+      '<button type="button" class="btn" data-act="vDone">Continue</button>';
+  }
+  function ORD(k) { return k === 1 ? "st" : k === 2 ? "nd" : k === 3 ? "rd" : "th"; }
+
   // ----- the night's match: Six Vaults -----
 
   var THROW = { r: "Rock", p: "Paper", s: "Scissors" };
@@ -2999,6 +3165,7 @@
   }
 
   function vbTiles(n) {
+    if (n.game === "ladder") return ladderTiles(n);
     var r = n.rules;
     var gold = r.amounts.join(", ").replace(/, ([^,]*)$/, " and $1");
     var prizes = r.prizes.join(", ").replace(/, ([^,]*)$/, " and $1");
@@ -3042,7 +3209,7 @@
     if (!n || !$("vb-pic")) return;
     var tiles = vbTiles(n);
     var i = Math.min(ui.vb || 0, tiles.length - 1);
-    $("vb-kicker").innerHTML = '<span class="vb-who">' + AV.draw(STAFF.arena.look, { ring: "#EFE8D6", ringWidth: 3, label: "Attendant" }) + "</span>Game " + n.n + " · Six Vaults · " + (i + 1) + " of " + tiles.length;
+    $("vb-kicker").innerHTML = '<span class="vb-who">' + AV.draw(STAFF.arena.look, { ring: "#EFE8D6", ringWidth: 3, label: "Attendant" }) + "</span>Game " + n.n + " · " + gameName() + " · " + (i + 1) + " of " + tiles.length;
     $("vb-pic").innerHTML = tiles[i].pic;
     $("vb-line").textContent = tiles[i].line;
     $("vb-dots").innerHTML = tiles.map(function (t, k) { return '<i class="' + (k === i ? "on" : k < i ? "done" : "") + '"></i>'; }).join("");
@@ -3055,6 +3222,7 @@
     var n = ui.night;
     if (!box || !n) return;
     if (!n.on) return drawSched();
+    if (n.game === "ladder") return drawLadder();
     var out = "";
     if (n.status === "done") {
       out = resultHTML(n);
@@ -3150,6 +3318,7 @@
     var n = ui.night;
     if (!box) return;
     if (!n || !n.on || n.status !== "done") return go("hall");
+    if (n.game === "ladder") return drawLadderEnd();
     var res = n.result;
     var step = ui.vstep;
     var mine = res.gold[n.you];
@@ -3644,6 +3813,7 @@
       }
     }
     else if (name === "vbAgain") go("vbrief");
+    else if (name.indexOf("ld") === 0) ladderAct(name, el);
     else if (name === "vNext") { ui.vstep += 1; drawVReveal(); }
     else if (name === "vDone") {
       api("POST", "/api/night/seen", {}).catch(function () {}).then(function () { hall = null; go("hall"); });
@@ -3864,7 +4034,7 @@
       puzzle: { solved: !!d.pz.solved, left: 3 - d.pz.tries, reward: 1 },
       needsCommit: !d.committed && !query.get("committed"),
       out: d.resigned ? -1 : d.night && d.night.result && d.night.result.out === me.number ? 1 : 0,
-      night: d.night ? { n: 1, game: "vaults", status: d.night.status, endsAt: d.night.endsAt, opened: !!d.night.opened, unseen: d.night.status === "done" && !d.night.seen } : null,
+      night: d.night ? { n: 1, game: d.night.game || "vaults", stage: d.night.stage, status: d.night.status, endsAt: d.night.endsAt, opened: d.night.game === "ladder" ? !!d.night.sealed : !!d.night.opened, unseen: d.night.status === "done" && !d.night.seen } : null,
     };
   }
 
@@ -4008,11 +4178,69 @@
     d.extra += prize[me.number] || 0;
   }
 
+  // ----- the preview's Ladder: fifteen other players who play their cards at random -----
+  function demoLadderStart() {
+    var d = demoHallStore();
+    d.seats.forEach(function (s) { if (!s.avatar) s.avatar = { s: s.number % 6, h: (s.number * 3) % 20, c: s.number % 6, g: 0, b: s.number % 5, m: 0, o: s.number % 9 }; });
+    var players = d.seats.map(function (s) { return s.number; });
+    d.night = { game: "ladder", status: "open", endsAt: new Date(Date.now() + 47 * 60000).toISOString(), stage: 1, players: players, sealed: null, seenStage: 0, duels: [], used: {}, boosts: 0, seen: false, result: null };
+    players.forEach(function (n) { d.night.used[n] = []; });
+  }
+
+  // The GM closes the stage: every card sealed for it is turned, and the next stage opens.
+  function demoLadderClose() {
+    var d = demoHallStore(), nt = d.night;
+    if (!nt || nt.status !== "open") return;
+    var per = LADDER.RULES.perStage, mine = {}, picked = {};
+    (nt.sealed || []).forEach(function (p) { mine[p.opp] = p; });
+    function play(n, opp) {
+      var hand = LADDER.CARDS.filter(function (c) { return nt.used[n].indexOf(c) < 0 && (picked[n] || []).indexOf(c) < 0; });
+      var card, boost = 0, p = mine[opp];
+      if (n === me.number) { card = p && p.card && hand.indexOf(p.card) >= 0 ? p.card : LADDER.lowest(hand, 1)[0]; boost = p && p.boost ? 1 : 0; }
+      else card = hand[Math.floor(Math.random() * hand.length)];
+      (picked[n] = picked[n] || []).push(card);
+      if (boost) { nt.boosts += 1; d.extra -= 1; }
+      return [card, boost];
+    }
+    LADDER.rounds(nt.players).slice((nt.stage - 1) * per, nt.stage * per).forEach(function (pairs) {
+      pairs.forEach(function (pr) { var a = play(pr[0], pr[1]), b = play(pr[1], pr[0]); nt.duels.push({ stage: nt.stage, a: pr[0], b: pr[1], ca: a[0], cb: b[0], ba: a[1], bb: b[1] }); });
+    });
+    Object.keys(picked).forEach(function (n) { nt.used[n] = nt.used[n].concat(picked[n]); });
+    nt.sealed = null;
+    if (nt.stage >= LADDER.stageCount(nt.players)) {
+      var tab = LADDER.table(nt.players, nt.duels), lp = LADDER.lastPlace(nt.players, nt.duels), prizes = {};
+      LADDER.RULES.prizes.forEach(function (p, i) { if (tab[i]) prizes[tab[i].n] = p; });
+      nt.status = "done";
+      nt.result = { out: lp.out != null ? lp.out : lp.last[lp.last.length - 1], last: lp.last, prizes: prizes };
+    } else nt.stage += 1;
+  }
+
+  function demoLadderView(d, coins) {
+    var nt = d.night, you = me.number, results = [], stages = LADDER.stageCount(nt.players);
+    for (var s = 1; s <= stages; s++) {
+      var ds = nt.duels.filter(function (x) { return x.stage === s && (x.a === you || x.b === you); });
+      if (ds.length) results.push({ stage: s, duels: ds.map(function (x) {
+        var am = x.a === you, r = LADDER.duel(x.ca, x.ba, x.cb, x.bb);
+        return { opp: am ? x.b : x.a, mine: am ? x.ca : x.cb, theirs: am ? x.cb : x.ca, mb: am ? x.ba : x.bb, tb: am ? x.bb : x.ba, r: am ? r : -r };
+      }) });
+    }
+    return { on: true, game: "ladder", n: 1, status: nt.status, you: you, playing: true, out: 0, endsAt: nt.endsAt, stage: nt.stage, stages: stages,
+      opponents: LADDER.stagesFor(nt.players, you), hand: LADDER.CARDS.filter(function (c) { return nt.used[you].indexOf(c) < 0; }), sealed: nt.sealed,
+      boostsLeft: LADDER.RULES.boosts - nt.boosts, coins: coins, used: nt.used, results: results, seenStage: nt.seenStage,
+      table: LADDER.table(nt.players, nt.duels), rules: LADDER.RULES, result: nt.result };
+  }
+
   function demoNight(method, path, body) {
     var d = demoHallStore();
     var nt = d.night;
     var coins = me.phase === "revealed" ? me.coins + d.extra : null;
     if (!nt) return { on: false, rules: DEMO_RULES, coins: coins, out: 0 };
+    if (nt.game === "ladder") {
+      if (path === "/api/night/seal") nt.sealed = body.plays.map(function (p) { return { opp: p.opp, card: p.card, boost: !!p.boost }; });
+      if (path === "/api/night/stage-seen") nt.seenStage = nt.duels.length ? nt.duels[nt.duels.length - 1].stage : 0;
+      if (path === "/api/night/seen") nt.seen = true;
+      return demoLadderView(d, coins);
+    }
     if (path === "/api/night/buy" && !nt.bought) { nt.bought = "Exactly two of Vaults 2, 3 and 6 are empty."; d.extra -= 1; coins -= 1; }
     if (path === "/api/night/open" && !nt.opened) { nt.opened = body.vaults.slice().sort(function (x, y) { return x - y; }); nt.throws = body.throws; }
     if (path === "/api/night/seen") nt.seen = true;
@@ -4101,8 +4329,9 @@
           ds.notices.push({ id: ds.notices.length + 1, kind: "solved", n: solver, at: Date.now(), today: true });
           return loadHall().then(function () { refreshStage(); if (!stage) showNotice(); });
         },
-        startNight: function () { demoNightStart(); if (stage) setMenu(false); return loadHall().then(function () { if (stage) refreshStage(); else if (nightCall()) go("gamecall"); }); },
-        endNight: function () { if (!demoHallStore().night) return false; demoNightEnd(); if (stage) setMenu(false); return loadHall().then(function () { if (stage) refreshStage(); else go("hall"); }); },
+        startNight: function (game) { if (game === "vaults") demoNightStart(); else demoLadderStart(); ui.night = null; ui.ld = null; if (stage) setMenu(false); return loadHall().then(function () { if (stage) refreshStage(); else if (nightCall()) go("gamecall"); }); },
+        // The Ladder: each press closes one stage. Six Vaults: the vaults close.
+        endNight: function () { var dn = demoHallStore().night; if (!dn) return false; if (dn.game === "ladder") { demoLadderClose(); if (currentScene() === "arena") { ui.ld = null; return fetchNight().then(function (v) { if (v.status === "done") return loadHall().then(function () { go("vreveal"); }); drawLadder(); window.scrollTo(0, 0); }); } } else demoNightEnd(); if (stage) setMenu(false); return loadHall().then(function () { if (stage) refreshStage(); else go("hall"); }); },
       };
       if (query.get("with")) ui.withN = parseInt(query.get("with"), 10) || 0;
       if (query.get("tab")) ui.tab = query.get("tab");
