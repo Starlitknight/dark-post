@@ -835,7 +835,8 @@
           '<div class="hud-top">' +
           '<div class="hud-chips"><div class="hud-brand">' + ART.wordmark() + '</div><span class="chip gold">Player ' + esc(me.number) + '</span>' + walletMarkup("top-coins") + '<span class="chip here" id="top-room"></span><span class="hud-break"></span>' +
           '<button type="button" class="chip online" id="top-online" data-act="online" aria-haspopup="dialog" aria-expanded="false"><i></i><span id="top-online-n"></span></button>' +
-          '<span class="chip clock" id="top-clock" title="Game time. Every time in the game is on this clock."></span></div>' +
+          '<span class="chip clock" id="top-clock" title="Game time. Every time in the game is on this clock."></span>' +
+          '<span class="hud-break"></span><button type="button" class="chip stage" id="top-stage" data-act="stageGo" hidden></button></div>' +
           '<button type="button" class="now" id="now" data-act="go" data-scene="tonight" aria-label="The current stage, and what is next">' +
           '<span class="now-row"><i>Current</i><b id="now-a"></b></span>' +
           '<span class="now-row"><i>Next</i><b id="now-b"></b><em id="now-t"></em></span>' +
@@ -1945,6 +1946,19 @@
     if (count) count.textContent = s.count;
     var ck = $("top-clock");
     if (ck) { var t = gameTime(); if (ck.textContent !== t) ck.textContent = t; }
+    // the stage of The Ladder that is open: when it closes, and what this player should do about it
+    var st = $("top-stage");
+    if (st) {
+      var ng = hall && hall.night, line = "";
+      if (ng && ng.game === "ladder" && ng.status === "open") {
+        var endAt = ng.endsAt ? new Date(ng.endsAt).getTime() : NaN, leftMs = endAt - Date.now();
+        var when = isNaN(endAt) ? "Stage " + ng.stage + " is open" : leftMs > 0 ? "Stage " + ng.stage + " closes in " + span(leftMs) : "Stage " + ng.stage + " is closing";
+        var doIt = hall.out ? "" : ng.opened ? "You have submitted" : stage && stage.room === "arena" ? "Play your cards at the yellow symbol" : "Go to the arena and play your cards";
+        line = "<b>" + esc(when) + "</b>" + (doIt ? "<span>" + esc(doIt) + "</span>" : "");
+        st.className = "chip stage" + (ng.opened || hall.out ? " done" : !isNaN(endAt) && leftMs < 3600000 ? " soon" : "");
+      }
+      if (st.getAttribute("data-line") !== line) { st.setAttribute("data-line", line); st.innerHTML = line; st.hidden = !line; }
+    }
     var wall = $("world-clock");
     // The wall says what is happening now. Once the bags are open it counts down to the next round.
     if (wall) {
@@ -4058,6 +4072,11 @@
     else if (name === "commitAsk" || name === "commitBack") { ui.resignAsk = name === "commitAsk"; drawCommit(); }
     else if (name === "commitResign") sendCommit(false);
     else if (name === "gmTalk") go("study");
+    else if (name === "stageGo") {
+      // after the first walk to the table the bar goes straight there; before that it only says where to walk
+      if (hall && hall.night && (hall.night.opened || heard("table" + hall.night.n))) go("arena");
+      else toast("Walk to the arena. Its door is at the top of the hall.");
+    }
     else if (name === "npc") { if (stage && STAFF[stage.room]) openTalk(stage.room); }
     else if (name === "talkClose") closeTalk();
     else if (name === "introNext") { ui.intro = 1; if (stage) drawTalk(stage.room); }

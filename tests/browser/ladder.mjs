@@ -71,6 +71,10 @@ t = await text(guest);
 ok("every screen announces Game 1: The Ladder", (await sceneOf()) === "gamecall" && t.includes("The Ladder") && t.includes("Make your way to the arena"));
 await shot(guest, "call");
 await click('[data-act="callDone"]'); await sleep(6500);
+await call("POST", "/api/host/night/ends", { endsAt: new Date(Date.now() + 5 * 3600000).toISOString() }, host); await sleep(2500);
+t = await guest.$eval("#top-stage", (el) => (el.hidden ? "" : el.innerText.replace(/\s+/g, " ")));
+ok("the top bar counts down to the stage closing and sends the player to the arena", /stage 1 closes in 04:59:\d\d/i.test(t) && /go to the arena and play your cards/i.test(t));
+await shot(guest, "top-bar");
 ok("the arena shows the cards, not the covered set", (await walk("arena", "The arena")) && (await guest.$eval("#world .map-art image", (el) => el.getAttribute("href"))) === "/art/rooms/arena-ladder.webp");
 await sleep(800);
 ok("the attendant offers the rules", (await guest.$eval("#npc-talk", (el) => el.innerText)).includes("Welcome to Game 1: The Ladder"));
@@ -94,6 +98,10 @@ await click('.ld-boost[data-i="0"]');
 await into(guest, ".ld-board"); await shot(guest, "stage1-laid");
 await into(guest, ".ld-hand"); await shot(guest, "stage1-hand");
 await click('[data-act="ldAsk"]'); await click('[data-act="ldSeal"]'); await sleep(900);
+await guest.evaluate(() => { const b = Array.from(document.querySelectorAll("#app button, #app a")).find((x) => /back/i.test(x.textContent) && x.offsetParent !== null); if (b) b.click(); }); await sleep(2500);
+ok("once submitted, the top bar says so", /you have submitted/i.test(await guest.$eval("#top-stage", (el) => el.innerText)));
+await shot(guest, "top-bar-done");
+await click("#top-stage"); await sleep(1800);
 ok("the cards are sealed and the boost cost one coin", (await guest.$(".ld-sealed")) !== null && (await coinsOf(0)) === before - 1);
 
 // the others play by API: random cards they still hold
