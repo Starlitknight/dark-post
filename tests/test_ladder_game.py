@@ -195,7 +195,7 @@ hb = call("GET", "/api/host/activity", cookies=host)[1]["night"]["bets"]
 act = call("GET", "/api/host/activity", cookies=host)[1]["active"]
 rank = [x["n"] for x in act]
 check("the GM gets every player ranked by activity, the absent one last", len(act) == 16 and rank[-1] == 16 and act[-1]["stages"] == 0 and act[0]["score"] >= act[5]["score"] >= act[-1]["score"] and [x for x in act if x["n"] == 1][0]["stages"] == 5 and [x for x in act if x["n"] == 1][0]["bet"] == 1)
-check("no player is sent the ranking", '"active"' not in json.dumps(hall(A)) and '"score"' not in json.dumps(night(A)))
+check("no player is sent the ranking", "active" not in hall(A) and "active" not in night(A) and '"partners"' not in json.dumps([hall(A), night(A)]) and call("GET", "/api/host/activity", cookies=seat(A))[0] == 401)
 check("the GM sees every bet", [(b["number"], b["score"], b["stake"], b["mult"]) for b in hb] == [(1, -2, 2, 5), (2, 4, 1, 4), (3, pts3 - 9, 3, 3)])
 res = v["result"]
 table = v["table"]
