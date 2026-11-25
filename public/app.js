@@ -1669,9 +1669,11 @@
       if (!n) return { text: "The GM is preparing the next game, so this area is closed right now, but feel free to explore." };
       if (n.status !== "open") return { text: "Game " + n.n + " is over. The result is " + (isLadder() ? "on the table." : "at the vaults."), go: ["arena", "See the result"] };
       if (isLadder()) {
-        if (!briefed()) return { text: "Welcome to Game " + n.n + ": The Ladder. Let me show you how it is played.", act: ["introRules", "Show me the rules"], solo: true };
+        if (!briefed()) return shortRules(n)
+          ? { text: "Three things have been added to the rules of Game " + n.n + ". Let me show you. It is quick.", act: ["introRules", "Show me"], solo: true }
+          : { text: "Welcome to Game " + n.n + ": The Ladder. Let me show you how it is played.", act: ["introRules", "Show me the rules"], solo: true };
         if (hall.out) return { text: "Game " + n.n + " is being played at the table.", act: ["introRules", "Show me the rules"] };
-        return { text: n.opened ? "Your cards for this stage are sealed. The stage closes as soon as everyone has sealed." : "The table is open. Walk to the yellow symbol and play your three cards.", act: ["introRules", "The rules again"] };
+        return { text: n.opened ? "Your cards for this stage are submitted. The stage closes as soon as everyone has submitted." : "The table is open. Walk to the yellow symbol and play your three cards.", act: ["introRules", "The rules again"] };
       }
       // first visit: welcome, then the vaults, then the rules. Nothing else is offered until the rules are seen.
       if (!briefed()) {
@@ -1837,7 +1839,7 @@
         next: isLadder() ? "Stage " + (night.stage || 1) + " closes" : "The vaults close",
         at: ends,
         count: isNaN(ends) ? "When the GM says" : togo <= 0 ? "Any moment" : span(togo),
-        todo: hall.out ? outLine(hall.out) : isLadder() ? (night.opened ? "Your cards for this stage are sealed. Wait for the stage to close." : "Play your three cards at the table in the arena.") : night.opened ? "Your two vaults are sealed. Wait for the night to end." : "Collect clues. Then open two vaults in the arena.",
+        todo: hall.out ? outLine(hall.out) : isLadder() ? (night.opened ? "Your cards for this stage are submitted. Wait for the stage to close." : "Play your three cards at the table in the arena.") : night.opened ? "Your two vaults are sealed. Wait for the night to end." : "Collect clues. Then open two vaults in the arena.",
       };
     }
     var revealed = hall.phase === "revealed";
@@ -2158,7 +2160,7 @@
     return '<div class="menu-sheet" role="dialog" aria-modal="true" aria-labelledby="menu-heading">' +
       '<div class="menu-head"><h2 id="menu-heading">Menu</h2>' + walletMarkup() +
       '<button type="button" class="menu-close" data-act="menuClose" aria-label="Close menu">×</button></div>' +
-      (hall.night ? '<button type="button" class="menu-night" data-act="go" data-scene="tonight"><span><i>' + (hall.night.status === "open" ? "Being played now" : "Finished") + "</i><b>Game " + hall.night.n + " · " + gameName() + "</b></span><small>" + (hall.night.status === "open" ? (isLadder() ? (hall.night.opened ? "Your cards are sealed" : "The ladder and the rules") : hall.night.opened ? "Your vaults are sealed" : "Your clue and the rules") : "See the result") + "</small></button>" : "") +
+      (hall.night ? '<button type="button" class="menu-night" data-act="go" data-scene="tonight"><span><i>' + (hall.night.status === "open" ? "Being played now" : "Finished") + "</i><b>Game " + hall.night.n + " · " + gameName() + "</b></span><small>" + (hall.night.status === "open" ? (isLadder() ? (hall.night.opened ? "Your cards are submitted" : "The ladder and the rules") : hall.night.opened ? "Your vaults are sealed" : "Your clue and the rules") : "See the result") + "</small></button>" : "") +
       menuNowHTML() +
       '<div class="menu-grid">' +
       '<button type="button" class="menu-tile wide" data-act="go" data-scene="board"><span class="menu-icon">' + ICON.board + "</span><b>GM notices</b><small>" + (gmTotal ? plural(gmTotal, "notice", "notices") + ", old and new" : "Nothing posted yet") + "</small>" + badge(u.board) + "</button>" +
@@ -2951,7 +2953,12 @@
   }
 
   // The rules of The Ladder, one picture to a screen. The pictures are made of the same cards the game is played with.
-  function ladderTiles(n) {
+  // A player who was given the first set of rules is shown only what was added to them.
+  function shortRules(n) { return !!n && heard("vb" + n.n) && !heard("vbB" + n.n); }
+
+  function ladderTiles(n) { var all = ladderTilesAll(n); return shortRules(n) ? all.slice(-3) : all; }
+
+  function ladderTilesAll(n) {
     var r = n.rules, pr = r.prizes.join(", ").replace(/, ([^,]*)$/, " and $1");
     function pic(inner, cls) { return '<div class="vb-draw' + (cls ? " " + cls : "") + '">' + inner + "</div>"; }
     function versus(a, b, ra, rb, oa, ob) {
@@ -2972,7 +2979,7 @@
       { line: "There are five stages. Each stage you play three opponents.", pic: pic('<div class="stages">' + faces + "</div>") },
       { line: "The three highest scores win " + pr + " coins. The lowest ranked player is eliminated.", pic: '<img class="vb-art" src="/art/night1/brief-8.webp" alt="A podium with three coins">' + pic('<div class="elim"><span class="rung-face">' + faceHTML(n.you) + '</span><b>Last place</b><img src="/art/night1/stamp-out.webp" alt="Out"></div>', "elim-wrap") },
       { line: "To play your cards, walk to the yellow symbol in the arena.", pic: pic('<div class="walkto"><span class="walk-me">' + faceHTML(n.you) + '</span><i class="walk-arrow"></i><span class="walk-mark"></span></div><div class="walk-cap">The yellow symbol, in front of the cards</div>') },
-      { line: "A tip: talk to your opponents before you seal. You can strike deals with them. They may keep their word. They may not.", pic: pic('<div class="talkto"><span class="rung-face">' + faceHTML(n.you) + '</span><span class="bubble">I play low, you play low?</span><span class="bubble right">Deal.</span><span class="rung-face">' + faceHTML((n.opponents && n.opponents[0] && n.opponents[0][0]) || (n.you % 16) + 1) + "</span></div>") },
+      { line: "A tip: talk to your opponents before you submit. You can strike deals with them. They may keep their word. They may not.", pic: pic('<div class="talkto"><span class="rung-face">' + faceHTML(n.you) + '</span><span class="bubble">I play low, you play low?</span><span class="bubble right">Deal.</span><span class="rung-face">' + faceHTML((n.opponents && n.opponents[0] && n.opponents[0][0]) || (n.you % 16) + 1) + "</span></div>") },
     ];
   }
 
@@ -3020,6 +3027,11 @@
       var last = n.results[n.results.length - 1];
       var count = n.endsAt ? '<i>This stage closes in</i><b class="s-count small" id="v-count">' + span(Math.max(0, new Date(n.endsAt).getTime() - Date.now())) + "</b>" : "<p>The GM closes each stage.</p>";
       out += '<div class="s-card now"><i>Game ' + n.n + " · The Ladder</i><h2>Stage " + n.stage + " of " + n.stages + "</h2>" + count + "</div>";
+      var subs = n.submitted || [], all = (n.table || []).map(function (r) { return r.n; }).sort(function (a, b) { return a - b; });
+      if (all.length) out += '<div class="s-card ld-subs"><i>Submitted · ' + subs.length + " of " + all.length + '</i><div class="subs">' + all.map(function (k) {
+        var done = subs.indexOf(k) >= 0;
+        return '<span class="sub' + (done ? " done" : "") + '" title="Player ' + k + (done ? " has submitted" : " has not submitted yet") + '"><span class="sub-face">' + faceHTML(k) + "</span><b>" + k + "</b>" + (done ? "<em>✓</em>" : "") + "</span>";
+      }).join("") + '</div><p class="subs-cap">' + (subs.length === all.length ? "Everyone has submitted." : "A tick means that player has submitted. The cards are turned when everyone has.") + "</p></div>";
       // what happened in the stage that just closed, shown once before the next cards are laid
       if (last && n.seenStage < last.stage) {
         var net = last.duels.reduce(function (s, d) { return s + d.r; }, 0);
@@ -3042,8 +3054,8 @@
           return '<button type="button" class="ld-card' + (down ? " placed" : "") + '" data-act="ldCard" data-c="' + c + '"' + (gone ? " disabled" : "") + ">" + cardHTML(c, { dim: gone }) + "</button>";
         }).join("") + "</div>" +
           '<p class="ld-boosts">Boosts left: <b>' + (n.boostsLeft - boostsUsed) + " of " + n.rules.boosts + "</b></p>" +
-          (sealed ? '<p class="ld-sealed">Sealed. The cards are turned as soon as every player has sealed.</p>'
-            : '<button type="button" class="btn" data-act="ldSeal"' + (placed === d.plays.length ? "" : " disabled") + ">" + (placed === d.plays.length ? "Seal these " + (placed === 3 ? "three" : placed) + " cards" : "Play a card against each opponent") + "</button>") + "</div>";
+          (sealed ? '<p class="ld-sealed">Submitted. The cards are turned as soon as every player has submitted.</p>'
+            : '<button type="button" class="btn" data-act="ldSeal"' + (placed === d.plays.length ? "" : " disabled") + ">" + (placed === d.plays.length ? "Submit these " + (placed === 3 ? "three" : placed) + " cards" : "Play a card against each opponent") + "</button>") + "</div>";
       }
       out += '<div class="s-card"><i>The ladder' + (n.results.length ? " after stage " + n.results[n.results.length - 1].stage : "") + "</i>" + ladderTableHTML(n, false) + "</div>";
       out += '<div class="s-card"><button type="button" class="link" data-act="vbAgain">The rules again</button></div>';
@@ -3068,7 +3080,7 @@
     else if (name === "ldSeal") {
       if (ui.busy) return;
       ui.busy = true;
-      api("POST", "/api/night/seal", { plays: d.plays }).then(function (v) { ui.night = v; d.dirty = false; var moved = v.status !== "open" || v.stage !== n.stage; if (hall && hall.night) hall.night.opened = !moved; drawLadder(); toast(moved ? "Everyone has sealed. The cards are turned." : "Sealed."); if (moved) news(); })
+      api("POST", "/api/night/seal", { plays: d.plays }).then(function (v) { ui.night = v; d.dirty = false; var moved = v.status !== "open" || v.stage !== n.stage; if (hall && hall.night) hall.night.opened = !moved; drawLadder(); toast(moved ? "Everyone has submitted. The cards are turned." : "Submitted."); if (moved) news(); })
         .catch(function (err) { toast(err.message); }).then(function () { ui.busy = false; });
       return;
     } else if (name === "ldSeen") {
@@ -3216,7 +3228,7 @@
 
   // What the play screen was last drawn for: the game's status and, in The Ladder, its stage.
   // Kept apart from the hall's own copy, which other parts of the page refresh too.
-  function matchMark() { return hall && hall.night ? hall.night.status + ":" + (hall.night.stage || 0) : ""; }
+  function matchMark() { return hall && hall.night ? hall.night.status + ":" + (hall.night.stage || 0) + ":" + (hall.night.subs || 0) : ""; }
 
   function mountMatch(canAct) {
     ui.matchAct = canAct;

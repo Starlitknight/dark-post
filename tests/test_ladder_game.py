@@ -94,6 +94,7 @@ status, body, _ = seal(A, [{"opp": o[0], "card": "9"}, {"opp": o[1], "card": "K"
 check("the cards can be laid again, and taking the boost off returns the coin", status == 200 and coins(A) == before)
 seal(A, [{"opp": o[0], "card": "9", "boost": True}, {"opp": o[1], "card": "K"}, {"opp": o[2], "card": "4"}])
 check("nobody else is shown a sealed card", night(by[o[0]])["used"]["1"] == [] and night(by[o[0]])["sealed"] is None and night(by[o[0]])["results"] == [])
+check("everyone can see who has submitted, and only that", night(by[o[0]])["submitted"] == [1] and hall(by[o[0]])["night"]["subs"] == 1)
 hv = call("GET", "/api/host/activity", cookies=host)[1]["night"]
 check("the GM sees who has sealed", hv["sealed"] == [1] and hv["stage"] == 1)
 ch = {c["n"]: c for c in hv["choices"]}

@@ -1345,6 +1345,11 @@ export class Game extends DurableObject {
     return rows.length ? JSON.parse(rows[0].plays) : null;
   }
 
+  ladderSubmitted(night) {
+    const rows = this.sql.exec(`SELECT number FROM ladder_seals WHERE stage = ?`, night.stage).toArray().map((r) => r.number);
+    return night.players.filter((n) => rows.includes(n));
+  }
+
   ladderPlayer(n) {
     const rows = this.sql.exec(`SELECT * FROM ladder_players WHERE number = ?`, n).toArray();
     return rows.length ? rows[0] : null;
@@ -1359,6 +1364,8 @@ export class Game extends DurableObject {
       endsAt: night.endsAt || "",
       stage: night.stage,
       opened: night.status === "open" && !!row && !!this.ladderSealOf(inv.number, night.stage),
+      // how many have submitted this stage: the play screen redraws when it changes
+      subs: night.status === "open" ? this.ladderSubmitted(night).length : 0,
       unseen: night.status === "done" && !!row && !row.seen,
     };
   }
@@ -1407,6 +1414,8 @@ export class Game extends DurableObject {
       purse: (coins || 0) + held,
       used,
       results,
+      // who has submitted cards for this stage. Everyone may see who; nobody is shown which cards.
+      submitted: night.status === "open" ? this.ladderSubmitted(night) : [],
       seenStage: playing ? row.seen_stage : night.stage,
       table: LADDER.table(players, duels),
       rules: LADDER.RULES,

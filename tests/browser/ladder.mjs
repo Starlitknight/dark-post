@@ -106,7 +106,12 @@ const playOthers = async (stage) => {
     if (r.status !== 200) problems.push("seat " + i + " could not seal stage " + stage + ": " + r.error);
   }
 };
+ok("the player sees who has submitted: only themselves so far", (await guest.$eval(".ld-subs", (el) => el.innerText)).toLowerCase().includes("submitted · 1 of 16") && (await guest.$$(".sub.done")).length === 1);
+await into(guest, ".ld-subs"); await shot(guest, "submitted");
 await playOthers(1);
+for (let i = 0; i < 40 && (await guest.$$(".sub.done")).length < 15; i++) await sleep(250);
+ok("and the ticks fill in as the others submit", (await guest.$$(".sub.done")).length === 15);
+await shot(guest, "submitted-15");
 await hostPage.reload({ waitUntil: "networkidle0" }); await sleep(1200);
 t = await hostPage.$eval("#night-box", (el) => el.innerText);
 ok("the GM sees fifteen sealed and who has not", t.includes("15 of 16 players have sealed") && t.includes("Not yet: Player " + numbers[ABSENT]));
