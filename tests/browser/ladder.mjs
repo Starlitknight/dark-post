@@ -111,6 +111,9 @@ await hostPage.reload({ waitUntil: "networkidle0" }); await sleep(1200);
 t = await hostPage.$eval("#night-box", (el) => el.innerText);
 ok("the GM sees fifteen sealed and who has not", t.includes("15 of 16 players have sealed") && t.includes("Not yet: Player " + numbers[ABSENT]));
 await into(hostPage, "#night-panel"); await shot(hostPage, "gm-stage1");
+t = await hostPage.$eval("#night-box", (el) => el.innerText);
+ok("the GM sees every player's sealed cards and last-online time in Eastern time", (await hostPage.$$(".choice")).length === 16 && /9 \+2 vs P\d+ · K vs P\d+ · 4 vs P\d+/.test(t) && t.includes("Nothing sealed yet") && /Last online: \w+ \d+, \d+:\d\d [AP]M ET/.test(t));
+await into(hostPage, ".choices-h"); await shot(hostPage, "gm-choices");
 await hostPage.$eval('[data-night="stage"]', (el) => el.click()); await sleep(2000);
 ok("the GM closes stage 1 and stage 2 opens", (await hostPage.$eval("#night-box", (el) => el.innerText)).includes("Stage 2 of 5 is open"));
 

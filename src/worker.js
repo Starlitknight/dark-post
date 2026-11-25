@@ -1557,6 +1557,21 @@ export class Game extends DurableObject {
       sealed: night.status === "open" ? night.players.filter((n) => !!this.ladderSealOf(n, night.stage)) : [],
       table: LADDER.table(night.players, duels),
       bets: this.sql.exec(`SELECT number, score, stake, stage, mult, paid FROM ladder_bets ORDER BY number`).toArray(),
+      // For the GM alone: every card each player has sealed or played, and when they were last in the estate.
+      // This is sent only on the host's own routes, never to a player.
+      choices: (() => {
+        const seen = new Map(this.sql.exec(`SELECT number, at FROM places`).toArray().map((r) => [r.number, r.at]));
+        return night.players.map((n) => ({
+          n,
+          seen: seen.get(n) || 0,
+          sealed: night.status === "open" ? this.ladderSealOf(n, night.stage) : null,
+          played: duels.filter((d) => d.a === n || d.b === n).map((d) => {
+            const am = d.a === n;
+            const r = LADDER.duel(d.ca, d.ba, d.cb, d.bb);
+            return { stage: d.stage, opp: am ? d.b : d.a, card: am ? d.ca : d.cb, boost: am ? d.ba : d.bb, r: am ? r : -r };
+          }),
+        }));
+      })(),
       result: this.nightResult(),
     };
   }

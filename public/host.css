@@ -195,3 +195,8 @@ body.host { display: block; }
 .address-line b { color: #fff; font-weight: 700; user-select: all; }
 #wrong-words { color: #FF8A7A; }
 .host .puzzle-hold { align-items: center; gap: 14px; margin: 14px 0 18px; }
+
+.choices-h { margin: 22px 0 8px; font-size: 15px; }
+.choice { border: 1px solid #333; border-radius: 6px; padding: 9px 11px; margin: 0 0 8px; font-size: 14px; line-height: 1.5; }
+.choice-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 3px; }
+.choice-top span { color: #c9a85a; }

@@ -96,6 +96,10 @@ seal(A, [{"opp": o[0], "card": "9", "boost": True}, {"opp": o[1], "card": "K"}, 
 check("nobody else is shown a sealed card", night(by[o[0]])["used"]["1"] == [] and night(by[o[0]])["sealed"] is None and night(by[o[0]])["results"] == [])
 hv = call("GET", "/api/host/activity", cookies=host)[1]["night"]
 check("the GM sees who has sealed", hv["sealed"] == [1] and hv["stage"] == 1)
+ch = {c["n"]: c for c in hv["choices"]}
+check("the GM sees the cards a player has sealed, and when each player was last online", [(p["opp"], p["card"], p["boost"]) for p in ch[1]["sealed"]] == [(o[0], "9", 1), (o[1], "K", 0), (o[2], "4", 0)] and ch[2]["sealed"] is None and len(ch) == 16 and all("seen" in c for c in ch.values()))
+leak = json.dumps([night(by[o[0]]), hall(by[o[0]]), betv(by[o[0]])])
+check("no player is sent anyone's sealed cards or the GM's list", '"choices"' not in leak and '"sealed": [' not in leak and call("GET", "/api/host/activity", cookies=seat(by[o[0]]))[0] == 401)
 
 if len(sys.argv) > 2 and sys.argv[2] == "keep":
     print("left open at stage 1"); sys.exit(0)

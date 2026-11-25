@@ -637,6 +637,23 @@
           (n.status === "open" ? (n.sealed.indexOf(row.n) >= 0 ? "Sealed" : "Not yet") : prizes[row.n] ? "+" + prizes[row.n] + " coins" : "") + "</td><td>" +
           (function () { var b = (n.bets || []).filter(function (x) { return x.number === row.n; })[0]; return b ? b.stake + " on " + (b.score > 0 ? "+" : "") + b.score + " (×" + b.mult + ")" + (n.status === "open" ? "" : b.paid ? ": paid " + b.paid : ": lost") : ""; })() + "</td></tr>";
       }).join("") + "</tbody></table>";
+    // every player's choices, and when they were last in the estate (Eastern time). Only this console is sent these.
+    var lab = function (c) { return c === "X1" || c === "X2" ? "Joker" : c; };
+    var et = function (at) { return at ? new Date(at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET" : "Never"; };
+    var bets = {};
+    (n.bets || []).forEach(function (b) { bets[b.number] = b; });
+    out += '<h3 class="choices-h">Every player\u2019s choices (only you see this)</h3>' + (n.choices || []).map(function (c) {
+      var b = bets[c.n];
+      var now = n.status !== "open" ? "" : c.sealed
+        ? c.sealed.map(function (p) { return lab(p.card) + (p.boost ? " +2" : "") + " vs P" + p.opp; }).join(" \u00b7 ")
+        : "Nothing sealed yet";
+      var byStage = {};
+      c.played.forEach(function (d) { (byStage[d.stage] = byStage[d.stage] || []).push(lab(d.card) + (d.boost ? " +2" : "") + " vs P" + d.opp + " (" + (d.r > 0 ? "won" : d.r < 0 ? "lost" : "level") + ")"); });
+      var past = Object.keys(byStage).map(function (st) { return "<div><b>Stage " + st + ":</b> " + esc(byStage[st].join(" \u00b7 ")) + "</div>"; }).join("");
+      return '<div class="choice"><div class="choice-top"><b>' + esc(hwho(c.n)) + "</b><span>Last online: " + esc(et(c.seen)) + "</span></div>" +
+        (n.status === "open" ? "<div><b>Stage " + n.stage + " (sealed, not yet turned):</b> " + esc(now) + "</div>" : "") + past +
+        "<div><b>Bet:</b> " + (b ? b.stake + (b.stake === 1 ? " coin" : " coins") + " on finishing " + (b.score > 0 ? "+" : "") + b.score + ", placed in stage " + b.stage + " (pays " + b.stake * b.mult + ")" + (n.status === "open" ? "" : b.paid ? ": paid " + b.paid : ": lost") : "None") + "</div></div>";
+    }).join("");
     box.innerHTML = out;
   }
 
