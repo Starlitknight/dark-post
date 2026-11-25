@@ -2135,7 +2135,10 @@
     });
     // news is shown once: whatever was new when the bell was opened, and gone the next time
     var news = (hall.notices || []).filter(function (x) { return x.id > fresh && noticeLive(x); }).map(function (x) {
-      return '<div class="bell-row news' + (x.id > fresh ? " fresh" : "") + '"><span class="bell-face">' + faceHTML(x.n) + '</span><span class="bell-text"><b>' + esc(noticeLine(x)) + "</b><small>" + esc(stamp(x.at, x.today)) + "</small></span>" + (x.id > fresh ? '<i class="bell-new">New</i>' : "") + "</div>";
+      var inner = '<span class="bell-face">' + faceHTML(x.n) + '</span><span class="bell-text"><b>' + esc(noticeLine(x)) + "</b><small>" + esc(stamp(x.at, x.today)) + "</small></span>";
+      // a duel of mine: the row opens the table, where both cards are shown
+      if (x.kind === "duel" && x.mine) return '<button type="button" class="bell-row news fresh" data-act="go" data-scene="arena">' + inner + "<em>See</em></button>";
+      return '<div class="bell-row news' + (x.id > fresh ? " fresh" : "") + '">' + inner + (x.id > fresh ? '<i class="bell-new">New</i>' : "") + "</div>";
     });
     // the GM's notices stay here after they are read: the latest three, and a way to all of them
     var gm = hall.gm || { total: 0, notes: [] };
@@ -2196,12 +2199,13 @@
     if (duels.length || waits.length) {
       // the game comes first: a duel of mine is decided, or someone is waiting for my cards
       var who = function (xs) { var ns = xs.map(function (x) { return x.n; }); return ns.length === 1 ? "Player " + ns[0] : "Players " + ns.slice(0, -1).join(", ") + " and " + ns[ns.length - 1]; };
-      var d1 = duels.length ? { tag: "Duel decided", line: (duels.length > 1 ? "Your duels with " : "Your duel with ") + who(duels) + (duels.length > 1 ? " are decided." : " is decided."), nudge: "Walk to the arena to see who won.", face: duels[0].n }
-        : { tag: "Waiting for you", line: who(waits) + (waits.length > 1 ? " have" : " has") + " submitted against you.", nudge: "Walk to the arena and submit your cards.", face: waits[0].n };
+      var d1 = duels.length ? { tag: "Duel decided", line: (duels.length > 1 ? "Your duels with " : "Your duel with ") + who(duels) + (duels.length > 1 ? " are decided." : " is decided."), nudge: "Tap to see the cards.", face: duels[0].n }
+        : { tag: "Waiting for you", line: who(waits) + (waits.length > 1 ? " have" : " has") + " submitted against you.", nudge: heard("table" + (hall.night ? hall.night.n : 0)) ? "Tap to play your cards." : "Walk to the arena and submit your cards.", face: waits[0].n };
       var el2 = stage && $("note");
       if (!el2) return; // at the table the duels are on the screen already
       if ($("onair")) $("onair").hidden = true;
       el2.innerHTML = '<span class="onair-face">' + faceHTML(d1.face) + '</span><span class="onair-text"><i>' + d1.tag + "</i><b>" + esc(d1.line) + "</b><small>" + esc(d1.nudge) + "</small></span>";
+      el2.setAttribute("data-to", duels.length || heard("table" + (hall.night ? hall.night.n : 0)) ? "arena" : "");
       el2.hidden = false; el2.classList.remove("on"); void el2.offsetWidth; el2.classList.add("on");
       var bell2 = $("bell-btn");
       if (bell2) { bell2.classList.remove("ring"); void bell2.offsetWidth; bell2.classList.add("ring"); }
@@ -3151,15 +3155,15 @@
         var sealed = !!n.sealed;
         if (sealed) {
           // submitted: the cards are final. A duel is decided as soon as the other player has submitted too;
-          // who won is shown at once, and the other card stays face down until the stage closes.
+          // the result and the other player's card are shown at once.
           var liveOf = function (opp) { return (n.live || []).filter(function (x) { return x.opp === opp; })[0] || { r: null }; };
           var decided = n.sealed.filter(function (p) { return liveOf(p.opp).r != null; }).length;
           out += '<div class="s-card ld-shown ld-live"><i>Your duels this stage · ' + decided + " of " + n.sealed.length + ' decided</i><div class="ld-duels">' + n.sealed.map(function (p, i) {
-            var r = liveOf(p.opp).r, cls = r == null ? "wait" : r > 0 ? "won" : r < 0 ? "lost" : "level";
+            var lv = liveOf(p.opp), r = lv.r, cls = r == null ? "wait" : r > 0 ? "won" : r < 0 ? "lost" : "level";
             return '<div class="ld-duel ' + cls + '" style="--i:0"><span class="ld-me"><i>You</i>' + cardHTML(p.card, { boost: p.boost }) + "</span>" +
               (r == null ? '<strong class="ld-wait">Waiting</strong>' : "<strong>" + (r > 0 ? "+1" : r < 0 ? "−1" : "0") + "<small>" + (r > 0 ? "Won" : r < 0 ? "Lost" : "Level") + "</small></strong>") +
-              '<span class="ld-them">' + (r == null ? '<span class="pcard ghost"></span>' : cardHTML("2", { down: true })) + '<i><span class="ld-face">' + faceHTML(p.opp) + "</span>Player " + p.opp + "</i></span></div>";
-          }).join("") + '</div><p class="ld-sealed">' + (decided === n.sealed.length ? "All three of your duels are decided. The cards are turned when the stage closes." : "Submitted and final. A duel is decided as soon as the other player submits. The cards are turned when the stage closes.") + "</p></div>";
+              '<span class="ld-them">' + (r == null ? '<span class="pcard ghost"></span>' : lv.theirs ? cardHTML(lv.theirs, { boost: lv.tb }) : cardHTML("2", { down: true })) + '<i><span class="ld-face">' + faceHTML(p.opp) + "</span>Player " + p.opp + "</i></span></div>";
+          }).join("") + '</div><p class="ld-sealed">' + (decided === n.sealed.length ? "All three of your duels are over. The next stage opens when this one closes." : "Submitted and final. A duel is over as soon as the other player submits, and you see their card at once.") + "</p></div>";
         } else {
         out += '<div class="s-card ld-board"><i>Your three opponents this stage</i><div class="ld-opps">' + d.plays.map(function (p, i) {
           var theirs = n.used[p.opp] || [];
@@ -4147,7 +4151,13 @@
     else if (name === "menu") setMenu($("menu").hidden);
     else if (name === "bell") setMenu(true, "bell");
     else if (name === "online") setMenu(true, "online");
-    else if (name === "noteGo") { el.hidden = true; setMenu(true, "bell"); } // the pop-up opens the bell; the puzzle itself is only in the puzzle room
+    else if (name === "noteGo") {
+      el.hidden = true;
+      // a duel of mine is over, or someone waits for my cards: straight to the table, where the cards are shown.
+      // Any other pop-up opens the bell; the puzzle itself is only in the puzzle room.
+      if (el.getAttribute("data-to") === "arena") { el.removeAttribute("data-to"); readNotices(true); go("arena"); }
+      else setMenu(true, "bell");
+    }
     else if (name === "menuClose") setMenu(false);
     else if (name === "editFace") { ui.face = null; go("face"); }
     else if (name === "tab") { ui.tab = el.getAttribute("data-tab"); refreshFace(false); }

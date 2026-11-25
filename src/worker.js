@@ -1462,12 +1462,13 @@ export class Game extends DurableObject {
     const sealed = playing && night.status === "open" ? this.ladderSealOf(you, night.stage) : null;
     const liveDuels = this.ladderLive(night);
     const submitted = night.status === "open" ? this.ladderSubmitted(night) : [];
-    // this stage's duels for this player: who won if it is decided, and nothing about the other card
+    // this stage's duels for this player. Once both have submitted the duel is over, and the two who fought it
+    // are shown each other's card at once. Nobody else is shown those cards until the stage closes.
     const live = playing && night.status === "open" ? (LADDER.stagesFor(players, you)[night.stage - 1] || []).map((opp) => {
       const d = liveDuels.find((x) => (x.a === you && x.b === opp) || (x.b === you && x.a === opp));
       if (!d) return { opp, r: null, oppIn: submitted.includes(opp) };
       const r = LADDER.duel(d.ca, d.ba, d.cb, d.bb);
-      return { opp, r: d.a === you ? r : -r, oppIn: true };
+      return { opp, r: d.a === you ? r : -r, oppIn: true, theirs: d.a === you ? d.cb : d.ca, tb: d.a === you ? d.bb : d.ba };
     }) : [];
     const coins = this.balance(inv);
     const held = sealed ? sealed.filter((p) => p.boost).length * LADDER.RULES.boostPrice : 0;

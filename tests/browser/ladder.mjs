@@ -122,7 +122,7 @@ ok("and the ticks fill in as the others submit", (await guest.$$(".sub.done")).l
 await shot(guest, "submitted-15");
 for (let i = 0; i < 40 && (await guest.$$(".ld-live .ld-duel:not(.wait)")).length < 2; i++) await sleep(250);
 t = await guest.$eval(".ld-live", (el) => el.innerText);
-ok("each duel is decided as the opponent submits: won or lost is shown, their card stays face down", (await guest.$$(".ld-live .ld-duel:not(.wait)")).length >= 2 && (await guest.$$(".ld-live .ld-them .pcard.down")).length >= 2 && /won|lost|level/i.test(t) && (await guest.$(".ld-card")) === null);
+ok("each duel is over as the opponent submits: won or lost and their card are shown at once", (await guest.$$(".ld-live .ld-duel:not(.wait)")).length >= 2 && (await guest.$$(".ld-live .ld-duel:not(.wait) .ld-them .pcard:not(.down):not(.ghost)")).length >= 2 && (await guest.$$(".ld-live .ld-them .pcard.down")).length === 0 && /won|lost|level/i.test(t) && (await guest.$(".ld-card")) === null);
 await into(guest, ".ld-live"); await shot(guest, "live-duels");
 ok("the ladder is live", /live/i.test(await guest.$eval("#sched", (el) => el.innerText)) && (await guest.$(".ld-livecap")) !== null);
 await hostPage.reload({ waitUntil: "networkidle0" }); await sleep(1200);

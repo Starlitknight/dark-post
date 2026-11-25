@@ -141,7 +141,11 @@ v = night(A)
 dec = {d["opp"]: d["r"] for d in v["live"]}
 check("a duel is decided as soon as both have submitted, and one against an absent player waits", all((dec[x] is None) == (x == 16) for x in dec) and v["liveCount"] == 21)
 check("the ladder counts the decided duels at once", sum(r["w"] + r["l"] + r["t"] for r in v["table"]) == 42 and sum(r["pts"] for r in v["table"]) == 0)
-check("but no card of this stage is shown to anyone yet", v["results"] == [] and all(v["used"][k] == [] for k in v["used"]) and "theirs" not in json.dumps(v) and '"ca"' not in json.dumps(v))
+check("the two who dueled see each other's card at once", all(("theirs" in d) == (d["opp"] != 16) and (d["opp"] == 16 or d["theirs"] in CARDS) for d in v["live"]))
+seen_by_1 = {d["opp"]: d["theirs"] for d in v["live"] if d["opp"] != 16}
+check("and each side sees the other's real card", all([x for x in night(by[k])["live"] if x["opp"] == 1][0]["theirs"] == {o[0]: "9", o[1]: "K", o[2]: "4"}[k] for k in seen_by_1))
+outsider = night(by[[k for k in range(2, 16) if k not in o][0]])
+check("nobody else is shown this stage's cards before it closes", v["results"] == [] and all(v["used"][k] == [] for k in v["used"]) and '"ca"' not in json.dumps(v) and all(d["opp"] != 1 for d in outsider["live"]) and outsider["used"]["1"] == [])
 mine = [x for x in hall(A)["notices"] if x["kind"] == "duel" and x["mine"]]
 other = [x for x in hall(A)["notices"] if x["kind"] == "duel" and not x["mine"]]
 check("the two who dueled are told it is decided; the rest see it as news", sorted(x["n"] for x in mine) == sorted(x for x in dec if x != 16) and len(mine) + len(other) == 21)
