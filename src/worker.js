@@ -4,7 +4,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 
-import { makePuzzle, sameAnswer } from "./puzzles.js";
+import { makePuzzle, sameAnswer, seedOf } from "./puzzles.js";
 import { GOLD, RULES, clueText, dealClues, spareClue, shopClue, validThrows, settle } from "./vaults.js";
 
 const SEATS = 16;
@@ -133,6 +133,13 @@ export class Game extends DurableObject {
       const playing = this.sql.exec(`SELECT COUNT(*) AS n FROM invites WHERE status = 'accepted'`).one().n > 0;
       if (playing) this.set("puzzle_held_day", String(this.today()));
       this.set("puzzle_hold", playing ? "1" : "0");
+    }
+    // Decided once, 25 Nov 2026: the second puzzle (three sums) was replaced by the six keys while it was in
+    // play and before anyone had solved it. Tries spent on the old one are handed back, so everyone starts
+    // the new one with three. A player who had already solved it keeps that.
+    if (this.get("puzzle_keys_swap", "") === "") {
+      this.sql.exec(`DELETE FROM puzzle_tries WHERE day = ? AND solved = 0`, this.puzzleDay());
+      this.set("puzzle_keys_swap", "1");
     }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS deals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -814,6 +821,11 @@ export class Game extends DurableObject {
     return rows.length ? rows[0] : { tries: 0, solved: 0 };
   }
 
+  // A number that changes whenever the puzzle on screen changes: a new day, a different kind, different clues.
+  puzzleMark(p) {
+    return seedOf(p.type + JSON.stringify(p.data));
+  }
+
   puzzleView(inv) {
     const day = this.puzzleDay();
     const p = this.puzzleFor(inv.number, day);
@@ -827,8 +839,9 @@ export class Game extends DurableObject {
       left: Math.max(0, PUZZLE_TRIES - row.tries),
       solved: !!row.solved,
       answer: row.solved || row.tries >= PUZZLE_TRIES ? p.answer : undefined,
-      // which puzzle this is: sent back with an answer, so an answer to a puzzle that has ended is not counted
-      no: day,
+      // which puzzle this is: sent back with an answer, so an answer to a puzzle that has been replaced is not counted
+      no: this.puzzleMark(p),
+      day,
       held: this.puzzleHeld(),
       resetAt: this.puzzleEnds(),
       reward: PUZZLE_REWARD,
@@ -848,8 +861,8 @@ export class Game extends DurableObject {
     if (inv.out) return json({ error: "You are out of the game." }, 403);
     const body = await readJson(request);
     const day = this.puzzleDay();
-    // the page was showing a puzzle that has since ended: do not spend a try on the new one
-    if (body.no != null && Number(body.no) !== day) return json({ error: "A new puzzle has started. Here it is." }, 409);
+    // the page was showing a puzzle that has since been replaced: do not spend a try on the new one
+    if (body.no != null && Number(body.no) !== this.puzzleMark(this.puzzleFor(inv.number, day))) return json({ error: "The puzzle has changed. Here it is." }, 409);
     const row = this.puzzleRow(inv.number, day);
     if (row.solved) return json({ error: "You have already solved today's puzzle." }, 409);
     if (row.tries >= PUZZLE_TRIES) return json({ error: "No tries left today." }, 409);

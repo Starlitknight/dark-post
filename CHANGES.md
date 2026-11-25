@@ -1,5 +1,14 @@
 # Dark Post
 
+## Six keys, who is online, no puzzle shortcut, 25 Nov 2026 (the GM's instructions, done outside this agent)
+
+- **A new kind of puzzle, the six keys** (`keys` in `src/puzzles.js`): six numbered keys, five to seven clues about the order they are used in, exactly one order fits, and no clue is spare. The answer is the six numbers in order. `keyClueFits` and `keyClueText` are exported for the tests.
+- **The plain arithmetic kinds are retired.** `TYPES` is now `["code", "keys", "cipher"]`. `sums` and `sequence` stay in the file but are not in the rotation. The GM found them too easy.
+- **The second puzzle was replaced while in play**, quietly. A one-time rule in the constructor hands back tries spent on the old one. `no` in the puzzle view is now a mark of the puzzle's content (`puzzleMark`), so an answer from a page still showing a replaced puzzle is refused without spending a try. `day` carries the puzzle's day.
+- A keys puzzle also carries `terms: []` and the full clues in `ask`. That is only so a page loaded before this kind existed still shows something. The game shows `data.ask` and `data.lines`.
+- **The puzzle cannot be opened from the bell or the pop-up.** The to-do row says "Walk to the puzzle room to solve it." and has no button (`walk` in `todoList`).
+- **Who is online**: a count in the top bar (`#top-online`, `drawOnline`), a list in the overlay (`onlineHTML`, with each player's room and a Message button), and a green dot on the Players and Messages pages. No server change: it uses the presence the game already had (`hall.online` and the live `on`/`off` messages). The overlay now holds three panels (`OPENERS`, `panelHTML`, `redrawMenu`).
+
 ## Holding the puzzle, 24 Nov 2026, late (the GM's instructions, done outside this agent)
 
 - **The puzzle has its own day** (`puzzleDay` in `src/worker.js`), separate from the calendar day that deals use. While the GM holds it (`puzzle_hold` = "1", `puzzle_held_day`), it does not change at midnight EST. Released, it changes at each midnight from wherever it was (`puzzle_lag`), so the kinds still take turns in order.

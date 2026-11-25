@@ -84,17 +84,37 @@ const solver = await call("GET", "/api/me", null, seat(1));
 ok("another player solves today's puzzle", (await call("POST", "/api/puzzle", { answer: String(answerNow) }, seat(1))).right === true);
 for (let i = 0; i < 16 && !(await popup()); i++) await sleep(1000);
 const pop = await popup();
-ok("every other player sees a pop-up naming the solver, with a nudge to try it now", pop.includes("Player " + solver.number + " solved today’s puzzle.") && pop.includes("You haven’t yet. Try it now."));
+ok("every other player sees a pop-up naming the solver, with a nudge to try it now", pop.includes("Player " + solver.number + " solved today’s puzzle.") && pop.includes("You haven’t yet. Walk to the puzzle room to try it."));
 ok("and the bell counts the news", (await bellCount()) === "2");
 await snap("bell-popup");
 await tryClick("#bell-btn"); await sleep(700);
 const sheet = await page.$eval(".bell-sheet", (el) => el.innerText.replace(/\s+/g, " "));
 await snap("bell-open");
+ok("the puzzle cannot be opened from the bell: the player has to walk to the puzzle room", (await page.$$('.bell-sheet [data-scene="puzzle"]')).length === 0 && sheet.includes("Walk to the puzzle room to solve it."));
 ok("the bell lists what to do now, and the news", /to do now/i.test(sheet) && sheet.includes("Solve today’s puzzle") && sheet.includes("1 player has solved it.") && sheet.includes("Player " + solver.number + " solved today’s puzzle") && /new/i.test(sheet));
 ok("opening the bell marks the news as read on the server", (await call("GET", "/api/hall", null, seat(0))).noticeMark > 0);
 await tryClick(".menu-close"); await sleep(500);
 ok("once read, the bell still counts the puzzle that is waiting", (await bellCount()) === "1");
 ok("the solver gets no pop-up about themself", (await call("GET", "/api/hall", null, seat(1))).notices.length === 0);
+
+// who is online right now
+const chipText = () => page.$eval("#top-online", (el) => el.innerText.trim().toLowerCase());
+ok("alone in the house, the top bar says nobody else is online", (await chipText()) === "0 online");
+const ctx2 = await (browser.createBrowserContext ? browser.createBrowserContext() : browser.createIncognitoBrowserContext());
+const page2 = await ctx2.newPage();
+await page2.setCookie({ name: "dp_seat", value: tokens[1], url: BASE });
+await page2.goto(BASE + "/", { waitUntil: "networkidle2" });
+for (let i = 0; i < 15 && (await chipText()) !== "1 online"; i++) await sleep(1000);
+ok("when another player opens the game, the top bar counts them", (await chipText()) === "1 online");
+await tryClick("#top-online"); await sleep(600);
+const who = await page.$eval(".bell-sheet", (el) => el.innerText.replace(/\s+/g, " "));
+await snap("online-now");
+ok("the list names who is online and which room they are in, and offers to message them", who.includes("Online now") && who.includes("Player " + solver.number) && who.includes("In the hall") && who.includes("Message"));
+await page2.close(); await ctx2.close();
+for (let i = 0; i < 15 && !(await page.$eval(".bell-sheet", (el) => el.innerText)).includes("Nobody else"); i++) await sleep(1000);
+ok("when they leave, the open list empties by itself", (await page.$eval(".bell-sheet", (el) => el.innerText)).includes("Nobody else has the game open"));
+await tryClick(".menu-close"); await sleep(400);
+ok("and the top bar goes back to nobody", (await chipText()) === "0 online");
 
 // every menu page
 for (const [id, word] of [["whispers", "Messages"], ["study", "GM"], ["players", "Players"], ["table", "Broadcast"], ["standings", "Standings"], ["guide", "How to play"]]) {

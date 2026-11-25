@@ -803,7 +803,9 @@
           '<div class="world" id="world"></div>' +
           '<div class="room-name" id="room-name" aria-live="polite"></div>' +
           '<div class="hud-top">' +
-          '<div class="hud-chips"><div class="hud-brand">' + ART.wordmark() + '</div><span class="chip gold">Player ' + esc(me.number) + '</span>' + walletMarkup("top-coins") + '<span class="chip here" id="top-room"></span><span class="chip clock" id="top-clock" title="Game time. Every time in the game is on this clock."></span></div>' +
+          '<div class="hud-chips"><div class="hud-brand">' + ART.wordmark() + '</div><span class="chip gold">Player ' + esc(me.number) + '</span>' + walletMarkup("top-coins") + '<span class="chip here" id="top-room"></span><span class="hud-break"></span>' +
+          '<button type="button" class="chip online" id="top-online" data-act="online" aria-haspopup="dialog" aria-expanded="false"><i></i><span id="top-online-n"></span></button>' +
+          '<span class="chip clock" id="top-clock" title="Game time. Every time in the game is on this clock."></span></div>' +
           '<button type="button" class="now" id="now" data-act="go" data-scene="tonight" aria-label="The current stage, and what is next">' +
           '<span class="now-row"><i>Current</i><b id="now-a"></b></span>' +
           '<span class="now-row"><i>Next</i><b id="now-b"></b><em id="now-t"></em></span>' +
@@ -1865,6 +1867,52 @@
     if (c) c.textContent = s.count;
   }
 
+  // ----- who is online right now -----
+
+  // The other players who have the game open at this moment.
+  function onlineOthers() {
+    if (!hall) return [];
+    return hall.seats.filter(function (s) { return s.avatar && s.number !== hall.you && online[s.number]; }).sort(function (a, b) { return a.number - b.number; });
+  }
+
+  function whereLine(n) {
+    return "In the " + (PLACES[spotOf(n)[0]] || PLACES.hall).title.replace(/^The /, "").toLowerCase();
+  }
+
+  function drawOnline() {
+    var el = $("top-online");
+    if (!el || !hall) return;
+    var n = onlineOthers().length;
+    el.classList.toggle("none", !n);
+    $("top-online-n").textContent = n + " online";
+    el.setAttribute("aria-label", (n ? plural(n, "other player is", "other players are") : "No other player is") + " online now. Show who.");
+  }
+
+  function onlineHTML() {
+    var list = onlineOthers();
+    var away = hall.seats.filter(function (s) { return s.avatar && s.number !== hall.you && !online[s.number]; }).length;
+    var rows = list.map(function (s) {
+      return '<div class="bell-row who"><span class="bell-face">' + faceHTML(s.number) + '<i class="on-dot"></i></span><span class="bell-text"><b>Player ' + s.number + "</b><small>" +
+        (s.out ? (s.out < 0 ? "Spectator. " : "Out. ") : "") + esc(whereLine(s.number)) + "</small></span>" +
+        (!hall.out && !s.out ? '<button type="button" class="who-msg" data-act="seat" data-n="' + s.number + '">Message</button>' : "") + "</div>";
+    });
+    return '<div class="menu-sheet bell-sheet" role="dialog" aria-modal="true" aria-labelledby="online-heading">' +
+      '<div class="menu-head"><h2 id="online-heading">Online now</h2>' +
+      '<button type="button" class="menu-close" data-act="menuClose" aria-label="Close the list">×</button></div>' +
+      '<p class="bell-none">' + (list.length ? plural(list.length, "other player has", "other players have") + " the game open right now." : "Nobody else has the game open right now.") + "</p>" +
+      rows.join("") +
+      (away ? '<p class="bell-none who-away">' + plural(away, "player is", "players are") + " away. Their figures are faded.</p>" : "") +
+      "</div>";
+  }
+
+  // Someone came or went, or changed room: every place that shows who is online follows.
+  function presenceChanged() {
+    drawOnline();
+    drawPlayers();
+    drawThreads();
+    redrawMenu();
+  }
+
   // ----- the bell: what this player should do now, and news about the others -----
 
   var BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2a5.8 5.8 0 0 0-5.8 5.8v3.5l-1.9 3.4a1 1 0 0 0 .9 1.5h13.6a1 1 0 0 0 .9-1.5l-1.9-3.4V9A5.8 5.8 0 0 0 12 3.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.7 20.2a2.5 2.5 0 0 0 4.6 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
@@ -1887,7 +1935,7 @@
     }
     if (puzzleOpen()) {
       var done = solvedToday().length;
-      out.push({ title: "Solve today’s puzzle", sub: "Worth " + plural(hall.puzzle.reward, "coin", "coins") + "." + (done ? " " + plural(done, "player has", "players have") + " solved it." : ""), scene: "puzzle", go: "Solve it" });
+      out.push({ title: "Solve today’s puzzle", sub: "Worth " + plural(hall.puzzle.reward, "coin", "coins") + "." + (done ? " " + plural(done, "player has", "players have") + " solved it." : ""), walk: "Walk to the puzzle room to solve it." });
     }
     if (u.whispers) out.push({ title: plural(u.whispers, "new message", "new messages"), sub: "From " + hall.whispers.filter(function (t) { return t.unread; }).map(function (t) { return who(t.with); }).join(", ") + ".", scene: "whispers", go: "Read" });
     if (u.study) out.push({ title: "The GM wrote to you", sub: "Only you can read it.", scene: "study", go: "Read" });
@@ -1920,6 +1968,8 @@
   function bellHTML() {
     var todo = todoList(), fresh = stage.bellMark || 0;
     var rows = todo.map(function (t) {
+      // some things are done in a room, not from here: the row says where to go and has no button
+      if (t.walk) return '<div class="bell-row todo walk"><span class="bell-text"><b>' + esc(t.title) + "</b><small>" + esc(t.sub) + '</small><small class="bell-walk">' + esc(t.walk) + "</small></span></div>";
       return '<button type="button" class="bell-row todo" data-act="go" data-scene="' + t.scene + '"><span class="bell-text"><b>' + esc(t.title) + "</b><small>" + esc(t.sub) + '</small></span><em>' + t.go + "</em></button>";
     });
     var news = (hall.notices || []).map(function (x) {
@@ -1973,11 +2023,11 @@
     if (!fresh.length) return;
     var names = fresh.length === 1 ? "Player " + fresh[0].n : fresh.length === 2 ? "Players " + fresh[1].n + " and " + fresh[0].n : "Player " + fresh[0].n + " and " + (fresh.length - 1) + " others";
     var line = names + " solved today’s puzzle.";
-    var nudge = puzzleOpen() ? "You haven’t yet. Try it now." : hall.puzzle && hall.puzzle.solved ? "So have you." : "";
+    var nudge = puzzleOpen() ? "You haven’t yet. Walk to the puzzle room to try it." : hall.puzzle && hall.puzzle.solved ? "So have you." : "";
     var el = stage && $("note");
     if (!el) return toast(line + (nudge ? " " + nudge : ""));
     if ($("onair")) $("onair").hidden = true;
-    el.innerHTML = '<span class="onair-face">' + faceHTML(fresh[0].n) + '</span><span class="onair-text"><i>Puzzle solved</i><b>' + esc(line) + "</b>" + (nudge ? "<small>" + esc(nudge) + "</small>" : "") + "</span>" + (puzzleOpen() ? '<em class="note-go">Solve it</em>' : "");
+    el.innerHTML = '<span class="onair-face">' + faceHTML(fresh[0].n) + '</span><span class="onair-text"><i>Puzzle solved</i><b>' + esc(line) + "</b>" + (nudge ? "<small>" + esc(nudge) + "</small>" : "") + "</span>";
     el.hidden = false;
     el.classList.remove("on");
     void el.offsetWidth;
@@ -2005,14 +2055,35 @@
       '</div>';
   }
 
+  // The overlay holds one of three panels. Each is opened by its own button.
+  var OPENERS = { menu: "menu-btn", bell: "bell-btn", online: "top-online" };
+
+  function panelHTML() {
+    return stage.menuKind === "bell" ? bellHTML() : stage.menuKind === "online" ? onlineHTML() : menuHTML();
+  }
+
+  // Keep the open panel true to the latest news, without losing the button the player is on.
+  function redrawMenu() {
+    var menu = $("menu");
+    if (!menu || menu.hidden || !stage || !hall) return;
+    var nextMenu = panelHTML();
+    if (menu.renderedMenu === nextMenu) return;
+    menu.renderedMenu = nextMenu;
+    var focused = document.activeElement;
+    var index = Array.prototype.indexOf.call(menu.querySelectorAll("button"), focused);
+    menu.innerHTML = nextMenu;
+    var sameButton = menu.querySelectorAll("button")[index];
+    if (sameButton) sameButton.focus({ preventScroll: true });
+  }
+
   function setMenu(open, kind) {
     var el = $("menu");
     if (!el || (open && (!hall || !stage || !stage.room))) return;
     var wasOpen = !el.hidden;
-    var opener = $(stage && stage.menuKind === "bell" ? "bell-btn" : "menu-btn");
+    var opener = $(stage ? OPENERS[stage.menuKind] || "menu-btn" : "menu-btn");
     if (open) {
-      stage.menuKind = kind === "bell" ? "bell" : "menu";
-      opener = $(stage.menuKind === "bell" ? "bell-btn" : "menu-btn");
+      stage.menuKind = OPENERS[kind] ? kind : "menu";
+      opener = $(OPENERS[stage.menuKind]);
       if (stage.menuKind === "bell") { readNotices(true); if ($("note")) $("note").hidden = true; }
     }
     if (open) {
@@ -2025,16 +2096,15 @@
         setWalking(self, false);
         tellMove(stage.room, [self.x, self.y], "p");
       }
-      el.renderedMenu = stage.menuKind === "bell" ? bellHTML() : menuHTML();
+      el.renderedMenu = panelHTML();
       el.innerHTML = el.renderedMenu;
     }
     el.hidden = !open;
-    $("menu-btn").setAttribute("aria-expanded", String(open && stage.menuKind !== "bell"));
-    $("bell-btn").setAttribute("aria-expanded", String(open && stage.menuKind === "bell"));
+    Object.keys(OPENERS).forEach(function (k) { $(OPENERS[k]).setAttribute("aria-expanded", String(open && stage.menuKind === k)); });
     Array.prototype.forEach.call(el.parentNode.children, function (child) {
       if (child !== el) child.inert = open;
     });
-    if (open) (el.querySelector(".menu-tile, .bell-row.todo") || el.querySelector("button")).focus({ preventScroll: true });
+    if (open) (el.querySelector(".menu-tile, button.bell-row.todo, .who-msg") || el.querySelector("button")).focus({ preventScroll: true });
     else if (wasOpen) { opener.focus({ preventScroll: true }); drawBell(); }
   }
 
@@ -2149,19 +2219,9 @@
     if (mark) mark.textContent = (stage.room === "betting" ? hall.unread.deals : 0) || "";
     $("menu-btn").disabled = false;
     drawBell();
-    var menu = $("menu");
-    if (!menu.hidden) {
-      if (stage.menuKind === "bell") readNotices(false); // news that arrives while the bell is open is read too
-      var nextMenu = stage.menuKind === "bell" ? bellHTML() : menuHTML();
-      if (menu.renderedMenu !== nextMenu) {
-        menu.renderedMenu = nextMenu;
-        var focused = document.activeElement;
-        var index = Array.prototype.indexOf.call(menu.querySelectorAll("button"), focused);
-        menu.innerHTML = nextMenu;
-        var sameButton = menu.querySelectorAll("button")[index];
-        if (sameButton) sameButton.focus({ preventScroll: true });
-      }
-    }
+    drawOnline();
+    if (!$("menu").hidden && stage.menuKind === "bell") readNotices(false); // news that arrives while the bell is open is read too
+    redrawMenu();
     drawStatus();
     showCast();
     showNotice();
@@ -2403,11 +2463,14 @@
       (m.online || []).forEach(function (n) { online[n] = true; });
       for (var k in m.pos) if (Number(k) !== me.number || !spots[k]) spots[k] = m.pos[k];
       if (stage && hall && stage.room) buildActors();
-    } else if (m.t === "on") { online[m.n] = true; dressActors(); }
-    else if (m.t === "off") { delete online[m.n]; dressActors(); }
+      presenceChanged();
+    } else if (m.t === "on") { online[m.n] = true; dressActors(); presenceChanged(); }
+    else if (m.t === "off") { delete online[m.n]; dressActors(); presenceChanged(); }
     else if (m.t === "m" || m.t === "p" || m.t === "r") {
       if (m.n === me.number) return;
+      var movedRoom = !spots[m.n] || spots[m.n][0] !== m.r;
       spots[m.n] = [m.r, m.x, m.y];
+      if (movedRoom) redrawMenu(); // the list of who is online says which room each player is in
       if (!stage || !hall || !stage.room) return;
       a = actors[m.n];
       if (m.r === stage.room && a && !a.empty && m.t !== "r") a.path = m.t === "m" ? WORLD.findPath(stage.room, [a.x, a.y], [m.x, m.y]) : [[m.x, m.y]];
@@ -2458,6 +2521,7 @@
     var movers = [3, 9, 14];
     movers.forEach(function (n) { online[n] = true; });
     dressActors();
+    presenceChanged();
     function somewhere() {
       for (var i = 0; i < 40; i++) {
         var p = [120 + Math.random() * 1560, 220 + Math.random() * 1160];
@@ -2525,12 +2589,13 @@
     if (!box || !hall) return;
     var rows = hall.seats.slice();
     var here = rows.filter(function (s) { return s.avatar; }).length;
-    $("players-note").textContent = here + " of " + rows.length + " players are here. Select a portrait to open their player card.";
+    var on = onlineOthers().length;
+    $("players-note").textContent = here + " of " + rows.length + " players have arrived. " + (on ? plural(on, "other is", "others are") + " online now, marked with a green dot. " : "") + "Select a portrait to open their player card.";
     box.innerHTML = rows.map(function (s) {
       var mine = s.number === hall.you;
       return (
         '<button type="button" class="face-tile' + (mine ? " me" : "") + (s.avatar ? "" : " empty") + (s.out ? " gone" : "") + '" data-act="card" data-n="' + s.number + '">' +
-        '<span class="face-pic">' + faceHTML(s.number) + "</span><b>" + (mine ? "You" : "Player " + s.number) + "</b>" +
+        '<span class="face-pic">' + faceHTML(s.number) + (!mine && s.avatar && online[s.number] ? '<i class="on-dot" title="Online now"></i>' : "") + "</span><b>" + (mine ? "You" : "Player " + s.number) + "</b>" +
         (!s.avatar ? "<small>Not here yet</small>" : s.out ? '<small class="gone">' + (s.out < 0 ? "Resigned" : "Out") + "</small>" : s.coins != null ? '<small class="coin">' + s.coins + "</small>" : "<small>In the game</small>") + "</button>"
       );
     }).join("");
@@ -2591,6 +2656,12 @@
       body = p.data.rows.map(function (r) {
         return '<div class="pz-sum">' + r.shapes.map(function (k) { return SHAPES[k]; }).join("<i>+</i>") + "<i>=</i><b>" + r.sum + "</b></div>";
       }).join("") + '<div class="pz-sum ask">' + SHAPES.a + "<i>×</i>" + SHAPES.b + "<i>×</i>" + SHAPES.c + "<i>=</i><b>?</b></div>";
+    } else if (p.type === "keys") {
+      // six numbered keys, clues about the order they are used in, and one order that fits them all
+      body = '<p class="pz-hint">Six keys open the vault, but only when used in the right order. Every clue is true. Only one order fits them all.</p>' +
+        '<div class="pz-keys" aria-hidden="true">' + [1, 2, 3, 4, 5, 6].map(function (k) { return "<b>" + k + "</b>"; }).join("") + "</div>" +
+        '<ol class="pz-rules">' + p.data.lines.map(function (line) { return "<li><span>" + esc(line).replace(/\d/g, function (d) { return '<b class="pz-keyno">' + d + "</b>"; }) + "</span></li>"; }).join("") + "</ol>" +
+        '<div class="pz-order" aria-hidden="true"><span>First</span><i>?</i><i>?</i><i>?</i><i>?</i><i>?</i><i>?</i><span>Last</span></div>';
     } else if (p.type === "cipher") {
       body = tiles(p.data.text) + '<p class="pz-hint">A B C D E F G H I J K L M N O P Q R S T U V W X Y Z</p>';
     } else {
@@ -2603,7 +2674,7 @@
         : '<div class="composer pz-form" id="pz-form"><input type="text" id="pz-answer" maxlength="24" autocomplete="off" autocapitalize="characters" enterkeyhint="send" inputmode="' + (p.type === "cipher" ? "text" : "numeric") + '" placeholder="Your answer" aria-label="Your answer">' +
           '<button type="button" class="btn send" id="pz-send">Try</button></div><p class="pz-left">' + plural(p.left, "try", "tries") + " left today</p>";
     box.innerHTML =
-      '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + '</h2><div class="pz-body">' + body + "</div><p>" + esc(p.ask) + "</p>" + end + "</div>" +
+      '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + '</h2><div class="pz-body">' + body + "</div><p>" + esc((p.data && p.data.ask) || p.ask) + "</p>" + end + "</div>" +
       (p.held
         // the GM is holding this puzzle: it does not change at midnight, and nobody knows yet when it will
         ? '<div class="s-card"><i>Next puzzle</i><b class="s-count small">TBD</b><p>This puzzle stays open until the GM starts the next one. Every player gets the same puzzle.</p>'
@@ -3118,8 +3189,8 @@
       ? others.map(function (s) {
           var t = byN[s.number];
           return (
-            '<button type="button" class="thread" data-act="seat" data-n="' + s.number + '"><span class="thread-face">' + faceHTML(s.number) + "</span>" +
-            '<span class="thread-main"><b>Player ' + s.number + "</b><span>" + (t && t.last ? esc(t.last) : "No messages yet") + "</span></span>" +
+            '<button type="button" class="thread" data-act="seat" data-n="' + s.number + '"><span class="thread-face">' + faceHTML(s.number) + (online[s.number] ? '<i class="on-dot" title="Online now"></i>' : "") + "</span>" +
+            '<span class="thread-main"><b>Player ' + s.number + (online[s.number] ? ' <small class="on-word">Online</small>' : "") + "</b><span>" + (t && t.last ? esc(t.last) : "No messages yet") + "</span></span>" +
             badge(t && t.unread) + "</button>"
           );
         }).join("")
@@ -3416,7 +3487,8 @@
     else if (name === "dealCancel") dealSend("/api/deal/answer", { id: Number(el.getAttribute("data-id")), cancel: true });
     else if (name === "menu") setMenu($("menu").hidden);
     else if (name === "bell") setMenu(true, "bell");
-    else if (name === "noteGo") { if (puzzleOpen()) go("puzzle"); else { el.hidden = true; setMenu(true, "bell"); } }
+    else if (name === "online") setMenu(true, "online");
+    else if (name === "noteGo") { el.hidden = true; setMenu(true, "bell"); } // the pop-up opens the bell; the puzzle itself is only in the puzzle room
     else if (name === "menuClose") setMenu(false);
     else if (name === "editFace") { ui.face = null; go("face"); }
     else if (name === "tab") { ui.tab = el.getAttribute("data-tab"); refreshFace(false); }
@@ -3552,7 +3624,7 @@
     var pos = { 2: ["hall", 560, 470], 16: ["hall", 1250, 1140], 5: ["puzzle", 500, 420], 6: ["betting", 620, 700], 12: ["hall", 1180, 560], 13: ["gallery", 820, 380] };
     demoStore = {
       seats: seats, msgs: msgs, read: {}, next: msgs.length + 1, pos: pos, extra: 0,
-      pz: { tries: 0, solved: false, kind: Math.max(0, ["code", "sums", "cipher", "sequence"].indexOf(query.get("pz"))) },
+      pz: { tries: 0, solved: false, kind: query.get("pz") ? Math.max(0, ["code", "keys", "cipher"].indexOf(query.get("pz"))) : 1 },
       deals: { mine: null, incoming: [{ id: 1, from: 9 }], past: [], doneToday: false },
       doors: [],
     };
@@ -3652,9 +3724,8 @@
   // The preview's puzzle, deals and door log: fixed samples that behave like the real ones.
   var DEMO_PUZZLES = [
     { type: "code", title: "Crack the code", ask: "The code has three different digits, from 1 to 9. What is it?", data: { clues: [{ guess: "358", place: 1, digit: 1 }, { guess: "641", place: 0, digit: 1 }, { guess: "924", place: 0, digit: 0 }, { guess: "692", place: 0, digit: 1 }, { guess: "837", place: 0, digit: 1 }, { guess: "643", place: 0, digit: 2 }] }, answer: "365" },
-    { type: "sums", title: "Weigh the shapes", ask: "Each shape is a whole number. Multiply the three together. What do you get?", data: { rows: [{ shapes: ["a", "a", "b"], sum: 13 }, { shapes: ["b", "b", "c"], sum: 14 }, { shapes: ["c", "c", "a"], sum: 21 }] }, answer: "120" },
+    { type: "keys", title: "The six keys", ask: "Type the six numbers in the order the keys are used.", data: { ask: "Type the six numbers in the order the keys are used.", lines: ["Key 2 is used before key 6.", "Exactly two keys are used between keys 3 and 5.", "Key 4 is used before key 2.", "Exactly three keys are used between keys 3 and 6.", "Key 2 is used right after key 3."] }, answer: "432156" },
     { type: "cipher", title: "Break the cipher", ask: "Every letter was moved the same number of places along the alphabet. What is the word?", data: { text: "THYISL" }, answer: "MARBLE" },
-    { type: "sequence", title: "What comes next", ask: "One rule makes this row. What is the next number?", data: { terms: [9, 12, 17, 24, 33, 44] }, answer: "57" },
   ];
 
   function demoPuzzle(method, body) {
