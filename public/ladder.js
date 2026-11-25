@@ -44,14 +44,17 @@
     return out;
   }
 
-  // The opponents of one player, stage by stage.
+  // The opponents of one player, stage by stage. A stage is three rounds; with an odd number of players
+  // everyone rests once, so one of their stages has two opponents.
   function stagesFor(players, n) {
-    var mine = [];
-    rounds(players).forEach(function (pairs) {
-      pairs.forEach(function (p) { if (p[0] === n) mine.push(p[1]); else if (p[1] === n) mine.push(p[0]); });
-    });
-    var out = [];
-    for (var i = 0; i < mine.length; i += RULES.perStage) out.push(mine.slice(i, i + RULES.perStage));
+    var all = rounds(players), out = [];
+    for (var i = 0; i < all.length; i += RULES.perStage) {
+      var mine = [];
+      all.slice(i, i + RULES.perStage).forEach(function (pairs) {
+        pairs.forEach(function (p) { if (p[0] === n) mine.push(p[1]); else if (p[1] === n) mine.push(p[0]); });
+      });
+      out.push(mine);
+    }
     return out;
   }
 
@@ -80,21 +83,21 @@
   }
 
   // Who is last. Level on points: the result between the tied players decides, then the fewest wins.
-  // Returns { last: [numbers tied for last on points], out: number or null when still level }.
+  // Returns { last: [numbers tied for last on points], out: number or null when still level, level: [those still level] }.
   function lastPlace(players, duels) {
     var rows = table(players, duels);
     var low = rows[rows.length - 1].pts;
     var tied = rows.filter(function (r) { return r.pts === low; }).map(function (r) { return r.n; });
-    if (tied.length === 1) return { last: tied, out: tied[0] };
+    if (tied.length === 1) return { last: tied, out: tied[0], level: [] };
     var among = table(tied, duels.filter(function (d) { return tied.indexOf(d.a) >= 0 && tied.indexOf(d.b) >= 0; }));
     var worst = among[among.length - 1], next = among[among.length - 2];
-    if (worst.pts < next.pts) return { last: tied, out: worst.n };
+    if (worst.pts < next.pts) return { last: tied, out: worst.n, level: [] };
     var wins = {};
     rows.forEach(function (r) { wins[r.n] = r.w; });
     var level = among.filter(function (r) { return r.pts === worst.pts; }).map(function (r) { return r.n; });
     var fewest = Math.min.apply(null, level.map(function (n) { return wins[n]; }));
     var down = level.filter(function (n) { return wins[n] === fewest; });
-    return { last: tied, out: down.length === 1 ? down[0] : null };
+    return { last: tied, out: down.length === 1 ? down[0] : null, level: down.length === 1 ? [] : down };
   }
 
   root.LADDER = { CARDS: CARDS, RULES: RULES, isJoker: isJoker, label: label, power: power, duel: duel, rounds: rounds, stagesFor: stagesFor, stageCount: stageCount, lowest: lowest, table: table, lastPlace: lastPlace };

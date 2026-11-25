@@ -1824,7 +1824,7 @@
         next: isLadder() ? "Stage " + (night.stage || 1) + " closes" : "The vaults close",
         at: ends,
         count: isNaN(ends) ? "When the GM says" : togo <= 0 ? "Any moment" : span(togo),
-        todo: hall.out ? outLine(hall.out) : night.opened ? "Your two vaults are sealed. Wait for the night to end." : "Collect clues. Then open two vaults in the arena.",
+        todo: hall.out ? outLine(hall.out) : isLadder() ? (night.opened ? "Your cards for this stage are sealed. Wait for the stage to close." : "Play your three cards at the table in the arena.") : night.opened ? "Your two vaults are sealed. Wait for the night to end." : "Collect clues. Then open two vaults in the arena.",
       };
     }
     var revealed = hall.phase === "revealed";
@@ -2136,7 +2136,7 @@
     return '<div class="menu-sheet" role="dialog" aria-modal="true" aria-labelledby="menu-heading">' +
       '<div class="menu-head"><h2 id="menu-heading">Menu</h2>' + walletMarkup() +
       '<button type="button" class="menu-close" data-act="menuClose" aria-label="Close menu">×</button></div>' +
-      (hall.night ? '<button type="button" class="menu-night" data-act="go" data-scene="tonight"><span><i>' + (hall.night.status === "open" ? "Being played now" : "Finished") + "</i><b>Game " + hall.night.n + " · " + gameName() + "</b></span><small>" + (hall.night.status === "open" ? (hall.night.opened ? "Your vaults are sealed" : "Your clue and the rules") : "See the result") + "</small></button>" : "") +
+      (hall.night ? '<button type="button" class="menu-night" data-act="go" data-scene="tonight"><span><i>' + (hall.night.status === "open" ? "Being played now" : "Finished") + "</i><b>Game " + hall.night.n + " · " + gameName() + "</b></span><small>" + (hall.night.status === "open" ? (isLadder() ? (hall.night.opened ? "Your cards are sealed" : "The ladder and the rules") : hall.night.opened ? "Your vaults are sealed" : "Your clue and the rules") : "See the result") + "</small></button>" : "") +
       menuNowHTML() +
       '<div class="menu-grid">' +
       '<button type="button" class="menu-tile wide" data-act="go" data-scene="board"><span class="menu-icon">' + ICON.board + "</span><b>GM notices</b><small>" + (gmTotal ? plural(gmTotal, "notice", "notices") + ", old and new" : "Nothing posted yet") + "</small>" + badge(u.board) + "</button>" +
@@ -2550,6 +2550,13 @@
         // the game is beginning: every player is told at once, whatever page they are on
         if (!stage && nightCall() && HALL.indexOf(ui.scene) >= 0 && ui.scene !== "gamecall") return go("gamecall");
         refreshStage(); if (!stage) showNotice(); drawThreads(); drawPlayers(); drawStandings();
+        // on the play screen: a stage has closed, or the game has ended, so turn the cards now
+        var sched = $("sched");
+        if (sched && sched.offsetParent !== null && ui.night && ui.night.on && ui.matchMark !== matchMark()) {
+          ui.matchMark = matchMark();
+          if (hall.night && hall.night.unseen) return go("vreveal");
+          if (hall.night) fetchNight().then(drawMatch);
+        }
       }).catch(function () {});
     }, 500);
   }
@@ -2910,7 +2917,7 @@
     if (o.down) return '<span class="pcard down' + size + '"></span>';
     var j = LADDER.isJoker(c);
     return '<span class="pcard' + (j ? " joker" : "") + size + (o.dim ? " dim" : "") + (o.cls ? " " + o.cls : "") + '">' +
-      "<b>" + (j ? "★" : c) + "</b>" + (o.tiny ? "" : "<i>" + (j ? "Joker" : "♠") + "</i>") + (o.boost ? "<em>+2</em>" : "") + "</span>";
+      "<b>" + (j ? "★" : c) + "</b>" + (o.tiny ? "" : "<i" + (c === "A" || c === "2" ? ' class="rank"' : "") + ">" + (j ? "Joker" : c === "A" ? "High" : c === "2" ? "Low" : "♠") + "</i>") + (o.boost ? "<em>+2</em>" : "") + "</span>";
   }
 
   // The rules of The Ladder, one picture to a screen. The pictures are made of the same cards the game is played with.
@@ -2926,9 +2933,9 @@
     var faces = "";
     for (var s = 0; s < 5; s++) faces += '<span class="stage-box"><i>Stage ' + (s + 1) + "</i><span><b></b><b></b><b></b></span></span>";
     return [
-      { line: "Everyone holds the same fifteen cards.", pic: pic('<div class="fan-all">' + all + "</div>") },
+      { line: "Everyone holds the same fifteen cards. The 2 is the lowest. The Ace is the highest: it beats the King.", pic: pic('<div class="fan-all">' + all + '</div><div class="lowhigh"><span>Lowest</span><i></i><span>Highest</span></div>') },
       { line: "You meet every other player once, and play one card against them.", pic: pic(versus("9", "6", 0, 0, {}, { down: true }).replace(/<u>0<\/u>/g, ""), "meet") },
-      { line: "The higher card wins a point. The lower card loses one. Equal cards score nothing.", pic: pic(versus("J", "8", 1, -1) + versus("7", "7", 0, 0), "two") },
+      { line: "The higher card wins a point. The lower card loses one. Ace beats King. Equal cards score nothing.", pic: pic(versus("A", "K", 1, -1) + versus("7", "7", 0, 0), "two") },
       { line: "A Joker beats every card. Except a 2.", pic: pic(versus("X1", "A", 1, -1) + versus("2", "X1", 1, -1), "two") },
       { line: "Each card is played once. Everyone can see which cards you have used.", pic: pic('<div class="fan-all">' + used + "</div>") },
       { line: plural(r.boostPrice, "coin", "coins") + " adds " + r.boost + " to a card. You can do it " + (r.boosts === 2 ? "twice" : r.boosts + " times") + " in the whole game.", pic: pic(versus("9", "10", 1, -1, { boost: true }, {}), "boost") },
@@ -2995,10 +3002,10 @@
           var theirs = n.used[p.opp] || [];
           return '<div class="ld-opp"><span class="ld-face">' + faceHTML(p.opp) + "</span><b>Player " + p.opp + "</b>" +
             '<button type="button" class="ld-slot' + (p.card ? " full" : "") + '" data-act="ldSlot" data-i="' + i + '" aria-label="Your card against Player ' + p.opp + '">' + (p.card ? cardHTML(p.card, { boost: p.boost }) : "<span>Your card</span>") + "</button>" +
-            '<button type="button" class="ld-boost' + (p.boost ? " on" : "") + '" data-act="ldBoost" data-i="' + i + '"' + (p.card && (p.boost || (n.boostsLeft - boostsUsed > 0 && (n.coins == null || n.coins - boostsUsed * n.rules.boostPrice >= n.rules.boostPrice))) ? "" : " disabled") + ">+2 · 1 coin</button>" +
+            '<button type="button" class="ld-boost' + (p.boost ? " on" : "") + '" data-act="ldBoost" data-i="' + i + '"' + (p.card && (p.boost || (n.boostsLeft - boostsUsed > 0 && (n.coins == null || (n.purse != null ? n.purse : n.coins) - boostsUsed * n.rules.boostPrice >= n.rules.boostPrice))) ? "" : " disabled") + ">+2 · 1 coin</button>" +
             '<span class="ld-left"><u>Cards they have left</u>' + LADDER.CARDS.map(function (c) { return cardHTML(c, { tiny: true, dim: theirs.indexOf(c) >= 0 }); }).join("") + "</span></div>";
         }).join("") + "</div></div>";
-        out += '<div class="s-card ld-hand"><i>Your cards · tap one to play it</i><div class="ld-cards">' + LADDER.CARDS.map(function (c) {
+        out += '<div class="s-card ld-hand"><i>Your cards · tap one to play it · Ace is high</i><div class="ld-cards">' + LADDER.CARDS.map(function (c) {
           var gone = n.hand.indexOf(c) < 0, down = d.plays.some(function (p) { return p.card === c; });
           return '<button type="button" class="ld-card' + (down ? " placed" : "") + '" data-act="ldCard" data-c="' + c + '"' + (gone ? " disabled" : "") + ">" + cardHTML(c, { dim: gone }) + "</button>";
         }).join("") + "</div>" +
@@ -3048,6 +3055,13 @@
       box.innerHTML = '<div class="v-gate"><p class="say big">Game ' + n.n + ' is over.<br>The last cards are turned.</p><button type="button" class="btn narrow" data-act="vNext">Show me</button></div>';
       return;
     }
+    var lastSt = n.results[n.results.length - 1];
+    if (ui.vstep === 1 && lastSt && lastSt.stage === n.stages) {
+      var net = lastSt.duels.reduce(function (t, d) { return t + d.r; }, 0);
+      box.innerHTML = '<div class="s-card ld-shown"><i>Stage ' + lastSt.stage + " · the last cards are turned</i>" + ladderRevealHTML(lastSt) +
+        '<p class="ld-net">This stage: <b>' + (net > 0 ? "+" : "") + net + '</b></p><button type="button" class="btn" data-act="vNext">The final ladder</button></div>';
+      return;
+    }
     var out = res.out === n.you;
     box.innerHTML = '<div class="s-card now"><i>Game ' + n.n + " · The Ladder · final</i>" + (mine ? "<h2>You finished " + place + ORD(place) + " with " + (mine.pts > 0 ? "+" : "") + mine.pts + "</h2>" : "") + ladderTableHTML(n, true) + "</div>" +
       '<div class="s-card next v-outcard"><i>Out</i><img class="v-stamp" src="/art/night1/stamp-out.webp" alt="Out"><h2>' + (res.out == null ? "The GM will decide" : out ? "You are out" : "Player " + res.out + " is out") + "</h2>" +
@@ -3074,12 +3088,18 @@
     });
   }
 
+  // What the play screen was last drawn for: the game's status and, in The Ladder, its stage.
+  // Kept apart from the hall's own copy, which other parts of the page refresh too.
+  function matchMark() { return hall && hall.night ? hall.night.status + ":" + (hall.night.stage || 0) : ""; }
+
   function mountMatch(canAct) {
     ui.matchAct = canAct;
+    ui.matchMark = matchMark();
     ui.v = null;
     $("sched").removeAttribute("data-sig");
     loadHall()
       .then(function () {
+        ui.matchMark = matchMark();
         if (!hall.night) return drawSched();
         return fetchNight().then(function (n) {
           // the first look at a night is the picture briefing
@@ -3095,10 +3115,11 @@
     }, 1000);
     poller = setInterval(function () {
       if (quiet()) return;
-      var before = hall && hall.night ? hall.night.status : "";
+      var before = ui.matchMark;
       loadHall()
         .then(function () {
-          var now = hall.night ? hall.night.status : "";
+          var now = matchMark(); // a stage of The Ladder closing counts as a change: the cards are turned on this screen
+          ui.matchMark = now;
           if (now !== before) {
             if (hall.night && hall.night.unseen) return go("vreveal");
             if (hall.night) return fetchNight().then(drawMatch);

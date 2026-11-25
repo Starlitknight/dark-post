@@ -174,3 +174,7 @@ The Four Wings route uses a sample house, clues and outcomes. The artwork and in
 All 166 original multiplayer server checks passed against a fresh local season. All 640 generated puzzle cases passed. Interface regressions cover all eight exits in both directions by floor tap, physical sign tap and keyboard. They also cover the six menu destinations, live wallet updates, coin privacy, shared ranks, banked puzzle coins and delayed room art.
 
 The invitation and the animated welcome and number draw were measured at 320 × 568, 390 × 844, 768 × 1024 and 1920 × 1080. Both invitation decisions fit at every size. Artwork, caption and action slots shifted by zero measured pixels across the welcome and draw. The downloadable gallery includes one 390 × 844 and one 1920 × 1080 browser capture for each of its 135 states.
+
+## The Ladder, server and console (NOT LIVE YET)
+- Game 1 is The Ladder: start, seal, close stage, prizes, elimination and undo on the server; console panel; arena shows four cards on a plinth; Ace marked High, 2 marked Low.
+- Tests: tests/test_ladder_game.py (whole 16-player game), tests/browser/ladder.mjs (console + phone player).

@@ -5,6 +5,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import { makePuzzle, sameAnswer, seedOf } from "./puzzles.js";
+import "../public/ladder.js";
 import { GOLD, RULES, clueText, dealClues, spareClue, shopClue, validThrows, settle } from "./vaults.js";
 
 const SEATS = 16;
@@ -34,6 +35,7 @@ const WORLD_ROOMS = ["hall", "arena", "puzzle", "betting", "studio", "sky", "dun
 // The three cells in the dungeon, as rectangles of its floor. public/world.js draws the same ones.
 const CELLS = [[90, 162, 470, 462], [560, 162, 940, 462], [1030, 162, 1410, 462]];
 const DAY_MS = 24 * 60 * 60 * 1000;
+const LADDER = globalThis.LADDER;
 const GAME_DAY_STARTS_UTC_MS = 5 * 60 * 60 * 1000; // midnight EST is 05:00 UTC
 const PUZZLE_TRIES = 3;
 const PUZZLE_REWARD = 1;
@@ -174,6 +176,9 @@ export class Game extends DurableObject {
       opened_at INTEGER,
       seen INTEGER NOT NULL DEFAULT 0
     )`);
+    // The Ladder: what each player has sealed for a stage, and what they have been shown.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS ladder_seals (number INTEGER NOT NULL, stage INTEGER NOT NULL, plays TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (number, stage))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS ladder_players (number INTEGER PRIMARY KEY, seen_stage INTEGER NOT NULL DEFAULT 0, seen INTEGER NOT NULL DEFAULT 0)`);
     this.lastPost = new Map();
   }
 
@@ -327,6 +332,8 @@ export class Game extends DurableObject {
       if (path === "/api/night/buy" && method === "POST") return this.nightBuy(request);
       if (path === "/api/night/open" && method === "POST") return this.nightOpen(request);
       if (path === "/api/night/seen" && method === "POST") return this.nightSeen(request);
+      if (path === "/api/night/seal" && method === "POST") return this.ladderSeal(request);
+      if (path === "/api/night/stage-seen" && method === "POST") return this.ladderStageSeen(request);
 
       if (path === "/api/claim" && method === "POST") return this.claim(request, url);
       if (path === "/api/commit" && method === "POST") return this.commit(request);
@@ -351,6 +358,7 @@ export class Game extends DurableObject {
         if (path === "/api/host/coins" && method === "POST") return this.hostCoins(request);
         if (path === "/api/host/night/start" && method === "POST") return this.hostNightStart(request);
         if (path === "/api/host/night/end" && method === "POST") return this.hostNightEnd();
+        if (path === "/api/host/night/stage" && method === "POST") return this.hostLadderStage();
         if (path === "/api/host/night/reset" && method === "POST") return this.hostNightReset();
         if (path === "/api/host/out" && method === "POST") return this.hostOut(request);
       }
@@ -1079,6 +1087,7 @@ export class Game extends DurableObject {
   nightBrief(inv) {
     const night = this.night();
     if (!night) return null;
+    if (night.game === "ladder") return this.ladderBrief(inv, night);
     const row = this.nightRow(inv, night);
     return {
       n: night.n,
@@ -1100,6 +1109,7 @@ export class Game extends DurableObject {
   nightView(inv) {
     const night = this.night();
     if (!night) return { on: false, rules: RULES, coins: this.balance(inv), out: inv.out || 0 };
+    if (night.game === "ladder") return this.ladderView(inv, night);
     const row = this.nightRow(inv, night);
     const coins = this.balance(inv);
     const view = {
@@ -1138,7 +1148,7 @@ export class Game extends DurableObject {
     if (!inv) return { error: json({ error: "You are not in the hall yet." }, 403) };
     if (inv.out) return { error: json({ error: "You are out of the game." }, 403) };
     const night = this.night();
-    if (!night || night.status !== "open") return { error: json({ error: "No match is being played right now." }, 409) };
+    if (!night || night.status !== "open" || night.game === "ladder") return { error: json({ error: "No match is being played right now." }, 409) };
     const row = this.nightRow(inv, night);
     if (!row) return { error: json({ error: "You are not in tonight's match." }, 409) };
     return { inv, night, row };
@@ -1178,6 +1188,7 @@ export class Game extends DurableObject {
     const inv = this.inHall(request);
     if (!inv) return json({ error: "You are not in the hall yet." }, 403);
     this.sql.exec(`UPDATE night_plays SET seen = 1 WHERE number = ?`, inv.number);
+    this.sql.exec(`UPDATE ladder_players SET seen = 1 WHERE number = ?`, inv.number);
     return json({ ok: true });
   }
 
@@ -1185,13 +1196,13 @@ export class Game extends DurableObject {
     const night = this.night();
     if (!night || night.status !== "open" || !night.endsAt) return;
     const at = Date.parse(night.endsAt);
-    if (!Number.isNaN(at) && Date.now() >= at) this.endNight();
+    if (!Number.isNaN(at) && Date.now() >= at) night.game === "ladder" ? this.closeLadderStage() : this.endNight();
   }
 
   // Close the vaults: count the gold, pay the three highest amounts, and send one player home.
   endNight() {
     const night = this.night();
-    if (!night || night.status !== "open") return null;
+    if (!night || night.status !== "open" || night.game === "ladder") return null;
     const players = this.activeNumbers();
     const plays = {};
     const shown = {};
@@ -1225,6 +1236,7 @@ export class Game extends DurableObject {
       if (at <= Date.now()) return json({ error: "The vaults must close in the future." }, 400);
       endsAt = new Date(at).toISOString();
     }
+    if (body.game === "ladder") return this.startLadder(before, players, endsAt, body);
     this.sql.exec(`DELETE FROM night_plays`);
     const hands = dealClues(players);
     for (const n of players) this.sql.exec(`INSERT INTO night_plays (number, clue) VALUES (?, ?)`, n, hands[n]);
@@ -1237,6 +1249,7 @@ export class Game extends DurableObject {
   hostNightEnd() {
     const night = this.night();
     if (!night || night.status !== "open") return json({ error: "No match is being played." }, 409);
+    if (night.game === "ladder") return json({ error: "The Ladder ends when its last stage is closed." }, 409);
     this.endNight();
     return json({ ok: true, result: this.publicResult() });
   }
@@ -1245,6 +1258,7 @@ export class Game extends DurableObject {
   hostNightReset() {
     const night = this.night();
     if (!night) return json({ ok: true });
+    if (night.game === "ladder") return this.resetLadder(night);
     const result = this.nightResult();
     if (result) for (const n of Object.keys(result.prize || {})) if (result.prize[n]) this.addCoins(Number(n), -result.prize[n]);
     for (const r of this.sql.exec(`SELECT number FROM night_plays WHERE bought IS NOT NULL`).toArray()) this.addCoins(r.number, RULES.cluePrice);
@@ -1278,6 +1292,7 @@ export class Game extends DurableObject {
   hostNightView() {
     const night = this.night();
     if (!night) return null;
+    if (night.game === "ladder") return this.hostLadderView(night);
     const rows = this.sql.exec(`SELECT * FROM night_plays ORDER BY number`).toArray();
     return {
       ...night,
@@ -1290,6 +1305,240 @@ export class Game extends DurableObject {
         gold: r.a ? GOLD[r.a - 1] + GOLD[r.b - 1] : null,
         throws: r.throws || "",
       })),
+      result: this.nightResult(),
+    };
+  }
+
+  // ---------- Game: The Ladder ----------
+  // The rules live in public/ladder.js, shared with the players' screens. Here: who has sealed what, and the closing of stages.
+
+  ladderDuels() {
+    return JSON.parse(this.get("ladder_duels", "[]"));
+  }
+
+  // The cards each player has already played, from the stages that are closed. Everyone may see these.
+  ladderUsed(players, duels) {
+    const used = {};
+    for (const n of players) used[n] = [];
+    for (const d of duels) {
+      if (used[d.a]) used[d.a].push(d.ca);
+      if (used[d.b]) used[d.b].push(d.cb);
+    }
+    return used;
+  }
+
+  ladderBoostsSpent(n, duels) {
+    return duels.reduce((k, d) => k + (d.a === n && d.ba ? 1 : 0) + (d.b === n && d.bb ? 1 : 0), 0);
+  }
+
+  ladderSealOf(n, stage) {
+    const rows = this.sql.exec(`SELECT plays FROM ladder_seals WHERE number = ? AND stage = ?`, n, stage).toArray();
+    return rows.length ? JSON.parse(rows[0].plays) : null;
+  }
+
+  ladderPlayer(n) {
+    const rows = this.sql.exec(`SELECT * FROM ladder_players WHERE number = ?`, n).toArray();
+    return rows.length ? rows[0] : null;
+  }
+
+  ladderBrief(inv, night) {
+    const row = this.ladderPlayer(inv.number);
+    return {
+      n: night.n,
+      game: "ladder",
+      status: night.status,
+      endsAt: night.endsAt || "",
+      stage: night.stage,
+      opened: night.status === "open" && !!row && !!this.ladderSealOf(inv.number, night.stage),
+      unseen: night.status === "done" && !!row && !row.seen,
+    };
+  }
+
+  ladderView(inv, night) {
+    const players = night.players;
+    const you = inv.number;
+    const row = this.ladderPlayer(you);
+    const playing = !!row && players.includes(you);
+    const duels = this.ladderDuels();
+    const used = this.ladderUsed(players, duels);
+    const results = [];
+    for (let s = 1; s <= night.stages; s++) {
+      const mine = duels.filter((d) => d.stage === s && (d.a === you || d.b === you));
+      if (!mine.length) continue;
+      results.push({
+        stage: s,
+        duels: mine.map((d) => {
+          const am = d.a === you;
+          const r = LADDER.duel(d.ca, d.ba, d.cb, d.bb);
+          return { opp: am ? d.b : d.a, mine: am ? d.ca : d.cb, theirs: am ? d.cb : d.ca, mb: am ? d.ba : d.bb, tb: am ? d.bb : d.ba, r: am ? r : -r };
+        }),
+      });
+    }
+    const sealed = playing && night.status === "open" ? this.ladderSealOf(you, night.stage) : null;
+    const coins = this.balance(inv);
+    const held = sealed ? sealed.filter((p) => p.boost).length * LADDER.RULES.boostPrice : 0;
+    const result = night.status === "done" ? this.nightResult() : null;
+    return {
+      on: true,
+      game: "ladder",
+      n: night.n,
+      status: night.status,
+      you,
+      playing,
+      out: inv.out || 0,
+      endsAt: night.endsAt || "",
+      stage: night.stage,
+      stages: night.stages,
+      opponents: playing ? LADDER.stagesFor(players, you) : [],
+      hand: playing ? LADDER.CARDS.filter((c) => !used[you].includes(c)) : [],
+      sealed,
+      boostsLeft: playing ? LADDER.RULES.boosts - this.ladderBoostsSpent(you, duels) : 0,
+      coins,
+      // what could be spent on boosts if this stage's cards were laid again: the coins held by the seal count
+      purse: (coins || 0) + held,
+      used,
+      results,
+      seenStage: playing ? row.seen_stage : night.stage,
+      table: LADDER.table(players, duels),
+      rules: LADDER.RULES,
+      result: result ? { out: result.out, last: result.last, prizes: result.prizes } : null,
+      seen: row ? !!row.seen : true,
+    };
+  }
+
+  // Seal a card against each of this stage's opponents. It can be laid again until the stage closes.
+  // A boost is paid for when it is sealed, and handed back if it is taken off.
+  async ladderSeal(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    if (inv.out) return json({ error: "You are out of the game." }, 403);
+    const night = this.night();
+    if (!night || night.game !== "ladder" || night.status !== "open") return json({ error: "No stage is open right now." }, 409);
+    const you = inv.number;
+    if (!this.ladderPlayer(you) || !night.players.includes(you)) return json({ error: "You are not in this game." }, 409);
+    const body = await readJson(request);
+    const opps = LADDER.stagesFor(night.players, you)[night.stage - 1] || [];
+    const duels = this.ladderDuels();
+    const used = this.ladderUsed(night.players, duels)[you];
+    const given = Array.isArray(body.plays) ? body.plays : [];
+    const plays = [];
+    for (const opp of opps) {
+      const p = given.find((x) => x && Number(x.opp) === opp);
+      if (!p || !LADDER.CARDS.includes(p.card)) return json({ error: "Play one card against each opponent." }, 400);
+      if (used.includes(p.card)) return json({ error: "You have already played the " + LADDER.label(p.card) + "." }, 400);
+      if (plays.some((x) => x.card === p.card)) return json({ error: "Each card can be played once." }, 400);
+      if (p.boost && LADDER.isJoker(p.card)) return json({ error: "A Joker cannot be boosted. Take the +2 off it." }, 400);
+      plays.push({ opp, card: p.card, boost: p.boost ? 1 : 0 });
+    }
+    const before = this.ladderSealOf(you, night.stage) || [];
+    const had = before.filter((p) => p.boost).length;
+    const want = plays.filter((p) => p.boost).length;
+    if (this.ladderBoostsSpent(you, duels) + want > LADDER.RULES.boosts) return json({ error: "You can boost " + LADDER.RULES.boosts + " cards in the whole game." }, 400);
+    const cost = (want - had) * LADDER.RULES.boostPrice;
+    if (cost > 0 && (this.balance(inv) || 0) < cost) return json({ error: "A boost costs " + LADDER.RULES.boostPrice + " coin. You do not have it." }, 409);
+    if (cost) this.addCoins(you, -cost);
+    this.sql.exec(`INSERT INTO ladder_seals (number, stage, plays, at) VALUES (?, ?, ?, ?) ON CONFLICT(number, stage) DO UPDATE SET plays = excluded.plays, at = excluded.at`, you, night.stage, JSON.stringify(plays), Date.now());
+    this.broadcast({ t: "news" });
+    return json(this.ladderView(this.inHall(request), night));
+  }
+
+  ladderStageSeen(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const night = this.night();
+    if (!night || night.game !== "ladder") return json({ error: "No game is being played." }, 409);
+    const closed = night.status === "done" ? night.stages : night.stage - 1;
+    this.sql.exec(`UPDATE ladder_players SET seen_stage = ? WHERE number = ?`, closed, inv.number);
+    return json(this.ladderView(inv, night));
+  }
+
+  startLadder(before, players, endsAt, body) {
+    const minutes = Number(body.stageMinutes);
+    const stageMinutes = Number.isFinite(minutes) && minutes > 0 ? Math.min(minutes, 7 * 24 * 60) : 0;
+    if (!endsAt && stageMinutes) endsAt = new Date(Date.now() + stageMinutes * 60000).toISOString();
+    this.sql.exec(`DELETE FROM ladder_seals`);
+    this.sql.exec(`DELETE FROM ladder_players`);
+    for (const n of players) this.sql.exec(`INSERT INTO ladder_players (number) VALUES (?)`, n);
+    this.set("ladder_duels", "[]");
+    this.set("night", JSON.stringify({ n: (before ? before.n : 0) + 1, game: "ladder", status: "open", startedAt: Date.now(), endsAt, stage: 1, stages: LADDER.stageCount(players), players, stageMinutes }));
+    this.set("night_result", "null");
+    this.broadcast({ t: "news" });
+    return json({ ok: true, players: players.length });
+  }
+
+  // Close the stage: every sealed card is turned. A player who sealed nothing plays their lowest cards.
+  // After the last stage the ladder is final: the top three are paid and the bottom player goes home.
+  closeLadderStage() {
+    const night = this.night();
+    if (!night || night.game !== "ladder" || night.status !== "open") return null;
+    const players = night.players;
+    const duels = this.ladderDuels();
+    const used = this.ladderUsed(players, duels);
+    const laid = {};
+    for (const n of players) {
+      const opps = LADDER.stagesFor(players, n)[night.stage - 1] || [];
+      const hand = LADDER.CARDS.filter((c) => !used[n].includes(c));
+      const seal = this.ladderSealOf(n, night.stage);
+      const ok = seal && opps.every((o) => seal.some((p) => p.opp === o && hand.includes(p.card)));
+      laid[n] = {};
+      if (ok) for (const p of seal) laid[n][p.opp] = [p.card, p.boost ? 1 : 0];
+      else LADDER.lowest(hand, opps.length).forEach((c, i) => { laid[n][opps[i]] = [c, 0]; });
+    }
+    const per = LADDER.RULES.perStage;
+    for (const pairs of LADDER.rounds(players).slice((night.stage - 1) * per, night.stage * per)) {
+      for (const [a, b] of pairs) duels.push({ stage: night.stage, a, b, ca: laid[a][b][0], cb: laid[b][a][0], ba: laid[a][b][1], bb: laid[b][a][1] });
+    }
+    this.set("ladder_duels", JSON.stringify(duels));
+    if (night.stage >= night.stages) {
+      const table = LADDER.table(players, duels);
+      const lp = LADDER.lastPlace(players, duels);
+      const prizes = {};
+      LADDER.RULES.prizes.forEach((coins, i) => { if (table[i]) prizes[table[i].n] = coins; });
+      for (const n of Object.keys(prizes)) this.addCoins(Number(n), prizes[n]);
+      if (lp.out != null) this.sql.exec(`UPDATE invites SET out = ? WHERE number = ?`, night.n, lp.out);
+      this.set("night_result", JSON.stringify({ game: "ladder", out: lp.out, last: lp.last, undecided: lp.out == null ? lp.level : [], prizes, prize: prizes, endedAt: Date.now() }));
+      this.set("night", JSON.stringify({ ...night, status: "done", endsAt: "" }));
+    } else {
+      const endsAt = night.stageMinutes ? new Date(Date.now() + night.stageMinutes * 60000).toISOString() : "";
+      this.set("night", JSON.stringify({ ...night, stage: night.stage + 1, endsAt }));
+    }
+    this.broadcast({ t: "news" });
+    return this.night();
+  }
+
+  hostLadderStage() {
+    const night = this.night();
+    if (!night || night.game !== "ladder" || night.status !== "open") return json({ error: "No stage is open." }, 409);
+    const after = this.closeLadderStage();
+    return json({ ok: true, status: after.status, stage: after.stage });
+  }
+
+  // Undo the game, for testing: prizes and boost coins go back, and whoever it sent home returns.
+  resetLadder(night) {
+    const result = this.nightResult();
+    if (result) for (const n of Object.keys(result.prizes || {})) this.addCoins(Number(n), -result.prizes[n]);
+    const duels = this.ladderDuels();
+    for (const n of night.players) {
+      let spent = this.ladderBoostsSpent(n, duels);
+      if (night.status === "open") spent += (this.ladderSealOf(n, night.stage) || []).filter((p) => p.boost).length;
+      if (spent) this.addCoins(n, spent * LADDER.RULES.boostPrice);
+    }
+    this.sql.exec(`UPDATE invites SET out = 0 WHERE out = ?`, night.n);
+    this.sql.exec(`DELETE FROM ladder_seals`);
+    this.sql.exec(`DELETE FROM ladder_players`);
+    this.set("ladder_duels", "[]");
+    this.set("night", JSON.stringify(night.n > 1 ? { n: night.n - 1, game: "vaults", status: "done" } : null));
+    this.set("night_result", "null");
+    this.broadcast({ t: "news" });
+    return json({ ok: true });
+  }
+
+  hostLadderView(night) {
+    const duels = this.ladderDuels();
+    return {
+      ...night,
+      sealed: night.status === "open" ? night.players.filter((n) => !!this.ladderSealOf(n, night.stage)) : [],
+      table: LADDER.table(night.players, duels),
       result: this.nightResult(),
     };
   }

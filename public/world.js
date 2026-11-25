@@ -441,6 +441,7 @@ window.DP_WORLD = (function () {
   // Some rooms have a second picture: the arena with the night's set in it, the shop with its shutter up.
   function plateOf(id) {
     if (id === 'arena' && arenaSet === 'vaults') return 'arena-vaults';
+    if (id === 'arena' && arenaSet === 'ladder') return 'arena-ladder';
     if (id === 'shop' && shopOpen) return 'shop-open';
     return id;
   }

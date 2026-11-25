@@ -1,0 +1,149 @@
+"""
+A whole game of The Ladder against a local server, sixteen players, start to finish.
+Start from an empty local database:  python3 tests/test_ladder_game.py [base]
+With "keep" as a second argument it stops after stage 1 is sealed, to leave a game to look at.
+"""
+import json, random, sys, urllib.request, urllib.error
+
+BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8787"
+FACE = {"s": 1, "h": 2, "c": 1, "g": 0, "b": 0, "m": 0, "o": 0}
+CARDS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "X1", "X2"]
+random.seed(7)
+
+
+def call(method, path, body=None, cookies=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(BASE + path, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    if cookies:
+        req.add_header("Cookie", "; ".join(f"{k}={v}" for k, v in cookies.items()))
+    try:
+        with urllib.request.urlopen(req) as res:
+            return res.status, json.loads(res.read() or b"{}"), res.headers
+    except urllib.error.HTTPError as err:
+        return err.code, json.loads(err.read() or b"{}"), err.headers
+
+
+def check(label, cond):
+    print(("PASS  " if cond else "FAIL  ") + label)
+    if not cond:
+        check.failed += 1
+
+
+check.failed = 0
+seat = lambda t: {"dp_seat": t}
+
+status, body, headers = call("POST", "/api/host/login", {"passphrase": "correct horse battery"})
+host = {"dp_host": headers.get("Set-Cookie", "").split(";")[0].split("=", 1)[1]}
+call("POST", "/api/host/invites", {"names": [f"Guest {i}" for i in range(1, 17)]}, host)
+call("POST", "/api/host/settings", {"opensAt": "2099-12-05T02:00:00Z", "replyBy": "2099-12-03T02:00:00Z", "letter": {"signature": "S"}}, host)
+tokens = [inv["token"] for inv in call("GET", "/api/host/state", cookies=host)[1]["invites"]]
+num = {}
+for i, t in enumerate(tokens):
+    num[t] = call("POST", "/api/respond", {"accept": True}, seat(t))[1]["number"]
+    call("POST", "/api/enter", {}, seat(t))
+    call("POST", "/api/seal", {"bag": 1}, seat(t))
+    call("POST", "/api/avatar", {"avatar": dict(FACE, o=i % 9, h=i % 20, s=i % 6, c=i % 6)}, seat(t))
+    call("POST", "/api/commit", {"play": True}, seat(t))
+by = {n: t for t, n in num.items()}
+check("sixteen players are seated", sorted(by) == list(range(1, 17)))
+
+night = lambda t: call("GET", "/api/night", cookies=seat(t))[1]
+hall = lambda t: call("GET", "/api/hall", cookies=seat(t))[1]
+coins = lambda t: hall(t)["coins"]
+seal = lambda t, plays: call("POST", "/api/night/seal", {"plays": plays}, seat(t))
+A = by[1]
+
+check("the game cannot start before the bags are open", call("POST", "/api/host/night/start", {"game": "ladder"}, host)[0] == 409)
+call("POST", "/api/host/reveal", {}, host)
+check("a player cannot start the game", call("POST", "/api/host/night/start", {"game": "ladder"}, seat(A))[0] == 401)
+check("no cards can be sealed before it starts", seal(A, [])[0] == 409)
+status, body, _ = call("POST", "/api/host/night/start", {"game": "ladder"}, host)
+check("the GM starts The Ladder for sixteen", status == 200 and body["players"] == 16)
+check("it cannot be started twice", call("POST", "/api/host/night/start", {"game": "ladder"}, host)[0] == 409)
+
+v = night(A)
+check("stage 1 of 5, three opponents, fifteen cards, two boosts", v["game"] == "ladder" and v["stage"] == 1 and v["stages"] == 5 and len(v["opponents"]) == 5 and all(len(o) == 3 for o in v["opponents"]) and v["hand"] == CARDS and v["boostsLeft"] == 2)
+met = sorted(o for st in v["opponents"] for o in st)
+check("a player meets each of the other fifteen exactly once", met == list(range(2, 17)))
+check("the hall says a game is on and nothing is sealed", hall(A)["night"]["game"] == "ladder" and hall(A)["night"]["stage"] == 1 and hall(A)["night"]["opened"] is False)
+
+o = v["opponents"][0]
+check("a card is needed against every opponent", seal(A, [{"opp": o[0], "card": "A"}])[0] == 400)
+check("a card cannot be played twice in a stage", seal(A, [{"opp": o[0], "card": "A"}, {"opp": o[1], "card": "A"}, {"opp": o[2], "card": "K"}])[0] == 400)
+check("a made-up card is refused", seal(A, [{"opp": o[0], "card": "Z"}, {"opp": o[1], "card": "A"}, {"opp": o[2], "card": "K"}])[0] == 400)
+check("a Joker cannot be boosted", seal(A, [{"opp": o[0], "card": "X1", "boost": True}, {"opp": o[1], "card": "A"}, {"opp": o[2], "card": "K"}])[0] == 400)
+before = coins(A)
+status, body, _ = seal(A, [{"opp": o[0], "card": "9", "boost": True}, {"opp": o[1], "card": "K"}, {"opp": o[2], "card": "4"}])
+check("three cards are sealed, and the boost costs a coin", status == 200 and coins(A) == before - 1 and len(body["sealed"]) == 3 and hall(A)["night"]["opened"] is True)
+status, body, _ = seal(A, [{"opp": o[0], "card": "9"}, {"opp": o[1], "card": "K"}, {"opp": o[2], "card": "4"}])
+check("the cards can be laid again, and taking the boost off returns the coin", status == 200 and coins(A) == before)
+seal(A, [{"opp": o[0], "card": "9", "boost": True}, {"opp": o[1], "card": "K"}, {"opp": o[2], "card": "4"}])
+check("nobody else is shown a sealed card", night(by[o[0]])["used"]["1"] == [] and night(by[o[0]])["sealed"] is None and night(by[o[0]])["results"] == [])
+hv = call("GET", "/api/host/activity", cookies=host)[1]["night"]
+check("the GM sees who has sealed", hv["sealed"] == [1] and hv["stage"] == 1)
+
+if len(sys.argv) > 2 and sys.argv[2] == "keep":
+    print("left open at stage 1"); sys.exit(0)
+
+# everyone but Player 16 plays random cards; Player 16 never shows up
+def play_stage(stage):
+    for n in range(2, 16):
+        v = night(by[n])
+        hand = v["hand"][:]
+        random.shuffle(hand)
+        s, _, _ = seal(by[n], [{"opp": opp, "card": hand[i]} for i, opp in enumerate(v["opponents"][stage - 1])])
+        assert s == 200, (n, stage)
+
+play_stage(1)
+check("a player cannot close a stage", call("POST", "/api/host/night/stage", {}, seat(A))[0] == 401)
+status, body, _ = call("POST", "/api/host/night/stage", {}, host)
+check("the GM closes stage 1 and stage 2 opens", status == 200 and body["stage"] == 2)
+v = night(A)
+r = v["results"][0]["duels"]
+check("the player sees their three duels, with the cards and the boost", len(r) == 3 and [d["mine"] for d in r] == ["9", "K", "4"] and r[0]["mb"] == 1 and v["seenStage"] == 0)
+check("played cards leave the hand and are public", v["hand"] == [c for c in CARDS if c not in ("9", "K", "4")] and sorted(night(by[5])["used"]["1"]) == sorted(["9", "K", "4"]))
+check("the absent player was given their three lowest cards", sorted(v["used"]["16"]) == ["2", "3", "4"])
+check("one boost is left and the coin stays spent", v["boostsLeft"] == 1 and coins(A) == before - 1)
+check("the ladder adds up to nothing", sum(row["pts"] for row in v["table"]) == 0 and len(v["table"]) == 16)
+check("an already played card is refused", seal(A, [{"opp": v["opponents"][1][0], "card": "9"}, {"opp": v["opponents"][1][1], "card": "A"}, {"opp": v["opponents"][1][2], "card": "Q"}])[0] == 400)
+v = call("POST", "/api/night/stage-seen", {}, seat(A))[1]
+check("the stage result is shown once", v["seenStage"] == 1)
+
+o = v["opponents"][1]
+seal(A, [{"opp": o[0], "card": "10", "boost": True}, {"opp": o[1], "card": "A"}, {"opp": o[2], "card": "Q"}])
+play_stage(2)
+call("POST", "/api/host/night/stage", {}, host)
+v = night(A)
+o = v["opponents"][2]
+check("a third boost is refused", v["boostsLeft"] == 0 and seal(A, [{"opp": o[0], "card": "J", "boost": True}, {"opp": o[1], "card": "X1"}, {"opp": o[2], "card": "2"}])[0] == 400)
+for stage in (3, 4, 5):
+    v = night(A)
+    hand = v["hand"]
+    seal(A, [{"opp": opp, "card": hand[-1 - i]} for i, opp in enumerate(v["opponents"][stage - 1])])
+    play_stage(stage)
+    status, body, _ = call("POST", "/api/host/night/stage", {}, host)
+check("closing stage 5 ends the game", status == 200 and body["status"] == "done")
+check("nothing more can be closed", call("POST", "/api/host/night/stage", {}, host)[0] == 409)
+
+v = night(A)
+res = v["result"]
+table = v["table"]
+check("every player played all fifteen cards", all(sorted(v["used"][str(n)]) == sorted(CARDS) for n in range(1, 17)) and v["hand"] == [])
+check("the ladder is final: 120 duels, points add up to nothing", sum(row["w"] for row in table) == sum(row["l"] for row in table) and sum(row["pts"] for row in table) == 0 and sum(row["w"] + row["l"] + row["t"] for row in table) == 240)
+check("the top three are paid 5, 3 and 1", res["prizes"] == {str(table[0]["n"]): 5, str(table[1]["n"]): 3, str(table[2]["n"]): 1})
+low = min(row["pts"] for row in table)
+check("the player who is out has the fewest points", (res["out"] is None and len(res["last"]) > 1) or [row for row in table if row["n"] == res["out"]][0]["pts"] == low)
+if res["out"] is not None:
+    check("that player is out of the game, and is told", hall(by[res["out"]])["out"] == 1 and hall(by[res["out"]])["night"]["unseen"] is True)
+    check("they can no longer play", seal(by[res["out"]], [])[0] == 403)
+call("POST", "/api/night/seen", {}, seat(A))
+check("the result is shown once", hall(A)["night"]["unseen"] is False)
+print("ladder:", [(row["n"], row["pts"]) for row in table], "out:", res["out"], "last:", res["last"])
+
+paid = {int(k): c for k, c in res["prizes"].items()}
+bal = {n: coins(by[n]) for n in range(1, 17)}
+check("the GM can undo the game: prizes and boosts go back, the player returns", call("POST", "/api/host/night/reset", {}, host)[0] == 200 and night(A)["on"] is False and coins(A) == bal[1] - paid.get(1, 0) + 2 and all(hall(by[n])["out"] == 0 for n in range(1, 17)))
+
+print("\n%d failed" % check.failed)
+sys.exit(1 if check.failed else 0)

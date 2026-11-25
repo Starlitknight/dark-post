@@ -114,8 +114,6 @@
     var wrong = $("wrong-words");
     wrong.hidden = !state.wrongWords;
     wrong.textContent = state.wrongWords ? state.wrongWords + (state.wrongWords === 1 ? " wrong word has" : " wrong words have") + " been typed at the door in the last hour. A few are typos. Dozens mean someone is guessing; the door shuts itself for the hour at 40." : "";
-    // Night 1 is shelved while its art is redrawn. /host?night=1 shows its controls.
-    $("night-panel").hidden = new URLSearchParams(location.search).get("night") !== "1";
     fillLetter(state.letter);
   }
 
@@ -611,7 +609,38 @@
 
   var THROWS = { r: "Rock", p: "Paper", s: "Scissors" };
 
+  function drawLadder1(n) {
+    var box = $("night-box");
+    $("night-form").hidden = !!n;
+    if (!n) { box.innerHTML = state.phase === "revealed" ? "" : '<p class="table-empty">Open the bags first. Players need coins for the +2 boost.</p>'; return; }
+    var out = '<div class="night-box">';
+    if (n.status === "open") {
+      var waiting = n.players.filter(function (k) { return n.sealed.indexOf(k) < 0; });
+      out += "<p><b>Game " + n.n + ": The Ladder. Stage " + n.stage + " of " + n.stages + " is open.</b> " + n.sealed.length + " of " + n.players.length + " players have sealed their cards. " +
+        (waiting.length ? "Not yet: " + waiting.map(function (k) { return "Player " + k; }).join(", ") + ". " : "Everyone has sealed. ") +
+        (n.endsAt ? "This stage closes by itself " + esc(htime(Date.parse(n.endsAt))) + ", your time." : "It closes when you press the button.") + "</p>" +
+        '<button type="button" class="btn" data-night="stage" data-waiting="' + waiting.length + '">Close stage ' + n.stage + (n.stage === n.stages ? " and end the game" : " and turn the cards") + '</button> <button type="button" class="link quiet" data-night="reset">Cancel the game</button>';
+    } else {
+      var r = n.result || {};
+      out += "<p><b>Game " + n.n + ": The Ladder is over.</b> " + (r.out != null ? esc(hwho(r.out)) + " is out." : "Nobody is out yet.") + "</p>";
+      if (r.out == null && (r.undecided || []).length) {
+        out += "<p>These players are level at the bottom, and neither the duels between them nor their wins could separate them. Choose who leaves.</p>" +
+          r.undecided.map(function (k) { return '<button type="button" class="btn" data-out="' + k + '">Send Player ' + k + " home</button>"; }).join(" ");
+      }
+      out += '<p><button type="button" class="link quiet" data-night="reset">Undo the game (testing only)</button></p>';
+    }
+    out += "</div>";
+    var prizes = (n.result && n.result.prizes) || {};
+    out += '<table class="table"><thead><tr><th>Place</th><th>Player</th><th>Points</th><th>Won</th><th>Lost</th><th>Level</th><th>' + (n.status === "open" ? "This stage" : "Prize") + "</th></tr></thead><tbody>" +
+      n.table.map(function (row, i) {
+        return "<tr><td>" + (i + 1) + "</td><td>" + esc(hwho(row.n)) + '</td><td class="num">' + (row.pts > 0 ? "+" : "") + row.pts + '</td><td class="num">' + row.w + '</td><td class="num">' + row.l + '</td><td class="num">' + row.t + "</td><td>" +
+          (n.status === "open" ? (n.sealed.indexOf(row.n) >= 0 ? "Sealed" : "Not yet") : prizes[row.n] ? "+" + prizes[row.n] + " coins" : "") + "</td></tr>";
+      }).join("") + "</tbody></table>";
+    box.innerHTML = out;
+  }
+
   function drawNight1(n) {
+    if (!n || n.game === "ladder") return drawLadder1(n);
     var box = $("night-box");
     $("night-form").hidden = !!(n && n.status === "open");
     if (!n || !n.players) { box.innerHTML = state.phase === "revealed" ? "" : '<p class="table-empty">Open the bags first. Players need coins for the shop.</p>'; return; }
@@ -643,10 +672,10 @@
 
   $("night-form").addEventListener("submit", function (e) {
     e.preventDefault();
-    var value = $("night-ends").value;
-    if (!window.confirm(value ? "Start Night 1? Every player is dealt a clue now." : "Start Night 1 with no closing time? You will have to close the vaults yourself.")) return;
-    api("POST", "/api/host/night/start", { endsAt: value ? new Date(value).toISOString() : "" })
-      .then(function (res) { toast("Night 1 has begun for " + res.players + " players."); return refresh(); })
+    var hours = Number($("night-hours").value);
+    if (!window.confirm(hours > 0 ? "Start Game 1: The Ladder? Each stage will close by itself after " + hours + " hours. You can still close one early." : "Start Game 1: The Ladder? You will close each of the stages yourself.")) return;
+    api("POST", "/api/host/night/start", { game: "ladder", stageMinutes: hours > 0 ? Math.round(hours * 60) : 0 })
+      .then(function (res) { toast("Game 1 has begun for " + res.players + " players."); return refresh(); })
       .catch(function (err) { toast(err.message); });
   });
 
@@ -661,6 +690,12 @@
     }
     if (!act) return;
     var what = act.getAttribute("data-night");
+    if (what === "stage") {
+      var late = Number(act.getAttribute("data-waiting"));
+      if (!window.confirm(late ? late + " players have not sealed. If you close now they play their lowest cards. Close the stage?" : "Close the stage and turn the cards?")) return;
+      api("POST", "/api/host/night/stage", {}).then(function (res) { toast(res.status === "done" ? "The game is over." : "The cards are turned. Stage " + res.stage + " is open."); return refresh(); }).catch(function (err) { toast(err.message); });
+      return;
+    }
     if (what === "end" && !window.confirm("Close the vaults now? Players who have not opened get no gold.")) return;
     if (what === "reset" && !window.confirm("Undo this night? Prizes and clue money go back, and the player who left returns.")) return;
     api("POST", "/api/host/night/" + what, {})

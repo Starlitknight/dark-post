@@ -49,12 +49,12 @@
     <div id="mview" class="mview"></div>
   </section>
 
-  <section class="panel" id="night-panel" hidden>
-    <h2>Night 1: Six Vaults</h2>
-    <p class="help">Three vaults are empty and three hold 10, 5 and 2 gold. Each player is dealt one true clue, can buy one more in the shop for 1 coin, and opens two vaults. The least gold is out, and a tie for last is played as Rock Paper Scissors from throws each player seals. Start it after the bags are open. The vaults close by themselves at the time you set, or when you press the button.</p>
+  <section class="panel" id="night-panel">
+    <h2>Game 1: The Ladder</h2>
+    <p class="help">Every player holds the same fifteen cards and plays one card against every other player, three opponents to a stage. Higher card +1, lower card −1. You close each stage: the cards are turned, the ladder updates, and the next stage opens. A player who has sealed nothing when you close plays their lowest cards. After the last stage the top three are paid 5, 3 and 1 coins and the bottom player is out. Start it after the bags are open.</p>
     <form id="night-form" class="row coins-form">
-      <div><label for="night-ends">The vaults close at (your time)</label><input type="datetime-local" id="night-ends"></div>
-      <button class="btn" type="submit">Start the night</button>
+      <div><label for="night-hours">Hours each stage stays open (leave empty to close every stage yourself)</label><input type="number" id="night-hours" min="0" step="0.5" inputmode="decimal"></div>
+      <button class="btn" type="submit">Start Game 1: The Ladder</button>
     </form>
     <div id="night-box"></div>
   </section>
