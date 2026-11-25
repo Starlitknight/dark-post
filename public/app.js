@@ -1077,6 +1077,8 @@
         );
       },
       mount: function () {
+        // while the treasury is in play, the puzzle room is the treasury and nothing else
+        if (treasOn()) return mountTreasury();
         api("GET", "/api/puzzle").then(function (p) { ui.pz = p; drawPuzzle(); }).catch(function (err) { toast(err.message); });
         ticker = setInterval(function () {
           var el = $("pz-reset");
@@ -1723,6 +1725,12 @@
         ? { text: "The shop is open.", go: ["shop", "See what is for sale"] }
         : { text: "The shop is closed right now. It will open when the games start." };
     }
+    if (id === "puzzle" && treasOn()) {
+      var tr = hall.treasury;
+      if (tr.opened) return { text: "The treasury is open. Every player was paid.", go: ["puzzle", "See the passcode"] };
+      if (tr.slot >= 0 && !tr.solved) return { text: "The treasury holds 80 coins, behind a passcode of 16 letters. One of them is hidden in a puzzle only you have.", go: ["puzzle", "Open my puzzle"] };
+      return { text: "You have your letter. Tell the others in the broadcast room. " + tr.found + " of " + tr.of + " letters are found.", go: ["puzzle", "Go to the treasury"] };
+    }
     if (id === "puzzle") {
       if (!pz) return { text: "One moment." };
       if (pz.solved) return { text: "I see you have done today’s puzzle. Check again later for a different puzzle." };
@@ -2050,7 +2058,7 @@
   // Can this player still solve today's puzzle?
   function puzzleOpen() {
     var pz = hall && hall.puzzle;
-    return !!pz && !hall.out && !pz.solved && pz.left > 0;
+    return !treasOn() && !!pz && !hall.out && !pz.solved && pz.left > 0;
   }
 
   function solvedToday() {
@@ -2073,6 +2081,11 @@
       else if (isLadder()) out.push(heard("table" + n.n) ? { title: "Play your three cards", sub: "Game " + n.n + ": The Ladder. Stage " + (n.stage || 1) + ".", scene: "arena", go: "Play" }
         : { title: "Play your three cards", sub: "Game " + n.n + ": The Ladder. Stage " + (n.stage || 1) + ".", walk: "Walk to the table in the arena." });
       else out.push({ title: "Open two vaults", sub: "Game " + n.n + ": Six Vaults. Before the vaults close.", walk: "Walk to the vaults in the arena." });
+    }
+    if (treasOn() && !hall.treasury.opened) {
+      var tz = hall.treasury;
+      if (tz.slot >= 0 && !tz.solved) out.push({ title: "Solve your puzzle for the treasury", sub: "It hides one letter of the passcode. " + tz.found + " of " + tz.of + " letters found so far.", walk: "Walk to the puzzle room." });
+      else out.push({ once: true, title: "Help open the treasury", sub: tz.found + " of " + tz.of + " letters found. 5 coins for everyone when it opens.", walk: "Share your letter in the broadcast room. The door is in the puzzle room." });
     }
     if (puzzleOpen()) {
       var done = solvedToday().length;
@@ -2117,6 +2130,10 @@
   function noticeLine(x) {
     if (x.kind === "duel") return x.mine ? "Your duel with Player " + x.n + " is decided" : "Players " + x.n + " and " + x.m + " have dueled";
     if (x.kind === "wait") return "Player " + x.n + " has submitted against you and is waiting";
+    if (x.kind === "tfound") return "Player " + x.n + " found a letter of the passcode";
+    if (x.kind === "thelp") return "Player " + x.n + " asks for help with their puzzle";
+    if (x.kind === "tsolved") return "Player " + x.n + " solved your puzzle. Your letter is waiting";
+    if (x.kind === "topen") return "Player " + x.n + " opened the treasury: 5 coins for everyone";
     if (x.kind === "betwon") return "Your bet on Player " + x.n + " won: +2 coins";
     if (x.kind === "betlost") return "Your bet on Player " + x.n + " lost";
     if (x.kind === "betlevel") return "The duel you bet on was level: your coin is back";
@@ -2125,7 +2142,7 @@
   // News that is about this player: it counts on the bell and pops up. Other players' duels are only listed.
   // "Waiting for you" stops mattering once this player has submitted.
   function noticeLive(x) { return x.kind !== "wait" || (hall.night && hall.night.status === "open" && !hall.night.opened); }
-  function noticeMine(x) { return x.kind === "solved" || (x.kind === "duel" && x.mine) || (x.kind === "wait" && noticeLive(x)) || /^bet(won|lost|level)$/.test(x.kind); }
+  function noticeMine(x) { return x.kind === "solved" || (x.kind === "duel" && x.mine) || (x.kind === "wait" && noticeLive(x)) || /^bet(won|lost|level)$/.test(x.kind) || x.kind === "tsolved" || x.kind === "topen"; }
 
   function bellHTML() {
     var todo = todoList(), fresh = stage.bellMark || 0;
@@ -2221,6 +2238,18 @@
       return;
     }
     var fresh = list.filter(function (x) { return x.id > noteSeen && x.kind === "solved" && x.today; });
+    var tnews = list.filter(function (x) { return x.id > noteSeen && (x.kind === "topen" || x.kind === "tsolved" || x.kind === "thelp"); });
+    if (tnews.length && stage && $("note")) {
+      var tn = tnews[0], elT = $("note");
+      noteSeen = top;
+      if ($("onair")) $("onair").hidden = true;
+      elT.innerHTML = '<span class="onair-face">' + faceHTML(tn.n) + '</span><span class="onair-text"><i>The treasury</i><b>' + esc(noticeLine(tn)) + ".</b><small>" + (tn.kind === "thelp" ? "Tap to help them." : "Tap to see.") + "</small></span>";
+      elT.setAttribute("data-to", "puzzle");
+      elT.hidden = false; elT.classList.remove("on"); void elT.offsetWidth; elT.classList.add("on");
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(function () { var x = $("note"); if (x) x.hidden = true; }, 9000);
+      return;
+    }
     var duels = list.filter(function (x) { return x.id > noteSeen && x.kind === "duel" && x.mine; });
     var waits = list.filter(function (x) { return x.id > noteSeen && x.kind === "wait" && noticeLive(x); });
     noteSeen = top;
@@ -2413,7 +2442,7 @@
     var btn = $("hud-action");
     btn.hidden = !spot;
     if (spot) {
-      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? (isLadder() ? (hall.night.opened ? "See your duels" : "Play your cards") : "Open the vaults") : spot.scene === "deal" && betsOn() ? (hall.bets.placed ? "See your bet" : "Place a bet") : spot.label;
+      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? (isLadder() ? (hall.night.opened ? "See your duels" : "Play your cards") : "Open the vaults") : spot.scene === "deal" && betsOn() ? (hall.bets.placed ? "See your bet" : "Place a bet") : spot.scene === "puzzle" && treasOn() ? "Open the treasury" : spot.label;
       btn.style.setProperty("--place", PLACES[stage.room].color);
     }
     measureStage();
@@ -3278,6 +3307,207 @@
       '<button type="button" class="btn" data-act="vDone">Continue</button>';
   }
   function ORD(k) { return k === 1 ? "st" : k === 2 ? "nd" : k === 3 ? "rd" : "th"; }
+
+  // ----- the treasury: one passcode of sixteen letters, and a puzzle for every player -----
+
+  function treasOn() { return !!(hall && hall.treasury && hall.treasury.on); }
+  function trGuesses() { try { return JSON.parse(localStorage.getItem("dp_tr_guess_" + (me ? me.number : 0)) || "{}"); } catch (e) { return {}; } }
+  function trSaveGuess(slot, ch) { try { var g = trGuesses(); if (ch) g[slot] = ch; else delete g[slot]; localStorage.setItem("dp_tr_guess_" + me.number, JSON.stringify(g)); } catch (e) {} }
+
+  function mountTreasury() {
+    var head = document.querySelector("#app .room-head h1");
+    if (head) head.textContent = "The treasury";
+    ui.tr = null;
+    ui.trs = { view: heard("treasury") ? "main" : "rules", step: 0 };
+    var load = function () { return api("GET", "/api/treasury").then(function (v) { var first = !ui.tr; ui.tr = v; if (first || (ui.trs && ui.trs.view === "main")) drawTreasury(); }); };
+    load().catch(function (err) { toast(err.message); });
+    ticker = setInterval(function () { if (ui.trs && ui.trs.view === "main" && !(document.activeElement && document.activeElement.classList.contains("tr-in"))) load().catch(function () {}); }, 8000);
+  }
+
+  // a small picture of a grid: 1 is a filled square
+  function trPixels(rows, cls) {
+    return '<div class="tr-pix' + (cls ? " " + cls : "") + '" style="--n:' + rows[0].length + '">' + rows.map(function (r) { return r.split("").map(function (c) { return "<i" + (c === "1" ? ' class="on"' : "") + "></i>"; }).join(""); }).join("") + "</div>";
+  }
+
+  function trTiles(v) {
+    function pic(inner, cls) { return '<div class="vb-draw' + (cls ? " " + cls : "") + '">' + inner + "</div>"; }
+    var blanks = ""; for (var i = 0; i < 16; i++) blanks += '<i' + (i === v.mine ? ' class="me"' : "") + ">" + (i === v.mine ? "?" : "") + "</i>";
+    var lineDemo = '<div class="tr-demo"><b>3 1</b><span><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i class="on"></i><i></i><i></i></span></div><div class="tr-demo"><b>2 2</b><span><i></i><i class="on"></i><i class="on"></i><i></i><i></i><i class="on"></i><i class="on"></i></span></div>';
+    return [
+      { line: "The treasury holds " + v.pot + " coins. A passcode of " + v.length + " letters opens it.", pic: pic('<div class="tr-vault"><b>' + v.pot + '</b><small>coins</small></div><div class="tr-blanks">' + blanks.replace(' class="me"', "").replace("?", "") + "</div>") },
+      { line: "You hold one place in the passcode. A puzzle that only you have hides the letter that goes there.", pic: pic('<div class="tr-blanks">' + blanks + '</div><div class="tr-mineface"><span class="rung-face">' + faceHTML(v.you) + "</span><b>Your place: " + (v.mine + 1) + "</b></div>") },
+      { line: "The puzzle is a grid. The numbers beside a line say how many squares in a row are filled: 3 1 means three together, a gap, then one.", pic: pic(lineDemo) },
+      { line: "Fill the whole grid and it draws your letter. Then tell the others, in the broadcast room. Nobody is shown your letter unless you tell them.", pic: pic(trPixels(["01111110", "00011000", "00011000", "00011000", "00011000", "00011000", "00011000", "00011000"], "big") + '<div class="tr-say"><span class="rung-face">' + faceHTML(v.you) + '</span><span class="bubble">Place ' + (v.mine + 1) + " is T.</span></div>") },
+      { line: "Stuck? Open your puzzle to everyone and ask for help. When someone enters the whole passcode, every player gets " + v.reward + " coins.", pic: pic('<div class="tr-all">' + v.slots.slice(0, 16).map(function (x) { return '<span class="rung-face">' + faceHTML(x.holder || 0) + "</span>"; }).join("") + '</div><div class="bt-pay win"><em>✓</em><span>Everyone</span><s></s><b>+' + v.reward + "</b></div>") },
+    ];
+  }
+
+  function drawTreasury() {
+    var box = $("pz"), v = ui.tr, t = ui.trs;
+    if (!box || !v || !t) return;
+    if (!v.on) { box.innerHTML = '<div class="s-card"><p>The treasury is closed.</p></div>'; return; }
+    if (t.view === "rules") {
+      var tiles = trTiles(v), tl = tiles[Math.min(t.step, tiles.length - 1)];
+      box.innerHTML = '<div class="s-card now bt-tile"><i>The treasury · ' + (t.step + 1) + " of " + tiles.length + "</i>" + tl.pic + '<p class="bt-line">' + esc(tl.line) + '</p><button type="button" class="btn" data-act="trNext">' + (t.step === tiles.length - 1 ? "Got it" : "Next") + "</button></div>";
+      return;
+    }
+    if (t.view === "solve") return drawTrSolve();
+    var mineKnown = {}, guesses = trGuesses(), out = "";
+    v.letters.forEach(function (l) { mineKnown[l.slot] = l.letter; });
+    var found = v.slots.filter(function (x) { return x.found; }).length;
+    if (v.opened) {
+      out += '<div class="s-card now tr-open"><i>The treasury is open</i><h2>' + esc(v.opened.code.split("").join(" ")) + "</h2><p>" + esc(who(v.opened.by)) + " entered the passcode. Every player was paid <b>" + v.reward + " coins</b>.</p></div>";
+    } else {
+      out += '<div class="s-card now"><i>The treasury</i><div class="tr-head"><div class="tr-vault"><b>' + v.pot + "</b><small>coins</small></div><p>" + found + " of " + v.length + " letters have been found. A tick under a place means its holder has the letter. Ask them for it.</p></div></div>";
+    }
+    // the sixteen places
+    var filled = 0;
+    out += '<div class="s-card tr-code"><i>The passcode · your working copy</i><div class="tr-slots">' + v.slots.map(function (x, i) {
+      var sure = v.opened ? v.opened.code[i] : mineKnown[i], val = sure || guesses[i] || "";
+      if (val) filled += 1;
+      return '<label class="tr-slot' + (sure ? " sure" : "") + (i === v.mine ? " mine" : "") + '"><small>' + (i + 1) + "</small>" +
+        (sure ? "<b>" + esc(sure) + "</b>" : '<input class="tr-in" type="text" maxlength="1" autocapitalize="characters" autocomplete="off" inputmode="text" data-slot="' + i + '" value="' + esc(val) + '" aria-label="Letter in place ' + (i + 1) + '">') +
+        '<span class="tr-holder' + (x.found ? " found" : "") + '">' + faceHTML(x.holder || 0) + (x.found ? "<em>✓</em>" : "") + "</span></label>";
+    }).join("") + "</div>" + (v.opened ? "" : '<p class="tr-cap">Gold letters are ones you have earned. Type the letters other players tell you into the empty places.</p>' +
+      (v.out ? "" : '<button type="button" class="btn" data-act="trTry"' + (filled === v.length && v.triesLeft > 0 ? "" : " disabled") + ">" + (v.triesLeft ? (filled === v.length ? "Try this passcode" : "Fill all " + v.length + " places to try") : "You have used your tries") + '</button><p class="tr-cap">' + plural(v.triesLeft, "try", "tries") + " left for you, of " + v.tries + ".</p>")) + "</div>";
+    // your own puzzle
+    if (v.mine >= 0) {
+      var mineL = mineKnown[v.mine];
+      if (mineL) out += '<div class="s-card now tr-mine"><i>Your letter</i><div class="tr-got"><strong>' + esc(mineL) + "</strong><span>Place <b>" + (v.mine + 1) + "</b> of the passcode</span></div>" + (v.opened ? "" : '<p>Nobody else is shown this. Tell them in the broadcast room.</p><div class="btn-row"><button type="button" class="btn" data-act="go" data-scene="table">Go to the broadcast room</button></div>') + "</div>";
+      else if (!v.opened) out += '<div class="s-card todo tr-mine"><i>Your puzzle · place ' + (v.mine + 1) + "</i><p>It hides the letter that goes in place " + (v.mine + 1) + '.</p><div class="btn-row"><button type="button" class="btn" data-act="trSolve" data-slot="' + v.mine + '">Solve my puzzle</button></div>' +
+        (v.slots[v.mine].help ? '<p class="tr-cap">Your puzzle is open to everyone. <button type="button" class="link" data-act="trHelpOff">Close it again</button></p>' : '<button type="button" class="link" data-act="trHelp">Stuck? Open it to everyone and ask for help</button>') + "</div>";
+    }
+    // puzzles other players have opened
+    var open = v.opened ? [] : v.slots.map(function (x, i) { return { i: i, x: x }; }).filter(function (o) { return o.x.help && o.i !== v.mine && !mineKnown[o.i]; });
+    if (open.length) out += '<div class="s-card"><i>Players asking for help</i>' + open.map(function (o) {
+      return '<div class="tr-helprow"><span class="rung-face">' + faceHTML(o.x.holder || 0) + "</span><span>" + (o.x.holder ? esc(who(o.x.holder)) + "’s puzzle" : "A puzzle nobody holds") + "<small>Place " + (o.i + 1) + (o.x.found ? " · already solved" : "") + '</small></span><button type="button" class="btn small" data-act="trSolve" data-slot="' + o.i + '">Help</button></div>';
+    }).join("") + "</div>";
+    out += '<div class="s-card"><button type="button" class="link" data-act="trRules">How the treasury works</button></div>';
+    box.innerHTML = out;
+  }
+
+  // The grid itself. 0 unknown, 1 filled, 2 marked empty.
+  function trLineOk(clue, cells) {
+    var runs = [], k = 0;
+    cells.forEach(function (c) { if (c === 1) k += 1; else if (k) { runs.push(k); k = 0; } });
+    if (k) runs.push(k);
+    return runs.join(",") === clue.join(",");
+  }
+  function drawTrSolve() {
+    var box = $("pz"), t = ui.trs, p = t.pz;
+    if (!box || !p) return;
+    var n = p.size, cells = t.cells, holder = p.holder;
+    var row = function (y) { return cells.slice(y * n, y * n + n); }, col = function (x) { var o = []; for (var y = 0; y < n; y++) o.push(cells[y * n + x]); return o; };
+    if (t.done) {
+      box.innerHTML = '<div class="s-card now tr-done"><i>Solved</i>' + trPixels(t.done.grid, "big") + '<div class="tr-got"><strong>' + esc(t.done.letter) + "</strong><span>goes in place <b>" + t.done.place + "</b> of the passcode</span></div>" +
+        "<p>" + (holder === ui.tr.you ? "This is your letter. Nobody else is shown it. Tell the others in the broadcast room." : "You solved " + esc(holder ? who(holder) : "an unheld") + "’s puzzle. You both have this letter now.") + "</p>" +
+        '<div class="btn-row"><button type="button" class="btn" data-act="go" data-scene="table">Go to the broadcast room</button><button type="button" class="btn ghost" data-act="trBack">The treasury</button></div></div>';
+      return;
+    }
+    var okRows = 0, okCols = 0, html = '<div class="tr-grid" style="--n:' + n + '"><span class="tr-corner"></span>';
+    for (var x = 0; x < n; x++) { var co = trLineOk(p.clues.cols[x], col(x)); if (co) okCols += 1; html += '<span class="tr-ccol' + (co ? " ok" : "") + '">' + (p.clues.cols[x].length ? p.clues.cols[x].map(function (k) { return "<b>" + k + "</b>"; }).join("") : "<b>0</b>") + "</span>"; }
+    for (var y = 0; y < n; y++) {
+      var ro = trLineOk(p.clues.rows[y], row(y)); if (ro) okRows += 1;
+      html += '<span class="tr-crow' + (ro ? " ok" : "") + '">' + (p.clues.rows[y].length ? p.clues.rows[y].map(function (k) { return "<b>" + k + "</b>"; }).join("") : "<b>0</b>") + "</span>";
+      for (var x2 = 0; x2 < n; x2++) { var c = cells[y * n + x2]; html += '<button type="button" class="tr-cell' + (c === 1 ? " on" : c === 2 ? " no" : "") + '" data-act="trCell" data-i="' + (y * n + x2) + '" aria-label="Row ' + (y + 1) + ", column " + (x2 + 1) + '"></button>'; }
+    }
+    html += "</div>";
+    var all = okRows === n && okCols === n;
+    box.innerHTML = '<div class="s-card now tr-solve"><i>' + (holder === ui.tr.you ? "Your puzzle" : esc(holder ? who(holder) : "Unheld") + "’s puzzle") + " · place " + (p.slot + 1) + "</i>" +
+      '<p class="tr-cap">Each number is a run of filled squares, in order. A line’s numbers turn green when it matches.</p>' + html +
+      '<div class="tr-tools"><button type="button" class="tr-mode' + (t.mode === 1 ? " on" : "") + '" data-act="trMode" data-m="1"><i class="on"></i>Fill</button><button type="button" class="tr-mode' + (t.mode === 2 ? " on" : "") + '" data-act="trMode" data-m="2"><i class="no"></i>Mark empty</button><button type="button" class="tr-mode" data-act="trClear">Clear</button></div>' +
+      '<p class="tr-cap">' + (okRows + okCols) + " of " + n * 2 + " lines match.</p>" +
+      '<div class="btn-row"><button type="button" class="btn" data-act="trCheck"' + (all ? "" : " disabled") + ">" + (all ? "Reveal the letter" : "Match every line to finish") + '</button><button type="button" class="btn ghost" data-act="trBack">Back</button></div></div>';
+  }
+
+  // Unfinished work is kept on the server, so a player can leave and come back, or change phone.
+  var trSaveTimer = null;
+  function trSaveNow() {
+    var t = ui.trs;
+    clearTimeout(trSaveTimer);
+    if (!t || !t.pz || t.done || !t.cells) return Promise.resolve();
+    return api("POST", "/api/treasury/work", { slot: t.pz.slot, cells: t.cells.join("") }).catch(function () {});
+  }
+  function trSaveWork() {
+    clearTimeout(trSaveTimer);
+    trSaveTimer = setTimeout(trSaveNow, 1200);
+  }
+
+  function treasuryAct(name, el) {
+    var v = ui.tr, t = ui.trs;
+    if (!v || !t) return;
+    if (name === "trNext") { t.step += 1; if (t.step >= trTiles(v).length) { t.view = "main"; markHeard("treasury"); } window.scrollTo(0, 0); return drawTreasury(); }
+    if (name === "trRules") { t.view = "rules"; t.step = 0; window.scrollTo(0, 0); return drawTreasury(); }
+    if (name === "trBack") {
+      var saved = trSaveNow();
+      t.view = "main"; t.done = null; t.pz = null;
+      saved.then(function () { return api("GET", "/api/treasury"); }).then(function (nv) { ui.tr = nv; drawTreasury(); }).catch(function () { drawTreasury(); });
+      window.scrollTo(0, 0);
+      return;
+    }
+    if (name === "trSolve") {
+      var slot = Number(el.getAttribute("data-slot"));
+      return api("GET", "/api/treasury/puzzle?slot=" + slot).then(function (p) {
+        t.pz = p; t.mode = 1; t.done = p.solved ? { letter: p.letter, place: p.slot + 1, grid: p.grid } : null;
+        t.cells = (p.work && p.work.length === p.size * p.size ? p.work : new Array(p.size * p.size + 1).join("0")).split("").map(Number);
+        t.view = "solve"; window.scrollTo(0, 0); drawTreasury();
+      }).catch(function (err) { toast(err.message); });
+    }
+    if (name === "trMode") { t.mode = Number(el.getAttribute("data-m")); return drawTrSolve(); }
+    if (name === "trClear") { if (t.cells.some(function (c) { return c; }) && !t.sure) { t.sure = true; return toast("Tap Clear again to empty the grid."); } t.sure = false; t.cells = t.cells.map(function () { return 0; }); trSaveWork(); return drawTrSolve(); }
+    if (name === "trCell") { var i = Number(el.getAttribute("data-i")); t.cells[i] = t.cells[i] === t.mode ? 0 : t.mode; t.sure = false; trSaveWork(); return drawTrSolve(); }
+    if (name === "trCheck") {
+      if (ui.busy) return;
+      ui.busy = true;
+      return api("POST", "/api/treasury/solve", { slot: t.pz.slot, cells: t.cells.join("") }).then(function (r) {
+        if (!r.ok) return toast(r.error || "Not yet.");
+        t.done = { letter: r.letter, place: r.place, grid: r.grid };
+        if (hall && hall.treasury && t.pz.holder === v.you) hall.treasury.solved = true;
+        window.scrollTo(0, 0); drawTrSolve();
+      }).catch(function (err) { toast(err.message); }).then(function () { ui.busy = false; });
+    }
+    if (name === "trHelp" || name === "trHelpOff") {
+      if (name === "trHelp" && !t.askHelp) { t.askHelp = true; return toast("Everyone will be able to open your puzzle. Tap again to confirm."); }
+      t.askHelp = false;
+      return api("POST", "/api/treasury/help", { on: name === "trHelp" }).then(function (nv) { ui.tr = nv; drawTreasury(); toast(name === "trHelp" ? "Your puzzle is open to everyone. Say so in the broadcast room." : "Your puzzle is yours alone again."); }).catch(function (err) { toast(err.message); });
+    }
+    if (name === "trTry") {
+      var mineKnown = {}, g = trGuesses(), code = "";
+      v.letters.forEach(function (l) { mineKnown[l.slot] = l.letter; });
+      for (var k = 0; k < v.length; k++) code += mineKnown[k] || g[k] || "?";
+      if (!t.sureTry) { t.sureTry = true; return toast("You have " + plural(v.triesLeft, "try", "tries") + ". Tap again to try " + code + "."); }
+      t.sureTry = false;
+      if (ui.busy) return;
+      ui.busy = true;
+      return api("POST", "/api/treasury/open", { code: code }).then(function (r) {
+        if (r.ok) { ui.tr = r.view; news(); drawTreasury(); return toast("The treasury is open."); }
+        ui.tr.triesLeft = r.triesLeft; drawTreasury();
+        toast("Wrong. " + r.right + " of " + v.length + " letters are in the right place.");
+      }).catch(function (err) { toast(err.message); }).then(function () { ui.busy = false; });
+    }
+  }
+  // tapping a place selects what is in it, so typing replaces the letter
+  document.addEventListener("focusin", function (e) { var el = e.target; if (el && el.classList && el.classList.contains("tr-in")) setTimeout(function () { try { el.select(); } catch (x) {} }, 0); });
+  document.addEventListener("visibilitychange", function () { if (document.hidden) trSaveNow(); });
+  document.addEventListener("input", function (e) {
+    var el = e.target;
+    if (!el || !el.classList || !el.classList.contains("tr-in")) return;
+    var ch = (el.value || "").toUpperCase().replace(/[^A-Z]/g, "").slice(-1);
+    el.value = ch;
+    trSaveGuess(Number(el.getAttribute("data-slot")), ch);
+    if (ui.trs) ui.trs.sureTry = false;
+    var next = ch && document.querySelector('.tr-in[data-slot="' + (Number(el.getAttribute("data-slot")) + 1) + '"]');
+    // the Try button depends on every place being filled
+    var btn = document.querySelector('[data-act="trTry"]');
+    if (btn && ui.tr) {
+      var known = {}, g = trGuesses(), n = 0;
+      ui.tr.letters.forEach(function (l) { known[l.slot] = 1; });
+      for (var k = 0; k < ui.tr.length; k++) if (known[k] || g[k]) n += 1;
+      btn.disabled = !(n === ui.tr.length && ui.tr.triesLeft > 0);
+      btn.textContent = ui.tr.triesLeft ? (n === ui.tr.length ? "Try this passcode" : "Fill all " + ui.tr.length + " places to try") : "You have used your tries";
+    }
+    if (next) next.focus();
+  });
 
   // ----- the betting room during The Ladder: one bet on your own final score -----
 
@@ -4176,6 +4406,7 @@
     }
     else if (name === "cardClose") { ui.card = 0; $("card").hidden = true; }
     else if (name.indexOf("bt") === 0) betAct(name, el);
+    else if (name.indexOf("tr") === 0 && name.length > 2 && name.charAt(2) === name.charAt(2).toUpperCase()) treasuryAct(name, el);
     else if (name === "dealTo") { ui.dealTo = Number(el.getAttribute("data-n")); drawDeal(); }
     else if (name === "dealPick") { ui.dealPick = { id: Number(el.getAttribute("data-id")) || 0, n: Number(el.getAttribute("data-n")), choice: el.getAttribute("data-c") }; drawDeal(); }
     else if (name === "dealBack") { ui.dealPick = null; ui.dealTo = 0; drawDeal(); }
@@ -4193,6 +4424,7 @@
       el.removeAttribute("data-to");
       if (to === "arena") { readNotices(true); go("arena"); }
       else if (to === "whispers") go("whispers");
+      else if (to === "puzzle") { readNotices(true); toast("Walk to the puzzle room. The treasury is there."); }
       else setMenu(true, "bell");
     }
     else if (name === "menuClose") setMenu(false);

@@ -564,7 +564,7 @@
       }
       setKeepingOpen($("activity"), out);
       drawBoard(a.board);
-      drawNight1(a.night); gmInit(); drawActive(a.active);
+      drawNight1(a.night); gmInit(); drawActive(a.active); drawTreasury(a.treasury);
     }).catch(function () {});
   }
 
@@ -745,6 +745,40 @@
       return '<div class="act-row' + (p.score === 0 ? " none" : "") + '"><b class="act-rank">' + (i + 1) + '</b><div class="act-main"><div class="act-top"><b>' + esc(hwho(p.n)) + "</b><span>" + (p.online ? "Online now" : "Last online: " + esc(et(p.seen))) + "</span></div>" +
         '<div class="act-bar"><i style="width:' + Math.round(p.score / top * 100) + '%"></i></div><div class="act-did">' + (did.length ? esc(did.join(" \u00b7 ")) : "Nothing yet") + '</div></div><b class="act-score">' + p.score + "</b></div>";
     }).join("");
+  }
+
+  // ----- the treasury -----
+  function drawTreasury(t) {
+    var box = $("treasury-box");
+    if (!box || !t) return;
+    $("treasury-form").hidden = !!t.on;
+    if (!t.on) {
+      box.innerHTML = t.armed ? "<p><b>Armed.</b> The treasury opens by itself when stage 1 closes, with the passcode <b>" + esc(t.armed) + '</b>. <button type="button" class="link quiet" data-treasury="off">Disarm</button></p>' : "";
+      return;
+    }
+    var found = t.slots.filter(function (s) { return s.found; }).length;
+    var out = '<div class="night-box"><p><b>' + (t.opened ? "The treasury was opened by " + esc(hwho(t.opened.by)) + ". Every player was paid 5 coins." : "The treasury is in play.") + "</b> Passcode: <b>" + esc(t.code) + "</b>. " + found + " of " + t.slots.length + ' holders have their letter.</p><button type="button" class="link quiet" data-treasury="off">Take the treasury away' + (t.opened ? " and take the coins back" : "") + "</button></div>";
+    out += '<table class="table"><thead><tr><th>Place</th><th>Letter</th><th>Held by</th><th>Their puzzle</th><th>Also solved by</th></tr></thead><tbody>' + t.slots.map(function (s) {
+      return "<tr><td>" + s.place + "</td><td><b>" + esc(s.letter) + "</b></td><td>" + (s.holder ? esc(hwho(s.holder)) : "Nobody") + "</td><td>" + (s.found ? "Solved" : s.help ? "Open to everyone" : "Not yet") + "</td><td>" + (s.also.length ? s.also.map(function (k) { return "P" + k; }).join(", ") : "") + "</td></tr>";
+    }).join("") + "</tbody></table>";
+    if (t.tries.length) out += '<details class="archive" data-k="ttries"><summary>Tries at the door (' + t.tries.length + ")</summary>" + t.tries.map(function (x) { return "<div>" + esc(hwho(x.number)) + ": <b>" + esc(x.guess) + "</b> \u00b7 " + esc(htime(x.at)) + "</div>"; }).join("") + "</details>";
+    setKeepingOpen(box, out);
+  }
+  function treasurySend(arm) {
+    var code = $("treasury-code").value;
+    var letters = code.toUpperCase().replace(/[^A-Z]/g, "");
+    if (letters.length !== 16) return toast("The passcode must be exactly 16 letters. This one has " + letters.length + ".");
+    if (!window.confirm(arm ? "Arm the treasury? It will open by itself when stage 1 closes, with the passcode " + letters + "." : "Open the treasury for play now, with the passcode " + letters + "? Every player gets a puzzle at once.")) return;
+    api("POST", "/api/host/treasury", { code: letters, arm: !!arm }).then(function () { $("treasury-code").value = ""; toast(arm ? "Armed for the end of stage 1." : "The treasury is in play."); return refresh(); }).catch(function (err) { toast(err.message); });
+  }
+  if ($("treasury-form")) {
+    $("treasury-form").addEventListener("submit", function (e) { e.preventDefault(); treasurySend(false); });
+    $("treasury-arm").addEventListener("click", function () { treasurySend(true); });
+    $("treasury-box").addEventListener("click", function (e) {
+      if (!e.target.closest("[data-treasury]")) return;
+      if (!window.confirm("Take the treasury away? Puzzles and letters are lost, and any coins it paid are taken back.")) return;
+      api("POST", "/api/host/treasury", { off: true }).then(function () { toast("The treasury is gone."); return refresh(); }).catch(function (err) { toast(err.message); });
+    });
   }
 
   // Redrawing a box must not fold an archive the GM has opened.

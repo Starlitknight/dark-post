@@ -6,6 +6,7 @@ import { DurableObject } from "cloudflare:workers";
 
 import { makePuzzle, sameAnswer, seedOf } from "./puzzles.js";
 import "../public/ladder.js";
+import * as TREASURY from "./treasury.js";
 import { GOLD, RULES, clueText, dealClues, spareClue, shopClue, validThrows, settle } from "./vaults.js";
 
 const SEATS = 16;
@@ -41,6 +42,9 @@ const BET_PAYS = [5, 4, 3, 2];
 const BET_MAX = 3;
 // A coin on someone else's duel: the stake, what a right pick returns, and how many such bets a player may place in a stage.
 const DUEL_BET = { stake: 1, pays: 2, perStage: 3 };
+// The treasury: what every seated player is paid when it opens, and how many times one player may try the passcode.
+const TREASURY_PAY = 5;
+const TREASURY_TRIES = 3;
 const GAME_DAY_STARTS_UTC_MS = 5 * 60 * 60 * 1000; // midnight EST is 05:00 UTC
 const PUZZLE_TRIES = 3;
 const PUZZLE_REWARD = 1;
@@ -185,6 +189,10 @@ export class Game extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS ladder_seals (number INTEGER NOT NULL, stage INTEGER NOT NULL, plays TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (number, stage))`);
     // a piece of news can name a second player: the two who have dueled, or the one being waited on
     try { this.sql.exec(`ALTER TABLE notices ADD COLUMN m INTEGER NOT NULL DEFAULT 0`); } catch (e) {}
+    // The treasury: which characters of the passcode a player has earned, their unfinished grids, and their tries at the door.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS treasury_known (number INTEGER NOT NULL, slot INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (number, slot))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS treasury_work (number INTEGER NOT NULL, slot INTEGER NOT NULL, cells TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (number, slot))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS treasury_tries (id INTEGER PRIMARY KEY AUTOINCREMENT, number INTEGER NOT NULL, guess TEXT NOT NULL, at INTEGER NOT NULL)`);
     // A coin on a duel between two other players. status: open, won, lost, level.
     this.sql.exec(`CREATE TABLE IF NOT EXISTS duel_bets (id INTEGER PRIMARY KEY AUTOINCREMENT, number INTEGER NOT NULL, stage INTEGER NOT NULL, a INTEGER NOT NULL, b INTEGER NOT NULL, pick INTEGER NOT NULL, stake INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'open', paid INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL)`);
     // A player's one bet on their own final score in The Ladder.
@@ -364,6 +372,12 @@ export class Game extends DurableObject {
       if (path === "/api/bet" && method === "GET") return this.betGet(request);
       if (path === "/api/bet" && method === "POST") return this.betPlace(request);
       if (path === "/api/bet/duel" && method === "POST") return this.duelBetPlace(request);
+      if (path === "/api/treasury" && method === "GET") return this.treasuryGet(request);
+      if (path === "/api/treasury/puzzle" && method === "GET") return this.treasuryPuzzle(request, url);
+      if (path === "/api/treasury/work" && method === "POST") return this.treasuryWork(request);
+      if (path === "/api/treasury/solve" && method === "POST") return this.treasurySolve(request);
+      if (path === "/api/treasury/help" && method === "POST") return this.treasuryHelp(request);
+      if (path === "/api/treasury/open" && method === "POST") return this.treasuryOpen(request);
       if (path === "/api/night/stage-seen" && method === "POST") return this.ladderStageSeen(request);
 
       if (path === "/api/claim" && method === "POST") return this.claim(request, url);
@@ -394,6 +408,7 @@ export class Game extends DurableObject {
         if (path === "/api/host/gm" && method === "GET") return json(this.hostGmView());
         if (path === "/api/host/gm" && method === "POST") return this.hostGmMove(request);
         if (path === "/api/host/gm/say" && method === "POST") return this.hostGmSay(request);
+        if (path === "/api/host/treasury" && method === "POST") return this.hostTreasury(request);
         if (path === "/api/host/night/reset" && method === "POST") return this.hostNightReset();
         if (path === "/api/host/out" && method === "POST") return this.hostOut(request);
       }
@@ -651,6 +666,7 @@ export class Game extends DurableObject {
       bettingOpen: this.bettingOpen(),
       // while The Ladder is played the betting room takes bets on a player's own score, and nothing else
       bets: this.betsBrief(inv),
+      treasury: this.treasuryBrief(inv),
       // behind the bell: news about the other players, newest first, and how far this player has read
       // what the GM has announced: the latest three and how many in all. They stay here after they are read.
       gm: {
@@ -944,7 +960,7 @@ export class Game extends DurableObject {
     const today = this.puzzleDay();
     const me = inv.number;
     return this.sql
-      .exec(`SELECT id, kind, n, m, day, at FROM notices WHERE (kind = 'solved' AND n != ?) OR kind = 'duel' OR (kind IN ('wait', 'betwon', 'betlost', 'betlevel') AND m = ?) ORDER BY id DESC LIMIT 60`, me, me)
+      .exec(`SELECT id, kind, n, m, day, at FROM notices WHERE (kind IN ('solved', 'tfound', 'thelp', 'topen') AND n != ?) OR kind = 'duel' OR (kind IN ('wait', 'betwon', 'betlost', 'betlevel', 'tsolved') AND m = ?) ORDER BY id DESC LIMIT 60`, me, me)
       .toArray()
       .map((r) => {
         const x = { id: r.id, kind: r.kind, n: r.n, at: r.at, today: r.day === today };
@@ -1621,6 +1637,8 @@ export class Game extends DurableObject {
       this.set("night", JSON.stringify({ ...night, status: "done", endsAt: "" }));
     } else {
       const endsAt = night.stageMinutes ? new Date(Date.now() + night.stageMinutes * 60000).toISOString() : "";
+      // the treasury can be set to open the moment the first stage closes
+      if (night.stage === 1) this.treasuryStartIfArmed();
       if (endsAt) this.ctx.storage.setAlarm(Date.parse(endsAt) + 2000);
       this.set("night", JSON.stringify({ ...night, stage: night.stage + 1, endsAt }));
     }
@@ -1853,6 +1871,226 @@ export class Game extends DurableObject {
       this.addCoins(b.number, b.stake * b.mult);
       this.sql.exec(`UPDATE ladder_bets SET paid = ? WHERE number = ?`, b.stake * b.mult, b.number);
     }
+  }
+
+  // ---------- the treasury: one passcode, sixteen puzzles ----------
+  // The GM chooses a passcode of sixteen letters. Every player is given one place in it and a picture-logic
+  // puzzle of their own; solving it tells them the letter in their place. They tell the others (or do not),
+  // and anyone may try the whole passcode at the door. When it opens, every player is paid.
+  // The passcode and the grids live only in this game's storage. They are not in the code.
+
+  treasury() {
+    return JSON.parse(this.get("treasury", "null"));
+  }
+
+  treasuryMake(code, players) {
+    const order = players.slice();
+    for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+    const base = Math.floor(Math.random() * 1e6) + 1;
+    const grids = code.split("").map((ch, i) => TREASURY.letterGrid(ch, base + i * 31).map((r) => r.join("")));
+    // order[slot] is the player who holds that place; a place nobody holds is open to everyone from the start
+    return { on: true, startedAt: Date.now(), code, order: code.split("").map((_, i) => order[i] || 0), grids, help: code.split("").map((_, i) => (order[i] ? 0 : 1)), opened: null, reward: TREASURY_PAY };
+  }
+
+  treasuryStartIfArmed() {
+    const code = this.get("treasury_armed", "");
+    if (!code || this.treasury()) return;
+    this.set("treasury_armed", "");
+    this.treasuryBegin(code);
+  }
+
+  treasuryBegin(code) {
+    this.sql.exec(`DELETE FROM treasury_known`);
+    this.sql.exec(`DELETE FROM treasury_work`);
+    this.sql.exec(`DELETE FROM treasury_tries`);
+    this.sql.exec(`DELETE FROM notices WHERE kind IN ('tfound', 'thelp', 'topen', 'tsolved')`);
+    this.set("treasury", JSON.stringify(this.treasuryMake(code, this.activeNumbers())));
+    this.broadcast({ t: "news" });
+  }
+
+  treasuryBrief(inv) {
+    const t = this.treasury();
+    if (!t || !t.on) return null;
+    const slot = t.order.indexOf(inv.number);
+    const found = new Set(this.sql.exec(`SELECT k.number FROM treasury_known k`).toArray().map((r) => r.number));
+    return { on: true, opened: !!t.opened, slot, solved: slot >= 0 && this.treasuryKnows(inv.number, slot), found: t.order.filter((n) => n && this.treasuryKnows(n, t.order.indexOf(n))).length, of: t.order.length };
+  }
+
+  treasuryKnows(number, slot) {
+    return this.sql.exec(`SELECT 1 FROM treasury_known WHERE number = ? AND slot = ?`, number, slot).toArray().length > 0;
+  }
+
+  treasuryTriesLeft(number) {
+    return Math.max(0, TREASURY_TRIES - this.sql.exec(`SELECT COUNT(*) AS c FROM treasury_tries WHERE number = ?`, number).one().c);
+  }
+
+  treasuryView(inv) {
+    const t = this.treasury();
+    if (!t || !t.on) return { on: false };
+    const me = inv.number;
+    const known = this.sql.exec(`SELECT slot FROM treasury_known WHERE number = ?`, me).toArray().map((r) => r.slot);
+    const owners = new Set(this.sql.exec(`SELECT number, slot FROM treasury_known`).toArray().filter((r) => t.order[r.slot] === r.number).map((r) => r.slot));
+    return {
+      on: true,
+      you: me,
+      length: t.code.length,
+      reward: t.reward,
+      pot: t.reward * this.treasurySeats().length,
+      mine: t.order.indexOf(me),
+      // each place: who holds it, whether they have found their character, and whether its puzzle is open to all
+      slots: t.order.map((n, i) => ({ holder: n, found: owners.has(i), help: !!t.help[i] })),
+      // the characters this player has earned, by solving their own puzzle or someone else's
+      letters: known.map((slot) => ({ slot, letter: t.code[slot] })),
+      triesLeft: this.treasuryTriesLeft(me),
+      tries: TREASURY_TRIES,
+      opened: t.opened ? { by: t.opened.by, at: t.opened.at, code: t.code } : null,
+      out: inv.out || 0,
+    };
+  }
+
+  treasurySeats() {
+    return this.sql.exec(`SELECT number FROM invites WHERE status = 'accepted' AND avatar IS NOT NULL ORDER BY number`).toArray().map((r) => r.number);
+  }
+
+  treasuryActor(request) {
+    const inv = this.inHall(request);
+    if (!inv) return { error: json({ error: "You are not in the hall yet." }, 403) };
+    const t = this.treasury();
+    if (!t || !t.on) return { error: json({ error: "The treasury is not open for play." }, 409) };
+    return { inv, t };
+  }
+
+  treasuryGet(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    return json(this.treasuryView(inv));
+  }
+
+  // May this player work on the puzzle of this place? Their own, or one whose holder asked for help.
+  treasuryMay(t, number, slot) {
+    return Number.isInteger(slot) && slot >= 0 && slot < t.code.length && (t.order[slot] === number || !!t.help[slot]);
+  }
+
+  treasuryPuzzle(request, url) {
+    const a = this.treasuryActor(request);
+    if (a.error) return a.error;
+    const slot = Number(url.searchParams.get("slot"));
+    if (!this.treasuryMay(a.t, a.inv.number, slot)) return json({ error: "That puzzle is not open to you." }, 403);
+    const grid = a.t.grids[slot].map((r) => r.split("").map(Number));
+    const work = this.sql.exec(`SELECT cells FROM treasury_work WHERE number = ? AND slot = ?`, a.inv.number, slot).toArray();
+    const solved = this.treasuryKnows(a.inv.number, slot);
+    return json({ slot, holder: a.t.order[slot], size: TREASURY.SIZE, clues: TREASURY.clues(grid), work: work.length ? work[0].cells : "", solved, letter: solved ? a.t.code[slot] : null, grid: solved ? a.t.grids[slot] : null });
+  }
+
+  async treasuryWork(request) {
+    const a = this.treasuryActor(request);
+    if (a.error) return a.error;
+    const body = await readJson(request);
+    const slot = Number(body.slot), cells = String(body.cells || "");
+    if (!this.treasuryMay(a.t, a.inv.number, slot)) return json({ error: "That puzzle is not open to you." }, 403);
+    if (!/^[012]{100}$/.test(cells)) return json({ error: "That is not a grid." }, 400);
+    this.sql.exec(`INSERT INTO treasury_work (number, slot, cells, at) VALUES (?, ?, ?, ?) ON CONFLICT(number, slot) DO UPDATE SET cells = excluded.cells, at = excluded.at`, a.inv.number, slot, cells, Date.now());
+    return json({ ok: true });
+  }
+
+  // A finished grid. Right: the player learns the letter of that place. The holder is told too, if someone else solved it.
+  async treasurySolve(request) {
+    const a = this.treasuryActor(request);
+    if (a.error) return a.error;
+    const body = await readJson(request);
+    const slot = Number(body.slot), cells = String(body.cells || "");
+    const me = a.inv.number, t = a.t;
+    if (!this.treasuryMay(t, me, slot)) return json({ error: "That puzzle is not open to you." }, 403);
+    if (!/^[012]{100}$/.test(cells)) return json({ error: "That is not a grid." }, 400);
+    const want = t.grids[slot].join("");
+    const got = cells.replace(/2/g, "0"); // a square marked "empty" counts as empty
+    if (got !== want) return json({ ok: false, error: "Not yet. Some squares do not match the numbers." });
+    const first = !this.treasuryKnows(me, slot);
+    if (first) {
+      const day = this.puzzleDay(), holder = t.order[slot];
+      this.sql.exec(`INSERT OR IGNORE INTO treasury_known (number, slot, at) VALUES (?, ?, ?)`, me, slot, Date.now());
+      if (holder === me) this.sql.exec(`INSERT INTO notices (kind, n, m, day, at) VALUES ('tfound', ?, 0, ?, ?)`, me, day, Date.now());
+      else if (holder && !this.treasuryKnows(holder, slot)) {
+        // the holder is given their character as well, and told who cracked it
+        this.sql.exec(`INSERT OR IGNORE INTO treasury_known (number, slot, at) VALUES (?, ?, ?)`, holder, slot, Date.now());
+        this.sql.exec(`INSERT INTO notices (kind, n, m, day, at) VALUES ('tsolved', ?, ?, ?, ?)`, me, holder, day, Date.now());
+      }
+      this.broadcast({ t: "news" });
+    }
+    return json({ ok: true, slot, letter: t.code[slot], place: slot + 1, grid: t.grids[slot] });
+  }
+
+  // The holder of a place opens their puzzle to everyone, or closes it again.
+  async treasuryHelp(request) {
+    const a = this.treasuryActor(request);
+    if (a.error) return a.error;
+    const body = await readJson(request);
+    const slot = a.t.order.indexOf(a.inv.number);
+    if (slot < 0) return json({ error: "You hold no place in the passcode." }, 409);
+    const on = body.on ? 1 : 0;
+    if (a.t.help[slot] !== on) {
+      a.t.help[slot] = on;
+      this.set("treasury", JSON.stringify(a.t));
+      if (on) this.sql.exec(`INSERT INTO notices (kind, n, m, day, at) VALUES ('thelp', ?, 0, ?, ?)`, a.inv.number, this.puzzleDay(), Date.now());
+      this.broadcast({ t: "news" });
+    }
+    return json(this.treasuryView(a.inv));
+  }
+
+  // Try the whole passcode at the door. A player has a few tries. Right: every seated player is paid.
+  async treasuryOpen(request) {
+    const a = this.treasuryActor(request);
+    if (a.error) return a.error;
+    const t = a.t, me = a.inv.number;
+    if (a.inv.out) return json({ error: "You are out of the game." }, 403);
+    if (t.opened) return json({ error: "The treasury is already open." }, 409);
+    const body = await readJson(request);
+    const guess = TREASURY.letters(body.code);
+    if (guess.length !== t.code.length) return json({ error: "The passcode has " + t.code.length + " letters." }, 400);
+    if (!this.treasuryTriesLeft(me)) return json({ error: "You have used your " + TREASURY_TRIES + " tries. Someone else must try." }, 409);
+    this.sql.exec(`INSERT INTO treasury_tries (number, guess, at) VALUES (?, ?, ?)`, me, guess, Date.now());
+    if (guess !== t.code) {
+      const right = guess.split("").filter((ch, i) => ch === t.code[i]).length;
+      return json({ ok: false, right, triesLeft: this.treasuryTriesLeft(me) });
+    }
+    t.opened = { by: me, at: Date.now() };
+    this.set("treasury", JSON.stringify(t));
+    for (const n of this.treasurySeats()) this.addCoins(n, t.reward);
+    this.sql.exec(`INSERT INTO notices (kind, n, m, day, at) VALUES ('topen', ?, 0, ?, ?)`, me, this.puzzleDay(), Date.now());
+    this.broadcast({ t: "news" });
+    return json({ ok: true, view: this.treasuryView(this.inHall(request)) });
+  }
+
+  // The GM: open the treasury now, arm it to open when stage 1 closes, or take it away.
+  async hostTreasury(request) {
+    const body = await readJson(request);
+    if (body.off) {
+      const t = this.treasury();
+      if (t && t.opened) for (const n of this.treasurySeats()) this.addCoins(n, -t.reward);
+      this.set("treasury", "null");
+      this.set("treasury_armed", "");
+      this.broadcast({ t: "news" });
+      return json({ ok: true });
+    }
+    const code = TREASURY.letters(body.code);
+    if (code.length !== 16) return json({ error: "The passcode must be exactly 16 letters, A to Z. This one has " + code.length + "." }, 400);
+    if (this.treasury()) return json({ error: "A treasury is already in play. Take it away first." }, 409);
+    if (body.arm) { this.set("treasury_armed", code); return json({ ok: true, armed: true }); }
+    this.set("treasury_armed", "");
+    this.treasuryBegin(code);
+    return json({ ok: true, started: true });
+  }
+
+  hostTreasuryView() {
+    const t = this.treasury();
+    const armed = this.get("treasury_armed", "");
+    if (!t) return { on: false, armed: armed ? armed : "" };
+    const known = this.sql.exec(`SELECT number, slot FROM treasury_known`).toArray();
+    return {
+      on: true, code: t.code, startedAt: t.startedAt, opened: t.opened,
+      slots: t.order.map((n, i) => ({ place: i + 1, letter: t.code[i], holder: n, found: known.some((k) => k.slot === i && k.number === n), help: !!t.help[i], also: known.filter((k) => k.slot === i && k.number !== n).map((k) => k.number) })),
+      tries: this.sql.exec(`SELECT number, guess, at FROM treasury_tries ORDER BY id DESC LIMIT 40`).toArray(),
+    };
   }
 
   // ---------- the Gamemaster's figure in the estate ----------
@@ -2206,6 +2444,7 @@ export class Game extends DurableObject {
       },
       night: this.hostNightView(),
       active: this.hostActive(players),
+      treasury: this.hostTreasuryView(),
     });
   }
 
