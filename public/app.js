@@ -850,6 +850,7 @@
           '<div class="hud-bottom">' +
           '<button type="button" class="btn hud-action" id="hud-action" data-act="use" hidden></button>' +
           '<button type="button" class="bell-btn" id="bell-btn" data-act="bell" aria-haspopup="dialog" aria-expanded="false" aria-label="Notifications" disabled>' + BELL + '<span id="bell-n"></span></button>' +
+          '<button type="button" class="bell-btn msg-btn" id="msg-btn" data-act="go" data-scene="whispers" aria-label="Messages from other players">' + MSG_ICON + '<span id="msg-n"></span></button>' +
           '<button type="button" class="menu-btn" id="menu-btn" data-act="menu" aria-haspopup="dialog" aria-expanded="false" disabled>Menu<span id="menu-n"></span></button>' +
           "</div>" +
           '<div class="menu" id="menu" hidden></div>' +
@@ -2169,7 +2170,34 @@
     api("POST", "/api/notices/seen", { upTo: top }).catch(function () {});
   }
 
+  // Messages from other players have a button of their own beside the bell, with the number unread.
+  // A new one also pops up once, and a tap on the pop-up opens the messages.
+  var MSG_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.2h15a1.6 1.6 0 0 1 1.6 1.6v9a1.6 1.6 0 0 1-1.6 1.6H12l-4.6 3.6v-3.6H4.5a1.6 1.6 0 0 1-1.6-1.6v-9a1.6 1.6 0 0 1 1.6-1.6Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M7.5 9.6h9M7.5 13h5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+  var msgSeen = null;
+  function drawMsg() {
+    var btn = $("msg-btn");
+    if (!hall || !hall.unread) return;
+    var n = hall.unread.whispers || 0;
+    if (btn) {
+      $("msg-n").innerHTML = n ? '<span class="badge" aria-label="' + plural(n, "unread message", "unread messages") + '">' + n + "</span>" : "";
+      btn.classList.toggle("has", n > 0);
+    }
+    if (msgSeen != null && n > msgSeen && stage && $("note")) {
+      var from = (hall.whispers || []).filter(function (t) { return t.unread; }).map(function (t) { return t.with; });
+      var el = $("note");
+      if ($("onair")) $("onair").hidden = true;
+      el.innerHTML = '<span class="onair-face">' + faceHTML(from[0] || 0) + '</span><span class="onair-text"><i>New message</i><b>' + esc(from.length === 1 ? who(from[0]) + " sent you a message." : "You have " + n + " unread messages.") + "</b><small>Tap to read it.</small></span>";
+      el.setAttribute("data-to", "whispers");
+      el.hidden = false; el.classList.remove("on"); void el.offsetWidth; el.classList.add("on");
+      if (btn) { btn.classList.remove("ring"); void btn.offsetWidth; btn.classList.add("ring"); }
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(function () { var x = $("note"); if (x) x.hidden = true; }, 9000);
+    }
+    msgSeen = n;
+  }
+
   function drawBell() {
+    drawMsg();
     var btn = $("bell-btn");
     if (!btn || !hall) return;
     var n = todoNew() + unseenNotices();
@@ -2367,6 +2395,8 @@
       stage.world.animate([{opacity: 0.78}, {opacity: 1}], {duration: 160, easing: "ease-out"});
   }
 
+  var DUELS_SPOT = { scene: "arena", label: "See your duels" };
+
   // The one big button offers whatever can be used from where the player stands.
   function offerSpot() {
     if (!stage || !stage.room) return;
@@ -2375,6 +2405,8 @@
     var spot = roomOpen(stage.room) ? WORLD.spotAt(stage.room, at[0], at[1]) : null;
     // the vaults are not offered until the attendant has given the rules
     if (spot && stage.room === "arena" && hall.night && hall.night.status === "open" && !briefed()) spot = null;
+    // a player who has submitted can look at their duels from anywhere in the estate, not only at the table
+    if (!spot && hall.night && isLadder() && hall.night.status === "open" && hall.night.opened && !hall.out) spot = DUELS_SPOT;
     if (spot === stage.spot) return;
     stage.spot = spot;
     var btn = $("hud-action");
@@ -4155,7 +4187,10 @@
       el.hidden = true;
       // a duel of mine is over, or someone waits for my cards: straight to the table, where the cards are shown.
       // Any other pop-up opens the bell; the puzzle itself is only in the puzzle room.
-      if (el.getAttribute("data-to") === "arena") { el.removeAttribute("data-to"); readNotices(true); go("arena"); }
+      var to = el.getAttribute("data-to");
+      el.removeAttribute("data-to");
+      if (to === "arena") { readNotices(true); go("arena"); }
+      else if (to === "whispers") go("whispers");
       else setMenu(true, "bell");
     }
     else if (name === "menuClose") setMenu(false);
