@@ -1629,9 +1629,10 @@
   }
 
   // Has this player been given the rules of the game being played?
+  // The key carries a letter: when the rules of a running game change, the letter changes and every player is given them again.
   function briefed() {
     var n = hall && hall.night;
-    return !n || heard("vb" + n.n);
+    return !n || heard("vbB" + n.n);
   }
 
   // Which rooms are doing business. The GM decides; players cannot open anything.
@@ -2999,7 +3000,7 @@
     var out = "";
     if (n.status === "done") {
       out = '<div class="s-card now"><i>Game ' + n.n + " · The Ladder · result</i>" + ladderTableHTML(n, true) + "</div>";
-    } else if (!heard("vb" + n.n)) {
+    } else if (!heard("vbB" + n.n)) {
       out = '<div class="s-card now"><i>Game ' + n.n + " · being played now</i><h2>The Ladder</h2><p>Walk to the arena. The attendant will give you the rules.</p></div>";
     } else {
       var last = n.results[n.results.length - 1];
@@ -3346,7 +3347,7 @@
     $("vb-line").textContent = tiles[i].line;
     $("vb-dots").innerHTML = tiles.map(function (t, k) { return '<i class="' + (k === i ? "on" : k < i ? "done" : "") + '"></i>'; }).join("");
     $("vb-next").textContent = i === tiles.length - 1 ? "Got it" : "Next";
-    $("vb-skip").hidden = !heard("vb" + n.n); // the first time, every rule is shown; after that the rules can be skipped
+    $("vb-skip").hidden = !heard("vbB" + n.n); // the first time, every rule is shown; after that the rules can be skipped
   }
 
   function drawMatch() {
@@ -3358,7 +3359,7 @@
     var out = "";
     if (n.status === "done") {
       out = resultHTML(n);
-    } else if (!heard("vb" + n.n)) {
+    } else if (!heard("vbB" + n.n)) {
       // the rules are given in the arena, by the attendant, and nowhere else
       out = '<div class="s-card now"><i>Game ' + n.n + " · being played now</i><h2>Six Vaults</h2><p>Walk to the arena. The attendant will show you the vaults and give you the rules.</p></div>";
     } else {
@@ -3937,7 +3938,7 @@
       var tiles = ui.night ? vbTiles(ui.night).length : 0;
       if (name === "vbNext" && (ui.vb || 0) < tiles - 1) { ui.vb = (ui.vb || 0) + 1; drawVB(); }
       else {
-        if (ui.night) markHeard("vb" + ui.night.n);
+        if (ui.night) markHeard("vbB" + ui.night.n);
         var back = ui.vbBack || "tonight";
         ui.vbBack = "";
         if (back === "hall") talkedIn = ""; // back in the arena, the attendant says what to do next
