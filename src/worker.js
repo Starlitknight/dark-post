@@ -2102,6 +2102,36 @@ export class Game extends DurableObject {
   }
 
   // Everything the rooms record: today's puzzle and every player's answer, every deal, and the door log.
+  // For the GM alone: what each player has done, so the most and least active can be told apart.
+  hostActive(players) {
+    const count = (sql, ...args) => new Map(this.sql.exec(sql, ...args).toArray().map((r) => [r.n, r.c]));
+    const seen = new Map(this.sql.exec(`SELECT number, at FROM places`).toArray().map((r) => [r.number, r.at]));
+    const online = this.onlineNumbers();
+    const whispers = count(`SELECT from_n AS n, COUNT(*) AS c FROM messages WHERE room = 'whisper' AND removed = 0 GROUP BY from_n`);
+    const partners = count(`SELECT from_n AS n, COUNT(DISTINCT to_n) AS c FROM messages WHERE room = 'whisper' AND removed = 0 GROUP BY from_n`);
+    const casts = count(`SELECT from_n AS n, COUNT(*) AS c FROM messages WHERE room = 'table' AND removed = 0 GROUP BY from_n`);
+    const asks = count(`SELECT from_n AS n, COUNT(*) AS c FROM messages WHERE room = 'study' AND removed = 0 AND from_n != 0 GROUP BY from_n`);
+    const solved = count(`SELECT number AS n, COUNT(*) AS c FROM puzzle_tries WHERE solved = 1 GROUP BY number`);
+    const tried = count(`SELECT number AS n, COUNT(*) AS c FROM puzzle_tries WHERE tries > 0 GROUP BY number`);
+    const deals = count(`SELECT a AS n, COUNT(*) AS c FROM deals GROUP BY a`);
+    const stages = count(`SELECT number AS n, COUNT(*) AS c FROM ladder_seals GROUP BY number`);
+    const bets = count(`SELECT number AS n, COUNT(*) AS c FROM ladder_bets GROUP BY number`);
+    const now = Date.now();
+    return players.map((p) => {
+      const n = p.number, at = seen.get(n) || 0, hours = at ? (now - at) / 3600000 : Infinity;
+      const x = {
+        n, seen: at, online: online.includes(n),
+        whispers: whispers.get(n) || 0, partners: partners.get(n) || 0, casts: casts.get(n) || 0, asks: asks.get(n) || 0,
+        solved: solved.get(n) || 0, tried: tried.get(n) || 0, deals: deals.get(n) || 0, stages: stages.get(n) || 0, bet: bets.get(n) || 0,
+      };
+      // one number to sort by: playing counts most, then talking, then simply being around
+      x.score = x.stages * 4 + x.bet * 2 + x.solved * 3 + Math.max(0, x.tried - x.solved) + x.deals * 2 +
+        Math.min(10, x.whispers) + x.partners * 2 + x.casts * 2 + x.asks +
+        (x.online ? 5 : hours < 1 ? 4 : hours < 6 ? 3 : hours < 24 ? 1 : 0);
+      return x;
+    }).sort((a, b) => b.score - a.score || b.seen - a.seen);
+  }
+
   hostActivity() {
     this.expireDeals();
     const day = this.puzzleDay();
@@ -2138,6 +2168,7 @@ export class Game extends DurableObject {
         seats: SEATS,
       },
       night: this.hostNightView(),
+      active: this.hostActive(players),
     });
   }
 

@@ -215,3 +215,14 @@ body.host { display: block; }
 details.archive { margin: 18px 0; border: 1px solid #333; border-radius: 6px; padding: 0 12px; }
 details.archive > summary { cursor: pointer; padding: 12px 0; font-weight: 700; color: #c9a85a; }
 details.archive[open] > summary { border-bottom: 1px solid #333; margin-bottom: 10px; }
+
+.act-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid #2a2a2a; font-size: 14px; }
+.act-row:first-child { border-top: 0; }
+.act-rank { color: #8a8a8a; text-align: right; }
+.act-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.act-top span { color: #c9a85a; font-size: 13px; }
+.act-bar { height: 6px; background: #222; border-radius: 3px; margin: 5px 0 4px; overflow: hidden; }
+.act-bar i { display: block; height: 100%; background: #c9a85a; border-radius: 3px; }
+.act-did { color: #bbb; font-size: 13px; line-height: 1.4; }
+.act-score { font-size: 18px; color: #f1d58c; min-width: 26px; text-align: right; }
+.act-row.none .act-did, .act-row.none b { color: #e58a7a; }

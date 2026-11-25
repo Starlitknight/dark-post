@@ -564,7 +564,7 @@
       }
       setKeepingOpen($("activity"), out);
       drawBoard(a.board);
-      drawNight1(a.night); gmInit();
+      drawNight1(a.night); gmInit(); drawActive(a.active);
     }).catch(function () {});
   }
 
@@ -714,6 +714,27 @@
     // the stages that are over: kept, but folded away
     if (archive.length) out += '<details class="archive" data-k="stages"><summary>Archive: the cards of earlier stages</summary>' + archive.join("") + "</details>";
     setKeepingOpen(box, out);
+  }
+
+  function drawActive(list) {
+    var box = $("active-box");
+    if (!box || !list) return;
+    if (!list.length) { box.innerHTML = '<p class="table-empty">No players yet.</p>'; return; }
+    var et = function (at) { return at ? new Date(at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET" : "Never walked in"; };
+    var top = list[0].score || 1;
+    box.innerHTML = list.map(function (p, i) {
+      var did = [];
+      if (p.stages) did.push(p.stages + (p.stages === 1 ? " stage" : " stages") + " submitted");
+      if (p.bet) did.push("bet placed");
+      if (p.solved) did.push(p.solved + (p.solved === 1 ? " puzzle" : " puzzles") + " solved");
+      else if (p.tried) did.push("tried the puzzle");
+      if (p.whispers) did.push(p.whispers + (p.whispers === 1 ? " private message" : " private messages") + " to " + p.partners + (p.partners === 1 ? " player" : " players"));
+      if (p.casts) did.push(p.casts + (p.casts === 1 ? " broadcast" : " broadcasts"));
+      if (p.asks) did.push(p.asks + (p.asks === 1 ? " question" : " questions") + " to you");
+      if (p.deals) did.push(p.deals + (p.deals === 1 ? " deal" : " deals") + " offered");
+      return '<div class="act-row' + (p.score === 0 ? " none" : "") + '"><b class="act-rank">' + (i + 1) + '</b><div class="act-main"><div class="act-top"><b>' + esc(hwho(p.n)) + "</b><span>" + (p.online ? "Online now" : "Last online: " + esc(et(p.seen))) + "</span></div>" +
+        '<div class="act-bar"><i style="width:' + Math.round(p.score / top * 100) + '%"></i></div><div class="act-did">' + (did.length ? esc(did.join(" \u00b7 ")) : "Nothing yet") + '</div></div><b class="act-score">' + p.score + "</b></div>";
+    }).join("");
   }
 
   // Redrawing a box must not fold an archive the GM has opened.
