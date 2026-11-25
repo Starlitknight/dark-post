@@ -1950,15 +1950,20 @@
   }
 
   // News pops up once as it happens, and once for anyone who arrives after it happened.
-  var noteSeen = null, noteTimer = null;
+  var noteSeen = null, noteTimer = null, noteRetry = null;
   function showNotice() {
-    if (!hall || !hall.notices) return;
+    if (!hall || !hall.notices || !me || me.state !== "hall") return;
     var list = hall.notices, top = list.length ? list[0].id : 0;
     if (noteSeen == null) noteSeen = hall.noticeMark || 0;
     if (top <= noteSeen) return;
     // not while a question or a panel covers the screen: it would be missed
     var saying = $("say") && $("say").textContent.trim(); // the narrator's line sits where the pop-up goes
-    if (stage && (hall.needsCommit || saying || ($("menu") && !$("menu").hidden))) return;
+    if (stage && (hall.needsCommit || saying || ($("menu") && !$("menu").hidden))) {
+      // try again shortly, so the pop-up follows as soon as the screen is clear
+      clearTimeout(noteRetry);
+      noteRetry = setTimeout(showNotice, 2000);
+      return;
+    }
     var fresh = list.filter(function (x) { return x.id > noteSeen && x.kind === "solved" && x.today; });
     noteSeen = top;
     if (!fresh.length) return;
