@@ -485,6 +485,64 @@ window.DP_AVATAR = (function () {
       (number==null?"":'<text class="num" x="60" y="121" text-anchor="middle" font-family="Barlow Condensed,Arial,sans-serif" font-weight="700" font-size="17" fill="#9AA2A1">'+escape(number)+'</text>')+
       '</g></svg>';
   }
+  // The Executor: the GM's own figure in the estate. Not a player and not house staff.
+  // A red-crowned crane mask of white porcelain, a short black topper with a crimson band and one white
+  // feather, white gloves, a midnight tailcoat, and the brass key of the Crane estate where a number would be.
+  var EXEC = {
+    face: "#F4EFE2", faceLight: "#FFFFFF", cheek: "#E9E2D2", shade: "#CFC8B8", outline: "#3A3530", nose: "#B9B1A0", line: "#2A2622",
+    hair: "#141217", hairLow: "#0B0A0D", hairHi: "#3A3640",
+    coat: "#2B2733", coatHi: "#4B4658", coatLo: "#1A1820", coatInk: "#0C0B10", portrait: "#5B2A30", portraitLow: "#2E1519"
+  };
+  function executorHead(id) {
+    var CRIMSON = "#C2262E", GOLD = "#DDB65A";
+    var o = "";
+    // the porcelain mask: a smooth white head with no mouth
+    o += shape("M23 52C21 32 37 18 59 18C82 16 98 30 98 50Q101 69 91 80Q81 93 62 94Q43 95 32 84Q22 75 23 62Z", paint(id,"skin"), EXEC.outline, 1.6);
+    o += shape("M26 73Q37 91 57 90Q80 93 94 72Q89 86 77 91Q58 98 42 89Q31 84 26 73Z", "#D9D2C2");
+    // the black of a crane's cheek and throat, sweeping back from each eye
+    o += shape("M30 56Q40 47 52 55Q49 66 40 70Q31 70 26 64Z", "#17151B") + shape("M92 54Q82 45 70 53Q73 64 82 68Q91 68 96 62Z", "#17151B");
+    o += shape("M36 86Q48 80 60 84Q72 80 84 85Q74 95 60 95Q46 95 36 86Z", "#17151B");
+    // eyes: gold rings in the black
+    o += oval(41.5,59,5.6,5.2,GOLD) + oval(41.5,59,3.4,3.3,"#0A090C") + oval(42.8,57.7,1,1,"#FFF7D8");
+    o += oval(80.5,57.5,5.6,5.2,GOLD) + oval(80.5,57.5,3.4,3.3,"#0A090C") + oval(81.8,56.2,1,1,"#FFF7D8");
+    // the red crown
+    o += shape("M40 27Q60 15 81 26Q78 38 61 40Q44 39 40 27Z", CRIMSON, "#6E1217", 1.2) + line("M47 28Q60 22 74 27", "#E8676C", 1.6);
+    // the long beak, down and to one side
+    o += shape("M52 62Q61 57 70 63L66 72L22 110Q18 111 20 106Z", "#C9B27A", "#4A3B1C", 1.5) +
+      shape("M52 62Q61 57 70 63L64 67Q58 64 52 66Z", "#3B352A") + line("M58 69L24 106", "#8C7740", 1.3) + line("M55 64L27 100", "#F1E1AE", 1.2);
+    return o;
+  }
+  function executorHat() {
+    var CRIMSON = "#C2262E";
+    return shape("M34 22L37 -6Q60 -11 83 -6L86 22Z", "#17151B", "#050506", 1.6) +
+      shape("M35.2 12Q60 17 84.8 12L86 22Q60 27 34 22Z", CRIMSON, "#6E1217", 1) +
+      shape("M14 23Q60 34 106 23Q108 27 104 29Q60 40 16 29Q12 27 14 23Z", "#1F1C24", "#050506", 1.6) +
+      line("M40 -3Q60 -7 80 -3", "#4B4658", 1.5) +
+      // one white feather in the band
+      shape("M84 14Q98 -2 96 -20Q88 -10 82 2Z", "#F4EFE2", "#8E887A", 1.1) + line("M84 13Q92 0 95 -16", "#B9B1A0", 1);
+  }
+  function executorUpper(id) {
+    var a = { s: 0, h: 0, c: 0, g: 0, b: 0, m: 0, o: 8, t: 1, x: 0, e: 0, f: 1 }, c = EXEC, GOLD = "#DDB65A";
+    var body = arm("a",a,c) + arm("b",a,c) + clothes(a,c,id);
+    // a crimson cravat over the shirt, and the estate's key on a chain
+    body += shape("M53 88Q60 85 67 88L65 99L60 104L55 99Z", "#C2262E", "#6E1217", 1) + line("M56 92Q60 95 64 92", "#E8676C", 1.1);
+    body += line("M47 112Q60 121 73 112", GOLD, 1.3) + '<circle cx="60" cy="121" r="4.2" fill="none" stroke="' + GOLD + '" stroke-width="2"/>' +
+      line("M60 125.2L60 135 M60 131L63.5 131 M60 134.5L63 134.5", GOLD, 2);
+    return body + executorHead(id) + executorHat();
+  }
+  function executor(kind) {
+    var id = "av" + ++uid;
+    if (kind === "sprite") {
+      return '<svg viewBox="0 0 72 124" class="sprite executor" aria-hidden="true" style="overflow:visible">' + paints(id, EXEC) +
+        '<ellipse cx="36" cy="118" rx="22" ry="3.5" fill="#0B1117" opacity=".45"/>' +
+        '<g transform="translate(-5.4 8.4) scale(.69)">' + leg("a", EXEC) + leg("b", EXEC) + '<g class="torso">' + executorUpper(id) + "</g></g></svg>";
+    }
+    return '<svg viewBox="0 0 120 120" class="avatar executor" role="img" aria-label="The Executor">' + paints(id, EXEC) +
+      '<defs><clipPath id="' + id + 'window"><circle cx="60" cy="60" r="55.7"/></clipPath></defs>' +
+      '<g clip-path="url(#' + id + 'window)">' + oval(60,60,56,56,paint(id,"field")) +
+      '<g transform="translate(9 26) scale(.85)">' + executorUpper(id) + "</g></g>" +
+      '<circle cx="60" cy="60" r="56.7" fill="none" stroke="#DDB65A" stroke-width="2.6"/></svg>';
+  }
   function gm() {
     return '<svg viewBox="0 0 120 120" class="avatar gm-mark" role="img" aria-label="The Gamemaster">'+
       '<circle cx="60" cy="60" r="56" fill="#283039" stroke="#B7A77F" stroke-width="2"/>'+
@@ -494,7 +552,7 @@ window.DP_AVATAR = (function () {
       '<text x="60" y="86" text-anchor="middle" font-family="Georgia,serif" font-size="21" font-weight="bold" letter-spacing="1.5" fill="#EEE2BD">GM</text></svg>';
   }
   return {
-    draw: draw, sprite: sprite, shadow: shadow, silhouette: silhouette, gm: gm, clean: clean, random: random,
+    draw: draw, sprite: sprite, shadow: shadow, silhouette: silhouette, gm: gm, executor: executor, clean: clean, random: random,
     PRESETS: PRESETS, SKIN: SKIN, HAIR: HAIR, COAT: COAT, LIMITS: LIMITS,
     STYLES: LIMITS.h, GLASSES: LIMITS.g, BEARD: LIMITS.b, MOUTH: LIMITS.m,
   };
