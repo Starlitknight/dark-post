@@ -543,5 +543,5 @@ body, body.desk { transition:none; }
 
 /* a forfeited duel: the burned card is dimmed and stamped */
 #app .ld-me.forfeit, #app .ld-them.forfeit { position:relative; }
-#app .ld-me.forfeit .pcard, #app .ld-them.forfeit .pcard { filter:grayscale(1) brightness(.55); }
-#app .ld-me.forfeit u, #app .ld-them.forfeit u { position:absolute; left:50%; top:38%; transform:translate(-50%,-50%) rotate(-10deg); font:800 10px/1 var(--label); letter-spacing:.12em; text-transform:uppercase; text-decoration:none; color:#ff8d7a; border:1.5px solid #ff8d7a; border-radius:4px; padding:3px 5px; background:rgba(20,10,8,.85); white-space:nowrap; z-index:2; }
+#app .ld-me.forfeit .pcard, #app .ld-them.forfeit .pcard { filter:grayscale(1) brightness(.6); }
+#app .ld-me.forfeit u, #app .ld-them.forfeit u { position:absolute; left:50%; top:88%; transform:translate(-50%,-50%) rotate(-6deg); font:800 10px/1 var(--label); letter-spacing:.12em; text-transform:uppercase; text-decoration:none; color:#ff8d7a; border:1.5px solid #ff8d7a; border-radius:4px; padding:3px 5px; background:rgba(20,10,8,.85); white-space:nowrap; z-index:2; }
