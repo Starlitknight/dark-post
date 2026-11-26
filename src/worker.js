@@ -44,6 +44,7 @@ const BET_MAX = 3;
 const DUEL_BET = { stake: 1, pays: 2, perStage: 3 };
 // The treasury: what every seated player is paid when it opens, and how many times one player may try the passcode.
 const TREASURY_PAY = 5;
+const TREASURY_BUY = 3; // coins to have your own wiring puzzle solved for you
 const TREASURY_TRIES = 3;
 const GAME_DAY_STARTS_UTC_MS = 5 * 60 * 60 * 1000; // midnight EST is 05:00 UTC
 const PUZZLE_TRIES = 3;
@@ -377,6 +378,7 @@ export class Game extends DurableObject {
       if (path === "/api/treasury/work" && method === "POST") return this.treasuryWork(request);
       if (path === "/api/treasury/solve" && method === "POST") return this.treasurySolve(request);
       if (path === "/api/treasury/help" && method === "POST") return this.treasuryHelp(request);
+      if (path === "/api/treasury/buy" && method === "POST") return this.treasuryBuy(request);
       if (path === "/api/treasury/open" && method === "POST") return this.treasuryOpen(request);
       if (path === "/api/night/stage-seen" && method === "POST") return this.ladderStageSeen(request);
       if (path === "/api/night/reveal-seen" && method === "POST") return this.ladderRevealSeen(request);
@@ -1974,6 +1976,8 @@ export class Game extends DurableObject {
       you: me,
       length: t.code.length,
       reward: t.reward,
+      // a player may pay to have their own puzzle solved
+      buy: TREASURY_BUY, coins: this.balance(inv) || 0,
       pot: t.reward * this.treasurySeats().length,
       mine: t.order.indexOf(me),
       // each place: who holds it, whether they have found their character, and whether its puzzle is open to all
@@ -2066,6 +2070,25 @@ export class Game extends DurableObject {
     return json({ ok: true, slot, letter: t.code[slot], place: slot + 1, mask: t.boards[slot].mask });
   }
 
+  // A player pays coins and their own puzzle is solved for them: they are given the letter as if they had wired it.
+  async treasuryBuy(request) {
+    const a = this.treasuryActor(request);
+    if (a.error) return a.error;
+    const me = a.inv.number, t = a.t, slot = t.order.indexOf(me);
+    if (slot < 0) return json({ error: "You hold no place in the passcode." }, 409);
+    if (t.opened) return json({ error: "The treasury is already open." }, 409);
+    if (this.treasuryKnows(me, slot)) return json({ error: "You already have your letter." }, 409);
+    if (this.balance(a.inv) < TREASURY_BUY) return json({ error: `You need ${TREASURY_BUY} coins. You have ${this.balance(a.inv)}.` }, 409);
+    this.addCoins(me, -TREASURY_BUY);
+    a.inv.extra = (a.inv.extra || 0) - TREASURY_BUY; // the view below is drawn from this record
+    this.sql.exec(`INSERT OR IGNORE INTO treasury_known (number, slot, at) VALUES (?, ?, ?)`, me, slot, Date.now());
+    this.sql.exec(`INSERT INTO notices (kind, n, m, day, at) VALUES ('tfound', ?, 0, ?, ?)`, me, this.puzzleDay(), Date.now());
+    t.bought = (t.bought || []).concat([me]);
+    this.set("treasury", JSON.stringify(t));
+    this.broadcast({ t: "news" });
+    return json({ ok: true, slot, letter: t.code[slot], place: slot + 1, mask: t.boards[slot].mask, cells: t.boards[slot].sol, paid: TREASURY_BUY, view: this.treasuryView(a.inv) });
+  }
+
   // The holder of a place opens their puzzle to everyone, or closes it again.
   async treasuryHelp(request) {
     const a = this.treasuryActor(request);
@@ -2116,6 +2139,7 @@ export class Game extends DurableObject {
     if (body.off) {
       const t = this.treasury();
       if (t && t.opened) for (const n of this.treasurySeats()) this.addCoins(n, -t.reward);
+      if (t) for (const n of t.bought || []) this.addCoins(n, TREASURY_BUY); // coins paid for a solution come back
       this.set("treasury", "null");
       this.set("treasury_armed", "");
       this.broadcast({ t: "news" });
@@ -2138,7 +2162,7 @@ export class Game extends DurableObject {
     if (!t) return { on: false, armed: armed ? armed : "" };
     const known = this.sql.exec(`SELECT number, slot FROM treasury_known`).toArray();
     return {
-      on: true, code: t.code, startedAt: t.startedAt, opened: t.opened,
+      on: true, code: t.code, startedAt: t.startedAt, opened: t.opened, bought: t.bought || [], buy: TREASURY_BUY,
       slots: t.order.map((n, i) => ({ place: i + 1, letter: t.code[i], holder: n, found: known.some((k) => k.slot === i && k.number === n), help: !!t.help[i], also: known.filter((k) => k.slot === i && k.number !== n).map((k) => k.number) })),
       tries: this.sql.exec(`SELECT number, guess, at FROM treasury_tries ORDER BY id DESC LIMIT 40`).toArray(),
     };

@@ -665,3 +665,8 @@ body, body.desk { transition:none; }
 #mega .mg-foot .btn { flex:1; padding:13px 8px; border-radius:6px; border:1px solid #6f5c2c; background:linear-gradient(180deg, #f0d894, #cfa85a); color:#17140d; font:800 13px/1 var(--label, sans-serif); letter-spacing:.14em; text-transform:uppercase; }
 #mega .mg-foot .btn.ghost { background:#0b0c0e; color:#f1ead6; }
 @media (max-height:700px) { #mega .mg-row { padding:2px 10px; } #mega .mg-row .mg-face { width:19px; height:19px; } #mega .mg-card { width:27px; height:38px; } }
+
+/* pay coins to have your own puzzle solved */
+#app .tr-buy { display:flex; align-items:center; gap:10px; margin:10px 0 6px; padding:10px 12px; border:1px dashed #c9a85a; border-radius:8px; background:#f3d98f10; text-align:left; }
+#app .tr-buy div { flex:1; min-width:0; } #app .tr-buy b { display:block; font:700 15px/1.2 var(--label); letter-spacing:.06em; text-transform:uppercase; color:#f3d98f; }
+#app .tr-buy small { display:block; margin-top:3px; font-size:12.5px; line-height:1.35; color:#c9cdc4; } #app .tr-buy .btn { flex:0 0 auto; width:auto; padding:10px 16px; margin:0; }

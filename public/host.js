@@ -758,7 +758,7 @@
       return;
     }
     var found = t.slots.filter(function (s) { return s.found; }).length;
-    var out = '<div class="night-box"><p><b>' + (t.opened ? "The treasury was opened by " + esc(hwho(t.opened.by)) + ". Every player was paid 5 coins." : "The treasury is in play.") + "</b> Passcode: <b>" + esc(t.code) + "</b>. " + found + " of " + t.slots.length + ' holders have their letter.</p><button type="button" class="link quiet" data-treasury="off">Take the treasury away' + (t.opened ? " and take the coins back" : "") + "</button></div>";
+    var out = '<div class="night-box"><p><b>' + (t.opened ? "The treasury was opened by " + esc(hwho(t.opened.by)) + ". Every player was paid 5 coins." : "The treasury is in play.") + "</b> Passcode: <b>" + esc(t.code) + "</b>. " + found + " of " + t.slots.length + ' holders have their letter. ' + (t.bought && t.bought.length ? "Paid " + t.buy + " coins for the answer: " + t.bought.map(function (k) { return esc(hwho(k)); }).join(", ") + "." : "Nobody has paid for an answer.") + ' </p><button type="button" class="link quiet" data-treasury="off">Take the treasury away' + (t.opened ? " and take the coins back" : "") + "</button></div>";
     out += '<table class="table"><thead><tr><th>Place</th><th>Letter</th><th>Held by</th><th>Their puzzle</th><th>Also solved by</th></tr></thead><tbody>' + t.slots.map(function (s) {
       return "<tr><td>" + s.place + "</td><td><b>" + esc(s.letter) + "</b></td><td>" + (s.holder ? esc(hwho(s.holder)) : "Nobody") + "</td><td>" + (s.found ? "Solved" : s.help ? "Open to everyone" : "Not yet") + "</td><td>" + (s.also.length ? s.also.map(function (k) { return "P" + k; }).join(", ") : "") + "</td></tr>";
     }).join("") + "</tbody></table>";

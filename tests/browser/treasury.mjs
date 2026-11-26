@@ -84,6 +84,7 @@ ok("five picture rules, one idea each", lines.length === 5 && lines[0].includes(
 await sleep(500);
 t = await text(guest);
 ok("the treasury shows sixteen places, none filled, and the player's own puzzle", (await guest.$$(".tr-slot")).length === 16 && (await guest.$$(".tr-slot.sure")).length === 0 && /0 of 16 letters have been found/i.test(t) && /Solve my puzzle/i.test(t));
+ok("paying coins for the answer is offered beside the puzzle", /Or pay 3 coins/i.test(await guest.$eval(".tr-mine .tr-buy", (el) => el.innerText)) && /You have \d+ coins?/.test(await guest.$eval(".tr-mine .tr-buy", (el) => el.innerText)));
 await guest.screenshot({ path: S + "09-treasury.png" });
 
 // solve the board by tapping pieces
@@ -92,6 +93,7 @@ const pz = await call("GET", "/api/treasury/puzzle?slot=" + v0.mine, null, seat(
 const dealt = T.unhex(pz.start), want = T.unhex(T.solve(pz.start));
 await click('[data-act="trSolve"]'); await sleep(1200);
 ok("the board opens: 63 pieces, a battery, most without power", (await guest.$$("button.tr-tile")).length === 63 && (await guest.$$(".tr-tile.src")).length === 1 && (await guest.$$(".tr-tile.lit")).length < 22);
+ok("and again under the board", (await guest.$('.tr-solve .tr-buy [data-act="trBuy"]')) !== null);
 await guest.screenshot({ path: S + "10-grid-empty.png" });
 await tapBoard(dealt, want, 0, 35);
 await sleep(400); await guest.screenshot({ path: S + "11-grid-half.png" });

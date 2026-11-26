@@ -136,8 +136,19 @@ status, body, _ = submit(3, slots[2], solve(pz2["start"]))
 check("another player solves it: both now hold that character", body["ok"] and body["letter"] == CODE[slots[2]] and {"slot": slots[2], "letter": CODE[slots[2]]} in view(3)["letters"] and view(2)["letters"] == [{"slot": slots[2], "letter": CODE[slots[2]]}])
 check("and the holder is told who cracked it", [x["n"] for x in hall(2)["notices"] if x["kind"] == "tsolved"] == [3])
 
+before1 = coins(1)
+# a player may pay 3 coins to have their own puzzle solved
+buy = lambda n: call("POST", "/api/treasury/buy", {}, seat(by[n]))
+had = coins(16)
+check("the price and the player's coins are shown", view(16)["buy"] == 3 and view(16)["coins"] == had and had >= 3)
+status, body, _ = buy(16)
+check("paying gives the letter, its place and the finished board", status == 200 and body["letter"] == CODE[slots[16]] and body["place"] == slots[16] + 1 and powered([int(c, 16) for c in body["cells"]]) and body["paid"] == 3)
+check("and costs 3 coins", coins(16) == had - 3 and body["view"]["coins"] == had - 3 and {"slot": slots[16], "letter": CODE[slots[16]]} in view(16)["letters"])
+check("it cannot be paid for twice, or once the letter is already held", buy(16)[0] == 409 and buy(1)[0] == 409 and coins(16) == had - 3 and coins(1) == before1)
+check("the GM sees who paid", gm()["bought"] == [16])
+
 # every other player solves their own
-for n in range(3, 17):
+for n in range(3, 16):
     s, pzn, _ = puzzle(n, slots[n])
     assert submit(n, slots[n], solve(pzn["start"]))[1]["ok"], n
 found = "".join(next(l["letter"] for l in view(n)["letters"] if l["slot"] == slot) for slot, n in sorted((slot, n) for n, slot in slots.items()))
@@ -159,7 +170,7 @@ check("everyone is told", [x["n"] for x in hall(9)["notices"] if x["kind"] == "t
 check("it cannot be opened twice", door(6, CODE)[0] == 409 and coins(6) == before[6] + 5)
 g = gm()
 check("the GM sees every place, who found it and every try", g["opened"]["by"] == 5 and len(g["slots"]) == 16 and all(s["found"] for s in g["slots"]) and len(g["tries"]) == 4)
-check("the GM can take it away, and the coins go back", call("POST", "/api/host/treasury", {"off": True}, host)[0] == 200 and view(1)["on"] is False and all(coins(n) == before[n] for n in range(1, 17)))
+check("the GM can take it away, and the coins go back", call("POST", "/api/host/treasury", {"off": True}, host)[0] == 200 and view(1)["on"] is False and all(coins(n) == before[n] + (3 if n == 16 else 0) for n in range(1, 17)))
 
 print("\n%d failed" % check.failed)
 sys.exit(1 if check.failed else 0)

@@ -3495,7 +3495,7 @@
       { line: "You hold one place in the passcode. A puzzle that only you have hides the letter that goes there.", pic: pic('<div class="tr-blanks">' + blanks + '</div><div class="tr-mineface"><span class="rung-face">' + faceHTML(v.you) + "</span><b>Your place: " + (v.mine + 1) + "</b></div>") },
       { line: "The puzzle is a board of wires. Tap a piece to turn it. Join the wires so power from the battery reaches every piece.", pic: pic(wireDemo) },
       { line: "When every piece has power, the wires on your letter glow gold. Then tell the others, in the broadcast room. Nobody is shown your letter unless you tell them.", pic: pic(trPixels(["0000000", "0111110", "0001000", "0001000", "0001000", "0001000", "0001000", "0001000", "0000000"], "big") + '<div class="tr-say"><span class="rung-face">' + faceHTML(v.you) + '</span><span class="bubble">Place ' + (v.mine + 1) + " is T.</span></div>") },
-      { line: "Stuck? Open your puzzle to everyone and ask for help. When someone enters the whole passcode, every player gets " + v.reward + " coins.", pic: pic('<div class="tr-all">' + v.slots.slice(0, 16).map(function (x) { return '<span class="rung-face">' + faceHTML(x.holder || 0) + "</span>"; }).join("") + '</div><div class="bt-pay win"><em>✓</em><span>Everyone</span><s></s><b>+' + v.reward + "</b></div>") },
+      { line: "Stuck? Open your puzzle to everyone and ask for help, or pay " + v.buy + " coins and it is solved for you. When someone enters the whole passcode, every player gets " + v.reward + " coins.", pic: pic('<div class="tr-all">' + v.slots.slice(0, 16).map(function (x) { return '<span class="rung-face">' + faceHTML(x.holder || 0) + "</span>"; }).join("") + '</div><div class="bt-pay win"><em>✓</em><span>Everyone</span><s></s><b>+' + v.reward + "</b></div>") },
     ];
   }
 
@@ -3533,7 +3533,7 @@
     if (v.mine >= 0) {
       var mineL = mineKnown[v.mine];
       if (mineL) out += '<div class="s-card now tr-mine"><i>Your letter</i><div class="tr-got"><strong>' + esc(mineL) + "</strong><span>Place <b>" + (v.mine + 1) + "</b> of the passcode</span></div>" + (v.opened ? "" : '<p>Nobody else is shown this. Tell them in the broadcast room.</p><div class="btn-row"><button type="button" class="btn" data-act="go" data-scene="table">Go to the broadcast room</button></div>') + "</div>";
-      else if (!v.opened) out += '<div class="s-card todo tr-mine"><i>Your puzzle · place ' + (v.mine + 1) + "</i><p>It hides the letter that goes in place " + (v.mine + 1) + '.</p><div class="btn-row"><button type="button" class="btn" data-act="trSolve" data-slot="' + v.mine + '">Solve my puzzle</button></div>' +
+      else if (!v.opened) out += '<div class="s-card todo tr-mine"><i>Your puzzle · place ' + (v.mine + 1) + "</i><p>It hides the letter that goes in place " + (v.mine + 1) + '.</p><div class="btn-row"><button type="button" class="btn" data-act="trSolve" data-slot="' + v.mine + '">Solve my puzzle</button></div>' + trBuyHTML(v) +
         (v.slots[v.mine].help ? '<p class="tr-cap">Your puzzle is open to everyone. <button type="button" class="link" data-act="trHelpOff">Close it again</button></p>' : '<button type="button" class="link" data-act="trHelp">Stuck? Open it to everyone and ask for help</button>') + "</div>";
     }
     // puzzles other players have opened
@@ -3567,7 +3567,13 @@
       '<div class="tr-meter"><span style="width:' + Math.round(pw.lit / n * 100) + '%"></span></div>' +
       '<p class="tr-cap"><b>' + pw.lit + "</b> of " + n + " pieces have power. " + (pw.loose ? plural(pw.loose, "loose end", "loose ends") + "." : "No loose ends.") + "</p>" +
       '<div class="btn-row"><button type="button" class="btn" data-act="trCheck"' + (pw.done ? "" : " disabled") + ">" + (pw.done ? "Reveal the letter" : "Power every piece to finish") + '</button><button type="button" class="btn ghost" data-act="trBack">Back</button></div>' +
+      (holder === ui.tr.you ? trBuyHTML(ui.tr) : "") +
       '<button type="button" class="link" data-act="trClear">Start this board again</button></div>';
+  }
+  // Paying to have your own puzzle solved: always offered, with the price and what the player holds.
+  function trBuyHTML(v) {
+    var can = v.coins >= v.buy;
+    return '<div class="tr-buy"><div><b>Or pay ' + plural(v.buy, "coin", "coins") + '</b><small>It is solved for you and you get your letter. You have ' + plural(v.coins, "coin", "coins") + "." + (can ? "" : " Not enough.") + '</small></div><button type="button" class="btn ghost" data-act="trBuy"' + (can ? "" : " disabled") + ">Pay " + v.buy + "</button></div>";
   }
 
   // Unfinished work is kept on the server, so a player can leave and come back, or change phone.
@@ -3614,6 +3620,19 @@
         if (hall && hall.treasury && t.pz.holder === v.you) hall.treasury.solved = true;
         window.scrollTo(0, 0); drawTrSolve();
       }).catch(function (err) { toast(err.message); }).then(function () { ui.busy = false; });
+    }
+    if (name === "trBuy") {
+      if (!t.sureBuy) { t.sureBuy = true; setTimeout(function () { t.sureBuy = false; }, 6000); return toast("Pay " + plural(ui.tr.buy, "coin", "coins") + " to have your puzzle solved? Tap again to confirm."); }
+      t.sureBuy = false;
+      if (t.saveTimer) { clearTimeout(t.saveTimer); t.saveTimer = null; }
+      return api("POST", "/api/treasury/buy", {}).then(function (r) {
+        ui.tr = r.view;
+        return api("GET", "/api/treasury/puzzle?slot=" + r.slot).then(function (p) {
+          t.pz = p; t.turned = -1; t.cells = trHex(r.cells); t.done = { letter: r.letter, place: r.place, mask: r.mask };
+          t.view = "solve"; window.scrollTo(0, 0); drawTreasury(); loadHall().then(drawBell).catch(function () {});
+          toast("Paid " + plural(r.paid, "coin", "coins") + ". Your letter is " + r.letter + ".");
+        });
+      }).catch(function (err) { toast(err.message); });
     }
     if (name === "trHelp" || name === "trHelpOff") {
       if (name === "trHelp" && !t.askHelp) { t.askHelp = true; return toast("Everyone will be able to open your puzzle. Tap again to confirm."); }
