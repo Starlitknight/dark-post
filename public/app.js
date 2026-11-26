@@ -3349,15 +3349,36 @@
       '</svg><small><b>' + pot + "</b> coins inside</small></div>";
   }
 
+  // One wire piece. Four bits: a wire to the north (1), east (2), south (4), west (8).
+  function trTile(m, cls, attrs) {
+    var w = "";
+    if (m & 1) w += '<path d="M20 20V0"/>'; if (m & 2) w += '<path d="M20 20H40"/>'; if (m & 4) w += '<path d="M20 20V40"/>'; if (m & 8) w += '<path d="M20 20H0"/>';
+    var src = /\bsrc\b/.test(cls || "");
+    return "<" + (attrs ? "button type=\"button\" " + attrs : "span") + ' class="tr-tile ' + (cls || "") + '"><svg viewBox="0 0 40 40" aria-hidden="true">' + w +
+      (src ? '<rect x="11" y="11" width="18" height="18" rx="4" class="bat"/><path d="M21.5 13.5l-5 7.5h4l-2 5.5 5.5-8h-4z" class="bolt"/>' : '<circle cx="20" cy="20" r="' + ((m & (m - 1)) ? 3.2 : 5.5) + '" class="node"/>') + "</svg></" + (attrs ? "button" : "span") + ">";
+  }
+  function trTurn(m) { return ((m << 1) & 15) | (m >> 3); }
+  // Which pieces have power, and how many wire ends are loose.
+  function trPower(cells, w, h, source) {
+    var n = w * h, seen = [], stack = [source], loose = 0, lit = 0, D = [[1, 0, -1, 4], [2, 1, 0, 8], [4, 0, 1, 1], [8, -1, 0, 2]];
+    function nb(i, d) { var x = i % w + d[1], y = Math.floor(i / w) + d[2]; return x < 0 || y < 0 || x >= w || y >= h ? -1 : y * w + x; }
+    for (var i = 0; i < n; i++) D.forEach(function (d) { if (cells[i] & d[0]) { var j = nb(i, d); if (j < 0 || !(cells[j] & d[3])) loose += 1; } });
+    seen[source] = true;
+    while (stack.length) { var c = stack.pop(); lit += 1; D.forEach(function (d) { if (cells[c] & d[0]) { var j = nb(c, d); if (j >= 0 && (cells[j] & d[3]) && !seen[j]) { seen[j] = true; stack.push(j); } } }); }
+    return { seen: seen, lit: lit, loose: loose, done: lit === n && loose === 0 };
+  }
+  function trHex(text) { return String(text).split("").map(function (c) { return parseInt(c, 16); }); }
+
   function trTiles(v) {
     function pic(inner, cls) { return '<div class="vb-draw' + (cls ? " " + cls : "") + '">' + inner + "</div>"; }
     var blanks = ""; for (var i = 0; i < 16; i++) blanks += '<i' + (i === v.mine ? ' class="me"' : "") + ">" + (i === v.mine ? "?" : "") + "</i>";
-    var lineDemo = '<div class="tr-demo"><b>3 1</b><span><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i class="on"></i><i></i><i></i></span></div><div class="tr-demo"><b>2 2</b><span><i></i><i class="on"></i><i class="on"></i><i></i><i></i><i class="on"></i><i class="on"></i></span></div>';
+    var wireDemo = '<div class="tr-wdemo">' + trTile(2, "lit src") + trTile(10, "lit") + trTile(5, "") + '<span class="tr-tap">Tap to turn</span>' + trTile(12, "") + "</div>" +
+      '<div class="tr-wdemo">' + trTile(2, "lit src") + trTile(10, "lit") + trTile(10, "lit") + trTile(12, "lit") + "</div>";
     return [
       { line: "The treasury holds " + v.pot + " coins. A passcode of " + v.length + " letters opens it.", pic: pic(trVault(v.pot, true) + '<div class="tr-blanks">' + blanks.replace(' class="me"', "").replace("?", "") + "</div>") },
       { line: "You hold one place in the passcode. A puzzle that only you have hides the letter that goes there.", pic: pic('<div class="tr-blanks">' + blanks + '</div><div class="tr-mineface"><span class="rung-face">' + faceHTML(v.you) + "</span><b>Your place: " + (v.mine + 1) + "</b></div>") },
-      { line: "The puzzle is a grid. The numbers beside a line say how many squares in a row are filled: 3 1 means three together, a gap, then one.", pic: pic(lineDemo) },
-      { line: "Fill the whole grid and it draws your letter. Then tell the others, in the broadcast room. Nobody is shown your letter unless you tell them.", pic: pic(trPixels(["01111110", "00011000", "00011000", "00011000", "00011000", "00011000", "00011000", "00011000"], "big") + '<div class="tr-say"><span class="rung-face">' + faceHTML(v.you) + '</span><span class="bubble">Place ' + (v.mine + 1) + " is T.</span></div>") },
+      { line: "The puzzle is a board of wires. Tap a piece to turn it. Join the wires so power from the battery reaches every piece.", pic: pic(wireDemo) },
+      { line: "When every piece has power, the wires on your letter glow gold. Then tell the others, in the broadcast room. Nobody is shown your letter unless you tell them.", pic: pic(trPixels(["0000000", "0111110", "0001000", "0001000", "0001000", "0001000", "0001000", "0001000", "0000000"], "big") + '<div class="tr-say"><span class="rung-face">' + faceHTML(v.you) + '</span><span class="bubble">Place ' + (v.mine + 1) + " is T.</span></div>") },
       { line: "Stuck? Open your puzzle to everyone and ask for help. When someone enters the whole passcode, every player gets " + v.reward + " coins.", pic: pic('<div class="tr-all">' + v.slots.slice(0, 16).map(function (x) { return '<span class="rung-face">' + faceHTML(x.holder || 0) + "</span>"; }).join("") + '</div><div class="bt-pay win"><em>✓</em><span>Everyone</span><s></s><b>+' + v.reward + "</b></div>") },
     ];
   }
@@ -3376,7 +3397,9 @@
     v.letters.forEach(function (l) { mineKnown[l.slot] = l.letter; });
     var found = v.slots.filter(function (x) { return x.found; }).length;
     if (v.opened) {
-      out += '<div class="s-card now tr-open"><i>The treasury is open</i><h2>' + esc(v.opened.code.split("").join(" ")) + "</h2><p>" + esc(who(v.opened.by)) + " entered the passcode. Every player was paid <b>" + v.reward + " coins</b>.</p></div>";
+      var rain = ""; for (var c = 0; c < 14; c++) rain += '<i style="--x:' + (6 + (c * 37) % 88) + "%;--d:" + ((c * 0.23) % 1.6).toFixed(2) + "s;--t:" + (1.5 + (c % 4) * 0.25).toFixed(2) + 's"></i>';
+      out += '<div class="s-card now tr-open"><i>The treasury is open</i><div class="tr-stage"><div class="tr-rain">' + rain + '</div><div class="tr-gm">' + AV.executor() + '</div><div class="tr-quote"><b>“' + esc(v.opened.said || v.opened.code) + '”</b><small>The Gamemaster, turning out his pockets</small></div></div>' +
+        "<p>" + esc(who(v.opened.by)) + " entered the passcode. His " + v.pot + " coins are gone: every player was paid <b>" + v.reward + " coins</b>.</p></div>";
     } else {
       out += '<div class="s-card now"><i>The treasury</i><div class="tr-head">' + trVault(v.pot) + "<p>" + found + " of " + v.length + " letters have been found. A tick under a place means its holder has the letter. Ask them for it.</p></div></div>";
     }
@@ -3407,37 +3430,28 @@
   }
 
   // The grid itself. 0 unknown, 1 filled, 2 marked empty.
-  function trLineOk(clue, cells) {
-    var runs = [], k = 0;
-    cells.forEach(function (c) { if (c === 1) k += 1; else if (k) { runs.push(k); k = 0; } });
-    if (k) runs.push(k);
-    return runs.join(",") === clue.join(",");
-  }
   function drawTrSolve() {
     var box = $("pz"), t = ui.trs, p = t.pz;
     if (!box || !p) return;
-    var n = p.size, cells = t.cells, holder = p.holder;
-    var row = function (y) { return cells.slice(y * n, y * n + n); }, col = function (x) { var o = []; for (var y = 0; y < n; y++) o.push(cells[y * n + x]); return o; };
+    var n = p.w * p.h, cells = t.cells, holder = p.holder, k;
     if (t.done) {
-      box.innerHTML = '<div class="s-card now tr-done"><i>Solved</i>' + trPixels(t.done.grid, "big") + '<div class="tr-got"><strong>' + esc(t.done.letter) + "</strong><span>goes in place <b>" + t.done.place + "</b> of the passcode</span></div>" +
+      var glow = '<div class="tr-board solved" style="--w:' + p.w + '">';
+      for (k = 0; k < n; k++) glow += trTile(cells[k], (t.done.mask[k] === "1" ? "gold" : "dimmed") + (k === p.source ? " src" : ""));
+      box.innerHTML = '<div class="s-card now tr-done"><i>Solved</i>' + glow + '</div><div class="tr-got"><strong>' + esc(t.done.letter) + "</strong><span>goes in place <b>" + t.done.place + "</b> of the passcode</span></div>" +
         "<p>" + (holder === ui.tr.you ? "This is your letter. Nobody else is shown it. Tell the others in the broadcast room." : "You solved " + esc(holder ? who(holder) : "an unheld") + "’s puzzle. You both have this letter now.") + "</p>" +
         '<div class="btn-row"><button type="button" class="btn" data-act="go" data-scene="table">Go to the broadcast room</button><button type="button" class="btn ghost" data-act="trBack">The treasury</button></div></div>';
       return;
     }
-    var okRows = 0, okCols = 0, html = '<div class="tr-grid" style="--n:' + n + '"><span class="tr-corner"></span>';
-    for (var x = 0; x < n; x++) { var co = trLineOk(p.clues.cols[x], col(x)); if (co) okCols += 1; html += '<span class="tr-ccol' + (co ? " ok" : "") + '">' + (p.clues.cols[x].length ? p.clues.cols[x].map(function (k) { return "<b>" + k + "</b>"; }).join("") : "<b>0</b>") + "</span>"; }
-    for (var y = 0; y < n; y++) {
-      var ro = trLineOk(p.clues.rows[y], row(y)); if (ro) okRows += 1;
-      html += '<span class="tr-crow' + (ro ? " ok" : "") + '">' + (p.clues.rows[y].length ? p.clues.rows[y].map(function (k) { return "<b>" + k + "</b>"; }).join("") : "<b>0</b>") + "</span>";
-      for (var x2 = 0; x2 < n; x2++) { var c = cells[y * n + x2]; html += '<button type="button" class="tr-cell' + (c === 1 ? " on" : c === 2 ? " no" : "") + '" data-act="trCell" data-i="' + (y * n + x2) + '" aria-label="Row ' + (y + 1) + ", column " + (x2 + 1) + '"></button>'; }
-    }
+    var pw = trPower(cells, p.w, p.h, p.source), html = '<div class="tr-board" style="--w:' + p.w + '">';
+    for (k = 0; k < n; k++) html += trTile(cells[k], (pw.seen[k] ? "lit" : "") + (k === p.source ? " src" : "") + (k === t.turned ? " turned" : ""), 'data-act="trCell" data-i="' + k + '" aria-label="Piece ' + (k + 1) + '"');
     html += "</div>";
-    var all = okRows === n && okCols === n;
+    t.turned = -1;
     box.innerHTML = '<div class="s-card now tr-solve"><i>' + (holder === ui.tr.you ? "Your puzzle" : esc(holder ? who(holder) : "Unheld") + "’s puzzle") + " · place " + (p.slot + 1) + "</i>" +
-      '<p class="tr-cap">Each number is a run of filled squares, in order. A line’s numbers turn green when it matches.</p>' + html +
-      '<div class="tr-tools"><button type="button" class="tr-mode' + (t.mode === 1 ? " on" : "") + '" data-act="trMode" data-m="1"><i class="on"></i>Fill</button><button type="button" class="tr-mode' + (t.mode === 2 ? " on" : "") + '" data-act="trMode" data-m="2"><i class="no"></i>Mark empty</button><button type="button" class="tr-mode" data-act="trClear">Clear</button></div>' +
-      '<p class="tr-cap">' + (okRows + okCols) + " of " + n * 2 + " lines match.</p>" +
-      '<div class="btn-row"><button type="button" class="btn" data-act="trCheck"' + (all ? "" : " disabled") + ">" + (all ? "Reveal the letter" : "Match every line to finish") + '</button><button type="button" class="btn ghost" data-act="trBack">Back</button></div></div>';
+      '<p class="tr-cap">Tap a piece to turn it. Give every piece power from the battery, with no loose wire ends.</p>' + html +
+      '<div class="tr-meter"><span style="width:' + Math.round(pw.lit / n * 100) + '%"></span></div>' +
+      '<p class="tr-cap"><b>' + pw.lit + "</b> of " + n + " pieces have power. " + (pw.loose ? plural(pw.loose, "loose end", "loose ends") + "." : "No loose ends.") + "</p>" +
+      '<div class="btn-row"><button type="button" class="btn" data-act="trCheck"' + (pw.done ? "" : " disabled") + ">" + (pw.done ? "Reveal the letter" : "Power every piece to finish") + '</button><button type="button" class="btn ghost" data-act="trBack">Back</button></div>' +
+      '<button type="button" class="link" data-act="trClear">Start this board again</button></div>';
   }
 
   // Unfinished work is kept on the server, so a player can leave and come back, or change phone.
@@ -3446,7 +3460,7 @@
     var t = ui.trs;
     clearTimeout(trSaveTimer);
     if (!t || !t.pz || t.done || !t.cells) return Promise.resolve();
-    return api("POST", "/api/treasury/work", { slot: t.pz.slot, cells: t.cells.join("") }).catch(function () {});
+    return api("POST", "/api/treasury/work", { slot: t.pz.slot, cells: t.cells.map(function (c) { return c.toString(16); }).join("") }).catch(function () {});
   }
   function trSaveWork() {
     clearTimeout(trSaveTimer);
@@ -3468,20 +3482,19 @@
     if (name === "trSolve") {
       var slot = Number(el.getAttribute("data-slot"));
       return api("GET", "/api/treasury/puzzle?slot=" + slot).then(function (p) {
-        t.pz = p; t.mode = 1; t.done = p.solved ? { letter: p.letter, place: p.slot + 1, grid: p.grid } : null;
-        t.cells = (p.work && p.work.length === p.size * p.size ? p.work : new Array(p.size * p.size + 1).join("0")).split("").map(Number);
+        t.pz = p; t.turned = -1; t.done = p.solved ? { letter: p.letter, place: p.slot + 1, mask: p.mask } : null;
+        t.cells = trHex(p.solved ? p.cells : p.work && p.work.length === p.w * p.h ? p.work : p.start);
         t.view = "solve"; window.scrollTo(0, 0); drawTreasury();
       }).catch(function (err) { toast(err.message); });
     }
-    if (name === "trMode") { t.mode = Number(el.getAttribute("data-m")); return drawTrSolve(); }
-    if (name === "trClear") { if (t.cells.some(function (c) { return c; }) && !t.sure) { t.sure = true; return toast("Tap Clear again to empty the grid."); } t.sure = false; t.cells = t.cells.map(function () { return 0; }); trSaveWork(); return drawTrSolve(); }
-    if (name === "trCell") { var i = Number(el.getAttribute("data-i")); t.cells[i] = t.cells[i] === t.mode ? 0 : t.mode; t.sure = false; trSaveWork(); return drawTrSolve(); }
+    if (name === "trClear") { if (!t.sure) { t.sure = true; return toast("Tap again to put every piece back as it was dealt."); } t.sure = false; t.cells = trHex(t.pz.start); trSaveWork(); return drawTrSolve(); }
+    if (name === "trCell") { var i = Number(el.getAttribute("data-i")); t.cells[i] = trTurn(t.cells[i]); t.turned = i; t.sure = false; trSaveWork(); return drawTrSolve(); }
     if (name === "trCheck") {
       if (ui.busy) return;
       ui.busy = true;
-      return api("POST", "/api/treasury/solve", { slot: t.pz.slot, cells: t.cells.join("") }).then(function (r) {
+      return api("POST", "/api/treasury/solve", { slot: t.pz.slot, cells: t.cells.map(function (c) { return c.toString(16); }).join("") }).then(function (r) {
         if (!r.ok) return toast(r.error || "Not yet.");
-        t.done = { letter: r.letter, place: r.place, grid: r.grid };
+        t.done = { letter: r.letter, place: r.place, mask: r.mask };
         if (hall && hall.treasury && t.pz.holder === v.you) hall.treasury.solved = true;
         window.scrollTo(0, 0); drawTrSolve();
       }).catch(function (err) { toast(err.message); }).then(function () { ui.busy = false; });

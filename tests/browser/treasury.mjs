@@ -52,9 +52,10 @@ const into = async (page, sel) => { await page.evaluate((q) => { const el = docu
 
 const CODE = "QUIETLITTLEWORDS"; // a passcode for this test only
 const S = SHOTS + "/";
-// solve a grid by reasoning one line at a time, as a player would
-const fits = (clue, known) => { const n = known.length, out = []; const place = (i, pos, line) => { if (i === clue.length) { for (let p = pos; p < n; p++) if (known[p] === 1) return; out.push(line.concat(Array(n - pos).fill(0))); return; } const rest = clue.slice(i + 1).reduce((a, b) => a + b + 1, 0); for (let st = pos; st + clue[i] + rest <= n; st++) { let ok = true; for (let p = pos; p < st; p++) if (known[p] === 1) { ok = false; break; } if (!ok) break; for (let p = st; p < st + clue[i]; p++) if (known[p] === 0) { ok = false; break; } if (!ok) continue; const end = st + clue[i]; if (end < n && known[end] === 1) continue; place(i + 1, Math.min(n, end + 1), line.concat(Array(st - pos).fill(0), Array(clue[i]).fill(1), end < n ? [0] : [])); } }; place(0, 0, []); return out; };
-const solve = (c) => { const g = Array.from({ length: 10 }, () => Array(10).fill(-1)); for (let pass = 0, moved = true; moved && pass < 60; pass++) { moved = false; for (let axis = 0; axis < 2; axis++) for (let i = 0; i < 10; i++) { const known = axis ? g.map((r) => r[i]) : g[i].slice(); const all = fits(axis ? c.cols[i] : c.rows[i], known); for (let p = 0; p < 10; p++) if (known[p] === -1 && all.every((l) => l[p] === all[0][p])) { if (axis) g[p][i] = all[0][p]; else g[i][p] = all[0][p]; moved = true; } } } return g.flat(); };
+// solve a dealt board, and tap each piece round to where it belongs
+const T = await import("/home/claude/dark-post/src/treasury.js");
+const turnsTo = (from, to) => { let k = 0, m = from; while (m !== to && k < 4) { m = T.turn(m); k++; } return k; };
+const tapBoard = async (now, want, lo, hi) => { for (let i = lo; i < hi; i++) for (let k = turnsTo(now[i], want[i]); k > 0; k--) await guest.$eval('.tr-tile[data-i="' + i + '"]', (el) => el.click()); };
 
 // the GM opens the treasury from the console
 const hostPage = await (await browser.createBrowserContext()).newPage();
@@ -79,28 +80,27 @@ await guest.$eval('#npc-talk [data-act="talkGo"], #npc-talk .btn', (el) => el.cl
 ok("the puzzle room is the treasury", (await sceneOf()) === "puzzle" && (await guest.$eval(".room-head h1", (el) => el.textContent)) === "The treasury");
 const lines = [];
 for (let i = 1; i <= 5; i++) { await sleep(350); lines.push(await guest.$eval(".bt-line", (el) => el.textContent)); await guest.screenshot({ path: S + "0" + (3 + i) + "-rule-" + i + ".png" }); await click('[data-act="trNext"]'); }
-ok("five picture rules, one idea each", lines.length === 5 && lines[0].includes("80 coins") && lines[2].includes("three together, a gap, then one") && lines[4].includes("every player gets 5 coins"));
+ok("five picture rules, one idea each", lines.length === 5 && lines[0].includes("80 coins") && lines[2].includes("Tap a piece to turn it") && lines[3].includes("glow gold") && lines[4].includes("every player gets 5 coins"));
 await sleep(500);
 t = await text(guest);
 ok("the treasury shows sixteen places, none filled, and the player's own puzzle", (await guest.$$(".tr-slot")).length === 16 && (await guest.$$(".tr-slot.sure")).length === 0 && /0 of 16 letters have been found/i.test(t) && /Solve my puzzle/i.test(t));
 await guest.screenshot({ path: S + "09-treasury.png" });
 
-// solve the grid by tapping squares
+// solve the board by tapping pieces
 const v0 = await call("GET", "/api/treasury", null, seat(0));
 const pz = await call("GET", "/api/treasury/puzzle?slot=" + v0.mine, null, seat(0));
-const want = solve(pz.clues);
+const dealt = T.unhex(pz.start), want = T.unhex(T.solve(pz.start));
 await click('[data-act="trSolve"]'); await sleep(1200);
-ok("the grid opens with its number clues", (await guest.$$(".tr-cell")).length === 100 && (await guest.$$(".tr-ccol")).length === 10 && (await guest.$$(".tr-crow")).length === 10);
+ok("the board opens: 63 pieces, a battery, most without power", (await guest.$$("button.tr-tile")).length === 63 && (await guest.$$(".tr-tile.src")).length === 1 && (await guest.$$(".tr-tile.lit")).length < 22);
 await guest.screenshot({ path: S + "10-grid-empty.png" });
-const half = want.map((v, i) => (i < 50 ? v : 0));
-for (let i = 0; i < 100; i++) if (half[i]) await guest.$eval('.tr-cell[data-i="' + i + '"]', (el) => el.click());
+await tapBoard(dealt, want, 0, 35);
 await sleep(400); await guest.screenshot({ path: S + "11-grid-half.png" });
-ok("lines that match turn green, and it cannot be finished early", (await guest.$$(".tr-crow.ok")).length >= 4 && (await guest.$eval('[data-act="trCheck"]', (el) => el.disabled)));
+ok("it cannot be finished early", await guest.$eval('[data-act="trCheck"]', (el) => el.disabled));
 await click('[data-act="trBack"]'); await sleep(900); await click('[data-act="trSolve"]'); await sleep(1500);
-ok("work in progress is kept", (await guest.$$(".tr-cell.on")).length === half.filter(Boolean).length);
-for (let i = 50; i < 100; i++) if (want[i]) await guest.$eval('.tr-cell[data-i="' + i + '"]', (el) => el.click());
+ok("work in progress is kept", (await call("GET", "/api/treasury/puzzle?slot=" + v0.mine, null, seat(0))).work === T.hex(want.slice(0, 35).concat(dealt.slice(35))));
+await tapBoard(dealt, want, 35, 63);
 await sleep(400);
-ok("every line matches", (await guest.$$(".tr-crow.ok")).length === 10 && (await guest.$$(".tr-ccol.ok")).length === 10 && !(await guest.$eval('[data-act="trCheck"]', (el) => el.disabled)));
+ok("every piece has power", (await guest.$$(".tr-tile.lit")).length === 63 && !(await guest.$eval('[data-act="trCheck"]', (el) => el.disabled)));
 await guest.screenshot({ path: S + "12-grid-full.png" });
 await click('[data-act="trCheck"]'); await sleep(1200);
 t = await guest.$eval(".tr-done", (el) => el.innerText);
@@ -111,14 +111,14 @@ ok("the treasury now shows the earned letter in gold", (await guest.$$(".tr-slot
 
 // the others: one asks for help, the rest solve their own
 await call("POST", "/api/treasury/help", { on: true }, seat(1));
-for (let i = 2; i < 16; i++) { const vi = await call("GET", "/api/treasury", null, seat(i)); const pi = await call("GET", "/api/treasury/puzzle?slot=" + vi.mine, null, seat(i)); const r = await call("POST", "/api/treasury/solve", { slot: vi.mine, cells: solve(pi.clues).join("") }, seat(i)); if (!r.ok) problems.push("seat " + i + " could not solve"); }
+for (let i = 2; i < 16; i++) { const vi = await call("GET", "/api/treasury", null, seat(i)); const pi = await call("GET", "/api/treasury/puzzle?slot=" + vi.mine, null, seat(i)); const r = await call("POST", "/api/treasury/solve", { slot: vi.mine, cells: T.solve(pi.start) }, seat(i)); if (!r.ok) problems.push("seat " + i + " could not solve"); }
 await sleep(9000);
 t = await text(guest);
 ok("a player who asked for help is listed, and the count has moved", /asking for help/i.test(t) && /15 of 16 letters have been found/i.test(t) && (await guest.$$(".tr-holder.found")).length === 15);
 await guest.screenshot({ path: S + "14-treasury-progress.png" });
 await click('.tr-helprow [data-act="trSolve"]'); await sleep(1200);
-const v1 = await call("GET", "/api/treasury", null, seat(1)), p1 = await call("GET", "/api/treasury/puzzle?slot=" + v1.mine, null, seat(0)), w1 = solve(p1.clues);
-for (let i = 0; i < 100; i++) if (w1[i]) await guest.$eval('.tr-cell[data-i="' + i + '"]', (el) => el.click());
+const v1 = await call("GET", "/api/treasury", null, seat(1)), p1 = await call("GET", "/api/treasury/puzzle?slot=" + v1.mine, null, seat(0)), w1 = T.unhex(T.solve(p1.start));
+await tapBoard(T.unhex(p1.start), w1, 0, 63);
 await click('[data-act="trCheck"]'); await sleep(1200);
 ok("helping solves the other player's puzzle for both", /You both have this letter now/i.test(await guest.$eval(".tr-done", (el) => el.innerText)) && (await call("GET", "/api/treasury", null, seat(1))).letters.length === 1);
 await click('[data-act="trBack"]'); await sleep(1200);
@@ -138,7 +138,7 @@ if (wrongFirst) {
 const before = (await call("GET", "/api/hall", null, seat(7))).coins;
 await click('[data-act="trTry"]'); await click('[data-act="trTry"]'); await sleep(2000);
 t = await text(guest);
-ok("the right passcode opens the treasury for everyone", /The treasury is open/i.test(t) && t.replace(/\s/g, "").includes(CODE) && (await call("GET", "/api/hall", null, seat(7))).coins === before + 5);
+ok("the right passcode opens the treasury for everyone", /The treasury is open/i.test(t) && t.includes("QUIET LITTLE WORDS") && /turning out his pockets/i.test(t) && (await call("GET", "/api/hall", null, seat(7))).coins === before + 5);
 await guest.evaluate(() => window.scrollTo(0, 0)); await guest.screenshot({ path: S + "16-open.png" });
 await hostPage.reload({ waitUntil: "networkidle0" }); await sleep(1500);
 ok("the GM sees who opened it", /The treasury was opened by/i.test(await hostPage.$eval("#treasury-box", (el) => el.innerText)));

@@ -31,40 +31,51 @@ check.failed = 0
 seat = lambda t: {"dp_seat": t}
 
 
-def fits(clue, known):
-    n, out = len(known), []
-    def place(i, pos, line):
-        if i == len(clue):
-            if any(known[p] == 1 for p in range(pos, n)): return
-            out.append(line + [0] * (n - pos)); return
-        rest = sum(c + 1 for c in clue[i + 1:])
-        for start in range(pos, n - clue[i] - rest + 1):
-            if any(known[p] == 1 for p in range(pos, start)): break
-            if any(known[p] == 0 for p in range(start, start + clue[i])): continue
-            end = start + clue[i]
-            if end < n and known[end] == 1: continue
-            place(i + 1, min(n, end + 1), line + [0] * (start - pos) + [1] * clue[i] + ([0] if end < n else []))
-    place(0, 0, [])
-    return out
+W, H, SOURCE = 7, 9, 31
+turn = lambda m: ((m << 1) & 15) | (m >> 3)
+DIRS = [(1, 0, -1, 4), (2, 1, 0, 8), (4, 0, 1, 1), (8, -1, 0, 2)]
 
 
-def solve(clues):
-    """Solve by reasoning one line at a time, as a player would. Returns 100 characters of 0 and 1."""
-    g = [[-1] * 10 for _ in range(10)]
-    for _ in range(60):
-        moved = False
-        for axis in (0, 1):
-            for i in range(10):
-                known = [g[r][i] for r in range(10)] if axis else g[i][:]
-                alls = fits(clues["cols"][i] if axis else clues["rows"][i], known)
-                for p in range(10):
-                    if known[p] == -1 and all(l[p] == alls[0][p] for l in alls):
-                        if axis: g[p][i] = alls[0][p]
-                        else: g[i][p] = alls[0][p]
-                        moved = True
-        if not moved: break
-    assert all(v != -1 for r in g for v in r), "a puzzle needed guessing"
-    return "".join(str(v) for r in g for v in r)
+def powered(cells):
+    seen, stack, loose = {SOURCE}, [SOURCE], 0
+    for i in range(W * H):
+        for bit, dx, dy, back in DIRS:
+            if cells[i] & bit:
+                x, y = i % W + dx, i // W + dy
+                if not (0 <= x < W and 0 <= y < H and cells[y * W + x] & back): loose += 1
+    while stack:
+        i = stack.pop()
+        for bit, dx, dy, back in DIRS:
+            x, y = i % W + dx, i // W + dy
+            if cells[i] & bit and 0 <= x < W and 0 <= y < H and cells[y * W + x] & back and y * W + x not in seen:
+                seen.add(y * W + x); stack.append(y * W + x)
+    return len(seen) == W * H and loose == 0
+
+
+def solve(start):
+    """Turn the pieces of a dealt board until every piece has power. Returns 63 hex characters."""
+    pieces = [int(c, 16) for c in start]
+    cells = [0] * (W * H)
+    def options(p):
+        out = []
+        for _ in range(4):
+            if p not in out: out.append(p)
+            p = turn(p)
+        return out
+    opts = [options(p) for p in pieces]
+    def go(i):
+        if i == W * H: return powered(cells)
+        x, y = i % W, i // W
+        for q in opts[i]:
+            if bool(q & 8) != (x > 0 and bool(cells[i - 1] & 2)): continue
+            if bool(q & 1) != (y > 0 and bool(cells[i - W] & 4)): continue
+            if (x == W - 1 and q & 2) or (y == H - 1 and q & 4): continue
+            cells[i] = q
+            if go(i + 1): return True
+        cells[i] = 0
+        return False
+    assert go(0), "a board could not be solved"
+    return "".join("%x" % c for c in cells)
 
 
 status, body, headers = call("POST", "/api/host/login", {"passphrase": "correct horse battery"})
@@ -104,31 +115,34 @@ check("nobody starts with a character", all(view(n)["letters"] == [] for n in (1
 check("the passcode is not sent to players", CODE not in json.dumps([view(1), hall(1), puzzle(1, slots[1])[1]]))
 
 status, pz, _ = puzzle(1, slots[1])
-check("a player is given the number clues of their own puzzle", status == 200 and len(pz["clues"]["rows"]) == 10 and len(pz["clues"]["cols"]) == 10 and pz["solved"] is False and pz["grid"] is None)
+check("a player is dealt the board of their own puzzle, not its answer", status == 200 and len(pz["start"]) == 63 and (pz["w"], pz["h"], pz["source"]) == (W, H, SOURCE) and pz["solved"] is False and pz["mask"] is None and pz["cells"] is None and not powered([int(c, 16) for c in pz["start"]]))
 other = [n for n in range(2, 17)][0]
-check("and may not open another player's puzzle", puzzle(1, slots[other])[0] == 403 and submit(1, slots[other], "0" * 100)[0] == 403)
-check("a wrong grid is not accepted", submit(1, slots[1], "0" * 100)[1]["ok"] is False and view(1)["letters"] == [])
-cells = solve(pz["clues"])
-call("POST", "/api/treasury/work", {"slot": slots[1], "cells": cells[:50] + "0" * 50}, seat(by[1]))
-check("unfinished work is kept", puzzle(1, slots[1])[1]["work"] == cells[:50] + "0" * 50)
-status, body, _ = submit(1, slots[1], cells.replace("0", "2", 5))
-check("the right grid gives the letter and its place", body["ok"] is True and body["letter"] == CODE[slots[1]] and body["place"] == slots[1] + 1 and view(1)["letters"] == [{"slot": slots[1], "letter": CODE[slots[1]]}])
+check("and may not open another player's puzzle", puzzle(1, slots[other])[0] == 403 and submit(1, slots[other], pz["start"])[0] == 403)
+check("an unfinished board is not accepted", submit(1, slots[1], pz["start"])[1]["ok"] is False and view(1)["letters"] == [])
+check("nor a board made of other pieces", submit(1, slots[1], "f" * 63)[0] == 400 and call("POST", "/api/treasury/work", {"slot": slots[1], "cells": "f" * 63}, seat(by[1]))[0] == 400)
+cells = solve(pz["start"])
+half = cells[:30] + pz["start"][30:]
+call("POST", "/api/treasury/work", {"slot": slots[1], "cells": half}, seat(by[1]))
+check("unfinished work is kept", puzzle(1, slots[1])[1]["work"] == half)
+status, body, _ = submit(1, slots[1], cells)
+check("the letter's squares come with the answer", body.get("mask") and len(body["mask"]) == 63 and body["mask"].count("1") > 6 and puzzle(1, slots[1])[1]["mask"] == body["mask"])
+check("the finished board gives the letter and its place", body["ok"] is True and body["letter"] == CODE[slots[1]] and body["place"] == slots[1] + 1 and view(1)["letters"] == [{"slot": slots[1], "letter": CODE[slots[1]]}])
 check("the others are told a character was found, not which", [x["n"] for x in hall(other)["notices"] if x["kind"] == "tfound"] == [1] and CODE[slots[1]] not in json.dumps([x for x in hall(other)["notices"]]) and view(other)["slots"][slots[1]]["found"] is True and view(other)["letters"] == [])
 
 # asking for help
 check("a puzzle can be opened to everyone", call("POST", "/api/treasury/help", {"on": True}, seat(by[2]))[1]["slots"][slots[2]]["help"] is True and [x["n"] for x in hall(3)["notices"] if x["kind"] == "thelp"] == [2])
 status, pz2, _ = puzzle(3, slots[2])
-status, body, _ = submit(3, slots[2], solve(pz2["clues"]))
+status, body, _ = submit(3, slots[2], solve(pz2["start"]))
 check("another player solves it: both now hold that character", body["ok"] and body["letter"] == CODE[slots[2]] and {"slot": slots[2], "letter": CODE[slots[2]]} in view(3)["letters"] and view(2)["letters"] == [{"slot": slots[2], "letter": CODE[slots[2]]}])
 check("and the holder is told who cracked it", [x["n"] for x in hall(2)["notices"] if x["kind"] == "tsolved"] == [3])
 
 # every other player solves their own
 for n in range(3, 17):
     s, pzn, _ = puzzle(n, slots[n])
-    assert submit(n, slots[n], solve(pzn["clues"]))[1]["ok"], n
+    assert submit(n, slots[n], solve(pzn["start"]))[1]["ok"], n
 found = "".join(next(l["letter"] for l in view(n)["letters"] if l["slot"] == slot) for slot, n in sorted((slot, n) for n, slot in slots.items()))
 check("the sixteen characters, in their places, spell the passcode", found == CODE)
-check("all sixteen puzzles could be solved without guessing", hall(5)["treasury"]["found"] == 16)
+check("all sixteen puzzles could be solved", hall(5)["treasury"]["found"] == 16)
 
 # the door
 before = {n: coins(n) for n in range(1, 17)}
@@ -138,7 +152,8 @@ door(4, "A" * 16); door(4, "B" * 16)
 check("three tries a player", door(4, CODE)[0] == 409 and view(4)["triesLeft"] == 0)
 check("the passcode must be sixteen letters", door(5, "QUIET")[0] == 400 and view(5)["triesLeft"] == 3)
 status, body, _ = door(5, "quiet little words")
-check("the right passcode opens the treasury", status == 200 and body["ok"] is True and body["view"]["opened"]["by"] == 5 and body["view"]["opened"]["code"] == CODE)
+check("the right passcode opens the treasury", status == 200 and body["ok"] is True and body["view"]["opened"]["by"] == 5 and body["view"]["opened"]["code"] == CODE and body["view"]["opened"]["said"] == "QUIET LITTLE WORDS")
+check("the Gamemaster says it out loud", call("GET", "/api/host/gm", cookies=host)[1].get("line") == "QUIET LITTLE WORDS")
 check("every player is paid 5 coins: 80 in all", all(coins(n) == before[n] + 5 for n in range(1, 17)))
 check("everyone is told", [x["n"] for x in hall(9)["notices"] if x["kind"] == "topen"] == [5] and hall(9)["treasury"]["opened"] is True)
 check("it cannot be opened twice", door(6, CODE)[0] == 409 and coins(6) == before[6] + 5)

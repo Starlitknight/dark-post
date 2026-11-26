@@ -1883,31 +1883,31 @@ export class Game extends DurableObject {
     return JSON.parse(this.get("treasury", "null"));
   }
 
-  treasuryMake(code, players) {
+  treasuryMake(code, players, said) {
     const order = players.slice();
     for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
-    // the grids follow from the passcode alone, so the GM can check all of them before opening the treasury
+    // the boards follow from the passcode alone, so the GM can check all of them before opening the treasury
     let base = 2166136261;
     for (const ch of code) base = Math.imul(base ^ ch.charCodeAt(0), 16777619) >>> 0;
     base = (base % 1000000) + 1;
-    const grids = code.split("").map((ch, i) => TREASURY.letterGrid(ch, base + i * 31).map((r) => r.join("")));
+    const boards = code.split("").map((ch, i) => TREASURY.board(ch, base + i * 31));
     // order[slot] is the player who holds that place; a place nobody holds is open to everyone from the start
-    return { on: true, startedAt: Date.now(), code, order: code.split("").map((_, i) => order[i] || 0), grids, help: code.split("").map((_, i) => (order[i] ? 0 : 1)), opened: null, reward: TREASURY_PAY };
+    return { on: true, startedAt: Date.now(), code, said: said || code, order: code.split("").map((_, i) => order[i] || 0), boards, help: code.split("").map((_, i) => (order[i] ? 0 : 1)), opened: null, reward: TREASURY_PAY };
   }
 
   treasuryStartIfArmed() {
-    const code = this.get("treasury_armed", "");
-    if (!code || this.treasury()) return;
+    const armed = this.get("treasury_armed", "");
+    if (!armed || this.treasury()) return;
     this.set("treasury_armed", "");
-    this.treasuryBegin(code);
+    this.treasuryBegin(TREASURY.letters(armed), armed);
   }
 
-  treasuryBegin(code) {
+  treasuryBegin(code, said) {
     this.sql.exec(`DELETE FROM treasury_known`);
     this.sql.exec(`DELETE FROM treasury_work`);
     this.sql.exec(`DELETE FROM treasury_tries`);
     this.sql.exec(`DELETE FROM notices WHERE kind IN ('tfound', 'thelp', 'topen', 'tsolved')`);
-    this.set("treasury", JSON.stringify(this.treasuryMake(code, this.activeNumbers())));
+    this.set("treasury", JSON.stringify(this.treasuryMake(code, this.activeNumbers(), said)));
     this.broadcast({ t: "news" });
   }
 
@@ -1946,7 +1946,7 @@ export class Game extends DurableObject {
       letters: known.map((slot) => ({ slot, letter: t.code[slot] })),
       triesLeft: this.treasuryTriesLeft(me),
       tries: TREASURY_TRIES,
-      opened: t.opened ? { by: t.opened.by, at: t.opened.at, code: t.code } : null,
+      opened: t.opened ? { by: t.opened.by, at: t.opened.at, code: t.code, said: t.said || t.code } : null,
       out: inv.out || 0,
     };
   }
@@ -1979,10 +1979,18 @@ export class Game extends DurableObject {
     if (a.error) return a.error;
     const slot = Number(url.searchParams.get("slot"));
     if (!this.treasuryMay(a.t, a.inv.number, slot)) return json({ error: "That puzzle is not open to you." }, 403);
-    const grid = a.t.grids[slot].map((r) => r.split("").map(Number));
+    const b = a.t.boards[slot];
     const work = this.sql.exec(`SELECT cells FROM treasury_work WHERE number = ? AND slot = ?`, a.inv.number, slot).toArray();
     const solved = this.treasuryKnows(a.inv.number, slot);
-    return json({ slot, holder: a.t.order[slot], size: TREASURY.SIZE, clues: TREASURY.clues(grid), work: work.length ? work[0].cells : "", solved, letter: solved ? a.t.code[slot] : null, grid: solved ? a.t.grids[slot] : null });
+    // the dealt board is sent, never the finished one; the letter's squares only once it is solved
+    return json({ slot, holder: a.t.order[slot], w: TREASURY.W, h: TREASURY.H, source: TREASURY.SOURCE, start: b.start, work: work.length ? work[0].cells : "", solved, letter: solved ? a.t.code[slot] : null, mask: solved ? b.mask : null, cells: solved ? b.sol : null });
+  }
+
+  // Is this the board of that place, with its pieces only turned?
+  treasuryPieces(t, slot, cells) {
+    if (!TREASURY.isBoard(cells)) return false;
+    const got = TREASURY.unhex(cells), want = TREASURY.unhex(t.boards[slot].sol);
+    return got.every((c, i) => TREASURY.samePiece(c, want[i]));
   }
 
   async treasuryWork(request) {
@@ -1991,7 +1999,7 @@ export class Game extends DurableObject {
     const body = await readJson(request);
     const slot = Number(body.slot), cells = String(body.cells || "");
     if (!this.treasuryMay(a.t, a.inv.number, slot)) return json({ error: "That puzzle is not open to you." }, 403);
-    if (!/^[012]{100}$/.test(cells)) return json({ error: "That is not a grid." }, 400);
+    if (!this.treasuryPieces(a.t, slot, cells)) return json({ error: "That is not this board." }, 400);
     this.sql.exec(`INSERT INTO treasury_work (number, slot, cells, at) VALUES (?, ?, ?, ?) ON CONFLICT(number, slot) DO UPDATE SET cells = excluded.cells, at = excluded.at`, a.inv.number, slot, cells, Date.now());
     return json({ ok: true });
   }
@@ -2004,10 +2012,9 @@ export class Game extends DurableObject {
     const slot = Number(body.slot), cells = String(body.cells || "");
     const me = a.inv.number, t = a.t;
     if (!this.treasuryMay(t, me, slot)) return json({ error: "That puzzle is not open to you." }, 403);
-    if (!/^[012]{100}$/.test(cells)) return json({ error: "That is not a grid." }, 400);
-    const want = t.grids[slot].join("");
-    const got = cells.replace(/2/g, "0"); // a square marked "empty" counts as empty
-    if (got !== want) return json({ ok: false, error: "Not yet. Some squares do not match the numbers." });
+    if (!this.treasuryPieces(t, slot, cells)) return json({ error: "That is not this board." }, 400);
+    // any arrangement that powers every piece with no loose end is a solution
+    if (!TREASURY.powered(TREASURY.unhex(cells)).done) return json({ ok: false, error: "Not yet. Some pieces have no power, or a wire has a loose end." });
     const first = !this.treasuryKnows(me, slot);
     if (first) {
       const day = this.puzzleDay(), holder = t.order[slot];
@@ -2020,7 +2027,7 @@ export class Game extends DurableObject {
       }
       this.broadcast({ t: "news" });
     }
-    return json({ ok: true, slot, letter: t.code[slot], place: slot + 1, grid: t.grids[slot] });
+    return json({ ok: true, slot, letter: t.code[slot], place: slot + 1, mask: t.boards[slot].mask });
   }
 
   // The holder of a place opens their puzzle to everyone, or closes it again.
@@ -2060,6 +2067,9 @@ export class Game extends DurableObject {
     this.set("treasury", JSON.stringify(t));
     for (const n of this.treasurySeats()) this.addCoins(n, t.reward);
     this.sql.exec(`INSERT INTO notices (kind, n, m, day, at) VALUES ('topen', ?, 0, ?, ?)`, me, this.puzzleDay(), Date.now());
+    // the Gamemaster says the passcode out loud, wherever he stands, until the GM gives him another line
+    this.set("gm_line", String(t.said || t.code).slice(0, 160));
+    this.broadcast({ t: "gmsay", text: this.get("gm_line", "") });
     this.broadcast({ t: "news" });
     return json({ ok: true, view: this.treasuryView(this.inHall(request)) });
   }
@@ -2078,9 +2088,11 @@ export class Game extends DurableObject {
     const code = TREASURY.letters(body.code);
     if (code.length !== 16) return json({ error: "The passcode must be exactly 16 letters, A to Z. This one has " + code.length + "." }, 400);
     if (this.treasury()) return json({ error: "A treasury is already in play. Take it away first." }, 409);
-    if (body.arm) { this.set("treasury_armed", code); return json({ ok: true, armed: true }); }
+    // what the GM typed, spaces and all, is what the door shows when it opens
+    const said = String(body.code || "").toUpperCase().replace(/[^A-Z ,.'!?]/g, "").replace(/\s+/g, " ").trim();
+    if (body.arm) { this.set("treasury_armed", said); return json({ ok: true, armed: true }); }
     this.set("treasury_armed", "");
-    this.treasuryBegin(code);
+    this.treasuryBegin(code, said);
     return json({ ok: true, started: true });
   }
 

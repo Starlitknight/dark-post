@@ -589,3 +589,32 @@ body, body.desk { transition:none; }
 #app .tr-mode.on { border-color:#f3d98f; color:#f3d98f; background:#2a2412; } #app .tr-mode i { width:16px; height:16px; border-radius:3px; border:1px solid #6f7c76; position:relative; } #app .tr-mode i.on { background:#f3d98f; border-color:#f3d98f; }
 #app .tr-mode i.no::after { content:"×"; position:absolute; inset:0; display:grid; place-items:center; font:700 12px/1 var(--sans); color:#aab1ab; }
 #app .tr-done { align-items:center; text-align:center; } #app .tr-done .tr-got { justify-content:center; }
+
+/* the wiring board */
+#app .tr-board { display:grid; grid-template-columns:repeat(var(--w), 1fr); gap:0; width:100%; max-width:392px; margin:10px auto 8px; background:#12161a; border:2px solid #3a4743; border-radius:8px; padding:4px; touch-action:manipulation; }
+#app .tr-tile { display:block; aspect-ratio:1; min-width:0; padding:0; margin:0; border:0; background:none; border-radius:4px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+#app .tr-tile svg { display:block; width:100%; height:100%; }
+#app .tr-tile path { stroke:#55615e; stroke-width:6; stroke-linecap:round; fill:none; }
+#app .tr-tile .node { fill:#55615e; }
+#app .tr-tile.lit path { stroke:#f0c95a; } #app .tr-tile.lit .node { fill:#f0c95a; }
+#app .tr-tile .bat { fill:#f3d98f; stroke:#7a6530; stroke-width:1.5; } #app .tr-tile .bolt { fill:#3a2c08; stroke:none; }
+#app button.tr-tile:active { background:#ffffff10; }
+#app .tr-tile.turned svg { animation:tr-turn .16s ease-out; }
+@keyframes tr-turn { from { transform:rotate(-90deg); } to { transform:rotate(0); } }
+#app .tr-board.solved .tr-tile.dimmed path { stroke:#2f3a38; } #app .tr-board.solved .tr-tile.dimmed .node { fill:#2f3a38; }
+#app .tr-board.solved .tr-tile.gold { background:#f3d98f; box-shadow:0 0 10px #ffd76688; border-radius:0; animation:tr-glow .5s ease-out both; } #app .tr-board.solved .tr-tile.gold path { stroke:#8a6a1c; stroke-width:5; } #app .tr-board.solved .tr-tile.gold .node { fill:#8a6a1c; }
+@keyframes tr-glow { from { background:#3b3010; box-shadow:none; } to { background:#f3d98f; } }
+#app .tr-board.solved { max-width:250px; }
+#app .tr-meter { height:6px; border-radius:3px; background:#232d2b; overflow:hidden; margin:2px 0 6px; } #app .tr-meter span { display:block; height:100%; background:#f0c95a; transition:width .2s; }
+#app .tr-wdemo { display:flex; align-items:center; justify-content:center; margin:6px 0; position:relative; } #app .tr-wdemo .tr-tile { width:52px; }
+#app .tr-wdemo .tr-tap { position:absolute; top:-15px; left:50%; transform:translateX(6px); font:700 9px/1 var(--label); letter-spacing:.1em; text-transform:uppercase; color:#f3d98f; white-space:nowrap; }
+#app .tr-pix.big { width:112px; }
+/* the door opens */
+#app .tr-stage { position:relative; display:flex; align-items:center; gap:12px; padding:18px 6px 8px; overflow:hidden; }
+#app .tr-gm { flex:0 0 96px; } #app .tr-gm svg { width:96px; height:96px; display:block; animation:tr-shrug 1.6s ease-in-out infinite; transform-origin:50% 90%; }
+@keyframes tr-shrug { 0%, 100% { transform:rotate(-3deg); } 50% { transform:rotate(3deg) translateY(-2px); } }
+#app .tr-quote { position:relative; flex:1; background:#f6edd3; color:#221a08; border-radius:12px; padding:12px 14px; }
+#app .tr-quote::before { content:""; position:absolute; left:-9px; top:50%; margin-top:-8px; border:8px solid transparent; border-right-color:#f6edd3; border-left:0; }
+#app .tr-quote b { display:block; font:800 19px/1.25 var(--label); letter-spacing:.04em; } #app .tr-quote small { display:block; margin-top:6px; font:600 11px/1.3 var(--body, inherit); color:#6b5a2c; }
+#app .tr-rain { position:absolute; inset:0; pointer-events:none; } #app .tr-rain i { position:absolute; top:-14px; left:var(--x); width:11px; height:11px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #fff1b8, #d7a93b); border:1px solid #8a6a1c; animation:tr-fall var(--t) linear var(--d) infinite; opacity:0; }
+@keyframes tr-fall { 0% { transform:translateY(0); opacity:0; } 12% { opacity:1; } 100% { transform:translateY(170px) rotate(260deg); opacity:0; } }

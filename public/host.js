@@ -769,7 +769,7 @@
     var letters = code.toUpperCase().replace(/[^A-Z]/g, "");
     if (letters.length !== 16) return toast("The passcode must be exactly 16 letters. This one has " + letters.length + ".");
     if (!window.confirm(arm ? "Arm the treasury? It will open by itself when stage 1 closes, with the passcode " + letters + "." : "Open the treasury for play now, with the passcode " + letters + "? Every player gets a puzzle at once.")) return;
-    api("POST", "/api/host/treasury", { code: letters, arm: !!arm }).then(function () { $("treasury-code").value = ""; toast(arm ? "Armed for the end of stage 1." : "The treasury is in play."); return refresh(); }).catch(function (err) { toast(err.message); });
+    api("POST", "/api/host/treasury", { code: code, arm: !!arm }).then(function () { $("treasury-code").value = ""; toast(arm ? "Armed for the end of stage 1." : "The treasury is in play."); return refresh(); }).catch(function (err) { toast(err.message); });
   }
   if ($("treasury-form")) {
     $("treasury-form").addEventListener("submit", function (e) { e.preventDefault(); treasurySend(false); });

@@ -1,100 +1,133 @@
-// The treasury: sixteen picture-logic puzzles, one for each character of a passcode the GM chooses.
-// A puzzle is a 10 by 10 grid with number clues for every row and column. Solving it draws one letter.
-// Nothing here holds a passcode: the grids are made on the server when the GM opens the treasury.
+// The treasury: sixteen wiring puzzles, one for each character of a passcode the GM chooses.
+// A puzzle is a board of wire pieces, 7 across and 9 down. Every piece can be turned. It is solved when
+// current from the battery reaches every piece and no wire is left with a loose end. The pieces that
+// sit on the letter then glow, and the letter can be read.
+// Nothing here holds a passcode: the boards are made on the server when the GM opens the treasury.
 
-export const SIZE = 10;
+export const W = 7, H = 9, CELLS = W * H;
+export const SOURCE = 4 * W + 3; // the battery, in the middle of the board
 
-// Letters, 8 rows tall and up to 8 wide.
-const GLYPHS = {"A":["00011100","00111100","00111100","00110110","01100110","01111111","01100011","11000011"],"B":["1111110","1100110","1100110","1111110","1100110","1100111","1100110","1111110"],"C":["011111","111000","110000","110000","110000","110000","111000","011111"],"D":["11111100","11001110","11000110","11000111","11000111","11000110","11001110","11111100"],"E":["111111","110000","110000","111110","110000","110000","110000","111111"],"F":["111111","110000","110000","111110","110000","110000","110000","110000"],"G":["0011111","1110001","1100000","1100000","1100111","1100011","1110011","0111111"],"H":["1100011","1100011","1100011","1111111","1100011","1100011","1100011","1100011"],"I":["111111","001100","001100","001100","001100","001100","001100","111111"],"J":["001111","000011","000011","000011","000011","110011","110011","011110"],"K":["1100111","1101110","1111100","1111000","1111000","1101100","1100110","1100011"],"L":["110000","110000","110000","110000","110000","110000","110000","111111"],"M":["11000011","11100111","11111111","11011011","11000011","11000011","11000011","11000011"],"N":["1110011","1110011","1111011","1111011","1101111","1101111","1100111","1100011"],"O":["01111100","11100110","11000111","11000011","11000011","11000111","11100110","01111100"],"P":["1111110","1100110","1100111","1100110","1111110","1100000","1100000","1100000"],"Q":["00111100","01100110","11000011","11000011","11001011","11000110","01100110","00111011"],"R":["1111100","1100110","1100110","1100110","1111100","1100110","1100111","1100011"],"S":["011111","110001","110000","111110","011111","000011","100011","111110"],"T":["11111111","00011000","00011000","00011000","00011000","00011000","00011000","00011000"],"U":["1100011","1100011","1100011","1100011","1100011","1100011","1110111","0111110"],"V":["11000011","01100011","01100111","01100110","00110110","00111100","00111100","00011100"],"W":["10000001","10000001","10011001","10011001","10111101","11100111","11000011","10000001"],"X":["01100011","01110110","00111110","00011100","00011100","00111110","01100110","11100011"],"Y":["11100111","01100110","01111100","00111100","00011000","00011000","00011000","00011000"],"Z":["01111110","00001110","00001110","00011100","00111000","01110000","01110000","11111111"]};
+// Letters, 7 rows of 5.
+const GLYPHS = {
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"], B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+  C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"], D: ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"], F: ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  G: ["01111", "10000", "10000", "10111", "10001", "10001", "01111"], H: ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"], J: ["00111", "00001", "00001", "00001", "00001", "10001", "01110"],
+  K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"], L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  M: ["10001", "11011", "10101", "10101", "10001", "10001", "10001"], N: ["10001", "11001", "10101", "10101", "10011", "10001", "10001"],
+  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"], P: ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  Q: ["01110", "10001", "10001", "10001", "10101", "10010", "01101"], R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  S: ["01111", "10000", "10000", "01110", "00001", "00001", "11110"], T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"], V: ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+  W: ["10001", "10001", "10001", "10101", "10101", "11011", "10001"], X: ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+  Y: ["10001", "10001", "01010", "00100", "00100", "00100", "00100"], Z: ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+};
 
 function rng(seed) {
   let s = (seed >>> 0) || 1;
   return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
 }
 
-// The runs of filled squares along one line: [3, 1] means three together, a gap, then one.
-export function runs(line) {
-  const out = [];
-  let k = 0;
-  for (const c of line) { if (c) k += 1; else if (k) { out.push(k); k = 0; } }
-  if (k) out.push(k);
+// A piece is four bits: a wire to the north (1), east (2), south (4) and west (8).
+const DIRS = [[1, 0, -1, 4], [2, 1, 0, 8], [4, 0, 1, 1], [8, -1, 0, 2]]; // bit, dx, dy, the bit facing back
+export const turn = (m) => ((m << 1) & 15) | (m >> 3); // a quarter turn clockwise
+export const samePiece = (a, b) => { for (let k = 0, m = a; k < 4; k++, m = turn(m)) if (m === b) return true; return false; };
+
+// Which squares of the board the letter covers: W * H characters, "1" on the letter.
+export function mask(letter) {
+  const g = GLYPHS[letter];
+  if (!g) return null;
+  let out = "";
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) out += y >= 1 && y <= 7 && x >= 1 && x <= 5 && g[y - 1][x - 1] === "1" ? "1" : "0";
   return out;
 }
 
-export function clues(grid) {
-  const rows = grid.map((r) => runs(r));
-  const cols = [];
-  for (let x = 0; x < SIZE; x++) cols.push(runs(grid.map((r) => r[x])));
-  return { rows, cols };
+// Is the board finished? Every wire end meets another, and current from the battery reaches every piece.
+export function powered(cells) {
+  const seen = new Uint8Array(CELLS);
+  const stack = [SOURCE];
+  seen[SOURCE] = 1;
+  let loose = 0;
+  for (let i = 0; i < CELLS; i++) {
+    const x = i % W, y = (i - x) / W;
+    for (const [bit, dx, dy, back] of DIRS) {
+      if (!(cells[i] & bit)) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H || !(cells[ny * W + nx] & back)) loose += 1;
+    }
+  }
+  while (stack.length) {
+    const i = stack.pop(), x = i % W, y = (i - x) / W;
+    for (const [bit, dx, dy, back] of DIRS) {
+      if (!(cells[i] & bit)) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const j = ny * W + nx;
+      if ((cells[j] & back) && !seen[j]) { seen[j] = 1; stack.push(j); }
+    }
+  }
+  let lit = 0;
+  for (let i = 0; i < CELLS; i++) lit += seen[i];
+  return { lit, loose, done: lit === CELLS && loose === 0, seen };
 }
 
-// Every way one line can be filled to match its clue and what is already known (1 filled, 0 empty, -1 unknown).
-function fits(clue, known) {
-  const n = known.length, out = [];
-  const place = (i, pos, line) => {
-    if (i === clue.length) {
-      for (let p = pos; p < n; p++) if (known[p] === 1) return;
-      out.push(line.concat(Array(n - pos).fill(0)));
-      return;
+// One letter as a board. The wires form a single network with no loops. They are laid so that the letter's
+// squares are wired to each other first, which makes the letter stand out once it glows. Every seed gives a
+// different board, so two players who hold the same letter still get different puzzles.
+// Returns { sol, start, mask }: the finished board, the board as dealt (every piece turned at random), and the letter's squares.
+export function board(letter, seed) {
+  const m = mask(letter);
+  if (!m) return null;
+  const rand = rng(seed * 7919 + letter.charCodeAt(0) * 104729);
+  const edges = [];
+  for (let i = 0; i < CELLS; i++) {
+    const x = i % W, y = (i - x) / W;
+    if (x + 1 < W) edges.push([i, i + 1, 2, 8, (m[i] === m[i + 1] ? 0 : 10) + rand()]);
+    if (y + 1 < H) edges.push([i, i + W, 4, 1, (m[i] === m[i + W] ? 0 : 10) + rand()]);
+  }
+  edges.sort((a, b) => a[4] - b[4]);
+  const parent = Array.from({ length: CELLS }, (_, i) => i);
+  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const sol = new Array(CELLS).fill(0);
+  for (const [a, b, ba, bb] of edges) {
+    const ra = find(a), rb = find(b);
+    if (ra === rb) continue;
+    parent[ra] = rb;
+    sol[a] |= ba; sol[b] |= bb;
+  }
+  let start;
+  do {
+    start = sol.map((p) => { let q = p; for (let k = Math.floor(rand() * 4); k > 0; k--) q = turn(q); return q; });
+  } while (powered(start).lit > CELLS / 3);
+  return { sol: hex(sol), start: hex(start), mask: m };
+}
+
+export const hex = (cells) => cells.map((c) => c.toString(16)).join("");
+export const unhex = (text) => String(text).split("").map((c) => parseInt(c, 16));
+export const isBoard = (text) => typeof text === "string" && text.length === CELLS && /^[0-9a-f]+$/.test(text);
+
+// Solve a dealt board: a finished arrangement of the same pieces, or null. Used by the tests.
+export function solve(start) {
+  const pieces = unhex(start), cells = new Array(CELLS).fill(0);
+  const options = pieces.map((p) => { const o = []; for (let k = 0, q = p; k < 4; k++, q = turn(q)) if (!o.includes(q)) o.push(q); return o; });
+  let steps = 0;
+  const go = (i) => {
+    if (i === CELLS) return powered(cells).done;
+    if (++steps > 4e6) return false;
+    const x = i % W, y = (i - x) / W;
+    for (const q of options[i]) {
+      if (!!(q & 8) !== (x > 0 && !!(cells[i - 1] & 2))) continue;
+      if (!!(q & 1) !== (y > 0 && !!(cells[i - W] & 4))) continue;
+      if (x === W - 1 && (q & 2)) continue;
+      if (y === H - 1 && (q & 4)) continue;
+      cells[i] = q;
+      if (go(i + 1)) return true;
     }
-    const rest = clue.slice(i + 1).reduce((a, b) => a + b + 1, 0);
-    for (let start = pos; start + clue[i] + rest <= n; start++) {
-      let ok = true;
-      for (let p = pos; p < start; p++) if (known[p] === 1) { ok = false; break; }
-      if (!ok) break;
-      for (let p = start; p < start + clue[i]; p++) if (known[p] === 0) { ok = false; break; }
-      if (!ok) continue;
-      const end = start + clue[i];
-      if (end < n && known[end] === 1) continue;
-      const next = line.concat(Array(start - pos).fill(0), Array(clue[i]).fill(1), end < n ? [0] : []);
-      place(i + 1, Math.min(n, end + 1), next);
-    }
+    cells[i] = 0;
+    return false;
   };
-  place(0, 0, []);
-  return out;
-}
-
-// Can the puzzle be finished by reasoning one line at a time, with no guessing? Returns the grid, or null.
-export function lineSolve(c) {
-  const g = Array.from({ length: SIZE }, () => Array(SIZE).fill(-1));
-  for (let pass = 0, moved = true; moved && pass < 60; pass++) {
-    moved = false;
-    for (let axis = 0; axis < 2; axis++) {
-      for (let i = 0; i < SIZE; i++) {
-        const known = axis ? g.map((r) => r[i]) : g[i].slice();
-        const all = fits(axis ? c.cols[i] : c.rows[i], known);
-        if (!all.length) return null;
-        for (let p = 0; p < SIZE; p++) {
-          if (known[p] !== -1) continue;
-          const v = all[0][p];
-          if (all.every((l) => l[p] === v)) { if (axis) g[p][i] = v; else g[i][p] = v; moved = true; }
-        }
-      }
-    }
-  }
-  return g.every((r) => r.every((v) => v !== -1)) ? g : null;
-}
-
-// One letter as a puzzle. The letter sits in the middle; a broken frame around it is different for every
-// seed, so two players who hold the same letter still get different puzzles. Only grids that can be solved
-// by reasoning alone are kept.
-export function letterGrid(letter, seed) {
-  const glyph = GLYPHS[letter];
-  if (!glyph) return null;
-  const left = 1 + Math.floor((8 - glyph[0].length) / 2);
-  for (let attempt = 0; attempt < 400; attempt++) {
-    const rand = rng(seed * 7919 + attempt * 104729 + letter.charCodeAt(0));
-    const g = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
-    glyph.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] === "1") g[y + 1][left + x] = 1; });
-    for (let i = 0; i < SIZE; i++) {
-      if (rand() < 0.45) g[0][i] = 1;
-      if (rand() < 0.45) g[SIZE - 1][i] = 1;
-      if (i > 0 && i < SIZE - 1) { if (rand() < 0.3 && !g[i][1]) g[i][0] = 1; if (rand() < 0.3 && !g[i][SIZE - 2]) g[i][SIZE - 1] = 1; }
-    }
-    const solved = lineSolve(clues(g));
-    if (solved && solved.every((r, y) => r.every((v, x) => v === g[y][x]))) return g;
-  }
-  return null;
+  return go(0) ? hex(cells) : null;
 }
 
 export function letters(text) {
