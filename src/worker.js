@@ -1452,6 +1452,8 @@ export class Game extends DurableObject {
       opened: night.status === "open" && !!row && !!this.ladderSealOf(inv.number, night.stage),
       // how many have submitted this stage: the play screen redraws when it changes
       subs: night.status === "open" ? this.ladderSubmitted(night).length : 0,
+      // how many stages have closed: every player is shown the reveal of the last one, once
+      closed: night.status === "open" ? night.stage - 1 : night.stages,
       unseen: night.status === "done" && !!row && !row.seen,
     };
   }
@@ -1515,6 +1517,18 @@ export class Game extends DurableObject {
       upset: this.ladderUpset(duels, night.status === "open" ? night.stage - 1 : night.stages),
       live,
       liveCount: liveDuels.length,
+      // the last closed stage, for the reveal every player is shown: every duel of it, and the ladder as it stood
+      mega: (() => {
+        const st = night.status === "open" ? night.stage - 1 : night.stages;
+        if (st < 1) return null;
+        const upto = duels.filter((d) => d.stage <= st);
+        return {
+          stage: st,
+          duels: duels.filter((d) => d.stage === st).map((d) => { const sc = LADDER.score(d); return { a: d.a, b: d.b, ca: d.ca, cb: d.cb, ba: d.ba, bb: d.bb, fa: d.fa ? 1 : 0, fb: d.fb ? 1 : 0, pa: sc[0], pb: sc[1] }; }),
+          table: LADDER.table(players, upto).map((r) => ({ n: r.n, pts: r.pts, w: r.w, l: r.l })),
+          upset: this.ladderUpset(duels, st),
+        };
+      })(),
       seenStage: playing ? row.seen_stage : night.stage,
       table: LADDER.table(players, duels.concat(liveDuels)),
       rules: LADDER.RULES,

@@ -135,6 +135,31 @@ await into(hostPage, ".choices-h"); await shot(hostPage, "gm-choices");
 await hostPage.$eval('[data-night="stage"]', (el) => el.click()); await sleep(2000);
 ok("the GM closes stage 1 and stage 2 opens", (await hostPage.$eval("#night-box", (el) => el.innerText)).includes("Stage 2 of 5 is open"));
 
+// the stage reveal plays for every player, over whatever they were doing
+for (let i = 0; i < 40 && !(await guest.$("#mega")); i++) await sleep(250);
+ok("the stage reveal opens by itself", (await guest.$("#mega")) !== null);
+await sleep(1700); await shot(guest, "mega-title");
+ok("it opens on the stage's name", /Stage 1/.test(await guest.$eval("#mega", (el) => el.innerText)) && /cards are turned/i.test(await guest.$eval("#mega", (el) => el.innerText)));
+for (let i = 0; i < 40 && !(await guest.$(".mg-wall")); i++) await sleep(250);
+ok("every duel of the stage is laid face down: 24", (await guest.$$(".mg-duel")).length === 24 && (await guest.$$(".mg-duel.mine")).length === 3 && (await guest.$eval(".mg-wall", (el) => el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().right <= window.innerWidth)));
+await sleep(2600); await shot(guest, "mega-wall-half");
+for (let i = 0; i < 60 && (await guest.$$(".mg-duel.turned")).length < 24; i++) await sleep(250);
+ok("and every one is turned, forfeits marked", (await guest.$$(".mg-duel.turned")).length === 24 && (await guest.$$(".mg-card.forfeit")).length === 3 && /24 of 24 turned · 3 forfeited/i.test(await guest.$eval("#mg-tally", (el) => el.textContent)));
+await sleep(500); await shot(guest, "mega-wall");
+for (let i = 0; i < 40 && !(await guest.$(".mg-upset")); i++) await sleep(250);
+await sleep(1200);
+ok("then the talk of the stage", (await guest.$(".mg-upset")) !== null);
+await shot(guest, "mega-upset");
+for (let i = 0; i < 40 && !(await guest.$(".mg-ladder")); i++) await sleep(250);
+await sleep(2200); await shot(guest, "mega-ladder-half");
+await sleep(3200);
+ok("then the ladder: sixteen rows, the player marked, last place in danger", (await guest.$$(".mg-row")).length === 16 && (await guest.$$(".mg-row.you")).length === 1 && (await guest.$$(".mg-row.last")).length === 1 && (await guest.$$(".mg-row.top")).length === 3);
+await shot(guest, "mega-ladder");
+await guest.$eval("#mega-done", (el) => el.click()); await sleep(700);
+ok("it closes, and is not shown again", (await guest.$("#mega")) === null && (await guest.evaluate(() => Object.keys(localStorage).filter((k) => k.indexOf("dp_mega_") === 0).map((k) => localStorage.getItem(k)).join())) === "1");
+// the later stages of this test are played without it
+await guest.evaluate(() => { Object.keys(localStorage).filter((k) => k.indexOf("dp_mega_") === 0).forEach((k) => localStorage.setItem(k, "99")); });
+
 for (let i = 0; i < 64 && !(await guest.$(".ld-shown")); i++) await sleep(250);
 await sleep(1500);
 t = await guest.$eval("#sched", (el) => el.innerText);

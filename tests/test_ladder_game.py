@@ -166,6 +166,8 @@ RANK = {c: i for i, c in enumerate(CARDS)}
 check("the talk of the stage is named for everyone", up and up["stage"] == 1 and up["kind"] in ("upset", "fall") and up == night(by[7])["upset"] and ((RANK[up["cw"]] < RANK[up["cl"]]) == (up["kind"] == "upset") or up["cw"][0] == "X"))
 check("the absent player's three lowest cards are burned", sorted(v["used"]["16"]) == ["2", "3", "4"])
 r16 = night(by[16])["results"][0]["duels"]
+mg = v["mega"]
+check("every player is sent the whole closed stage for the reveal: 24 duels, the ladder, the upset", mg["stage"] == 1 and len(mg["duels"]) == 24 and len(mg["table"]) == 16 and mg["upset"] == v["upset"] and sum(1 for d in mg["duels"] if d["fa"] or d["fb"]) == 3 and hall(A)["night"]["closed"] == 1 and mg == night(by[9])["mega"])
 check("the absent player forfeits all three duels", [d["r"] for d in r16] == [-1, -1, -1] and all(d["mf"] == 1 and d["tf"] == 0 for d in r16) and [x for x in v["table"] if x["n"] == 16][0]["pts"] == -3)
 check("and each of their opponents is given the win", all([d for d in night(by[d0["opp"]])["results"][0]["duels"] if d["opp"] == 16][0]["r"] == 1 and [d for d in night(by[d0["opp"]])["results"][0]["duels"] if d["opp"] == 16][0]["tf"] == 1 for d0 in r16))
 check("one boost is left and the coin stays spent", v["boostsLeft"] == 1 and coins(A) == before - 1)
