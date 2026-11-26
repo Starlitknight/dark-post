@@ -157,6 +157,9 @@ ok("then the ladder: sixteen rows, the player marked, last place in danger", (aw
 await shot(guest, "mega-ladder");
 await guest.$eval("#mega-done", (el) => el.click()); await sleep(700);
 ok("it closes, and is not shown again", (await guest.$("#mega")) === null && (await guest.evaluate(() => Object.keys(localStorage).filter((k) => k.indexOf("dp_mega_") === 0).map((k) => localStorage.getItem(k)).join())) === "1");
+await hostPage.reload({ waitUntil: "networkidle0" }); await sleep(1500);
+ok("the GM sees who has been shown the reveal", /Stage 1 reveal: seen by 1 of 16\. Not yet: Player/.test(await hostPage.$eval("#night-box", (el) => el.innerText)));
+ok("no player is sent that list", !("reveal" in (await call("GET", "/api/night", null, seat(0)))) && (await call("GET", "/api/host/activity", null, seat(0))).error !== undefined);
 // the later stages of this test are played without it
 await guest.evaluate(() => { Object.keys(localStorage).filter((k) => k.indexOf("dp_mega_") === 0).forEach((k) => localStorage.setItem(k, "99")); });
 
@@ -174,6 +177,12 @@ await guest.evaluate(() => document.querySelector(".danger-line").scrollIntoView
 await guest.evaluate(() => { const b = Array.from(document.querySelectorAll("#app button, #app a")).find((x) => /back/i.test(x.textContent) && x.offsetParent !== null); if (b) b.click(); }); await sleep(2500);
 await click("#bell-btn"); await sleep(500);
 ok("the bell now goes straight to the table", (await guest.$('.bell-row.todo[data-scene="arena"]')) !== null);
+ok("the bell offers the stage reveal, to watch again", /Stage 1 results are in/.test(await guest.$eval("#menu", (el) => el.innerText)) && (await guest.$('.bell-row[data-act="megaNow"]')) !== null);
+await guest.$eval('.bell-row[data-act="megaNow"]', (el) => el.click());
+for (let i = 0; i < 24 && !(await guest.$("#mega")); i++) await sleep(250);
+ok("and plays it from there", (await guest.$("#mega")) !== null);
+await guest.$eval("#mega-skip", (el) => el.click()); await sleep(700);
+await guest.evaluate(() => { Object.keys(localStorage).filter((k) => k.indexOf("dp_mega_") === 0).forEach((k) => localStorage.setItem(k, "99")); });
 await shot(guest, "bell-shortcut");
 await click('.bell-row.todo[data-scene="arena"]'); await sleep(1800);
 ok("and it opens the play screen", (await sceneOf()) === "arena" && (await guest.$$(".ld-card:not([disabled])")).length === 12);

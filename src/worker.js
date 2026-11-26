@@ -379,6 +379,7 @@ export class Game extends DurableObject {
       if (path === "/api/treasury/help" && method === "POST") return this.treasuryHelp(request);
       if (path === "/api/treasury/open" && method === "POST") return this.treasuryOpen(request);
       if (path === "/api/night/stage-seen" && method === "POST") return this.ladderStageSeen(request);
+      if (path === "/api/night/reveal-seen" && method === "POST") return this.ladderRevealSeen(request);
 
       if (path === "/api/claim" && method === "POST") return this.claim(request, url);
       if (path === "/api/commit" && method === "POST") return this.commit(request);
@@ -1587,6 +1588,21 @@ export class Game extends DurableObject {
     return json(this.ladderView(this.inHall(request), this.night()));
   }
 
+  // A player's page says it has played the reveal of a closed stage. Kept for the GM alone, to know who has seen it.
+  async ladderRevealSeen(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const night = this.night();
+    if (!night || night.game !== "ladder") return json({ error: "No game is being played." }, 409);
+    const body = await readJson(request);
+    const closed = night.status === "done" ? night.stages : night.stage - 1;
+    const stage = Math.max(0, Math.min(closed, Number(body.stage) || 0));
+    const seen = JSON.parse(this.get("reveal_seen", "{}"));
+    const key = night.n + ":" + inv.number;
+    if (stage > (seen[key] || 0)) { seen[key] = stage; this.set("reveal_seen", JSON.stringify(seen)); }
+    return json({ ok: true });
+  }
+
   ladderStageSeen(request) {
     const inv = this.inHall(request);
     if (!inv) return json({ error: "You are not in the hall yet." }, 403);
@@ -1717,6 +1733,12 @@ export class Game extends DurableObject {
       table: LADDER.table(night.players, duels.concat(this.ladderLive(night))),
       bets: this.sql.exec(`SELECT number, score, stake, stage, mult, paid FROM ladder_bets ORDER BY number`).toArray(),
       duelBets: this.sql.exec(`SELECT number, stage, a, b, pick, status, paid FROM duel_bets ORDER BY id`).toArray(),
+      // for the GM alone: who has been shown the reveal of the last closed stage
+      reveal: (() => {
+        const closed = night.status === "done" ? night.stages : night.stage - 1;
+        const seen = JSON.parse(this.get("reveal_seen", "{}"));
+        return { stage: closed, seen: night.players.filter((n) => (seen[night.n + ":" + n] || 0) >= closed) };
+      })(),
       // For the GM alone: every card each player has sealed or played, and when they were last in the estate.
       // This is sent only on the host's own routes, never to a player.
       choices: (() => {

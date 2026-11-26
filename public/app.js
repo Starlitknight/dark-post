@@ -2076,6 +2076,8 @@
 
   function todoAll() {
     var out = [], u = hall.unread, n = hall.night;
+    // the reveal of the last closed stage can be played, and played again, from the bell
+    if (n && n.game === "ladder" && n.status === "open" && n.closed > 0) out.push({ title: "Stage " + n.closed + " results are in", sub: "Every duel turned over, the biggest upset and the ladder.", act: "megaNow", go: megaSeen(n.n) >= n.closed ? "Replay" : "Watch" });
     if (n && n.status === "open" && !n.opened && !hall.out) {
       if (!briefed()) out.push({ title: "Game " + n.n + " has begun", sub: gameName() + ".", walk: "Walk to the arena. The attendant has the rules." });
       // the walk to the table is for the first time; after that the bell goes straight there
@@ -2150,6 +2152,7 @@
     var rows = todo.map(function (t) {
       // some things are done in a room, not from here: the row says where to go and has no button
       if (t.walk) return '<div class="bell-row todo walk"><span class="bell-text"><b>' + esc(t.title) + "</b><small>" + esc(t.sub) + '</small><small class="bell-walk">' + esc(t.walk) + "</small></span></div>";
+      if (t.act) return '<button type="button" class="bell-row todo" data-act="' + t.act + '"><span class="bell-text"><b>' + esc(t.title) + "</b><small>" + esc(t.sub) + '</small></span><em>' + t.go + "</em></button>";
       return '<button type="button" class="bell-row todo" data-act="go" data-scene="' + t.scene + '"><span class="bell-text"><b>' + esc(t.title) + "</b><small>" + esc(t.sub) + '</small></span><em>' + t.go + "</em></button>";
     });
     // news is shown once: whatever was new when the bell was opened, and gone the next time
@@ -2725,9 +2728,18 @@
   function megaKey(n) { return "dp_mega_" + (me && me.number) + "_" + n; }
   function megaSeen(n) { try { return Number(localStorage.getItem(megaKey(n)) || 0); } catch (e) { return 0; } }
   function megaMark(n, st) { try { localStorage.setItem(megaKey(n), String(st)); } catch (e) { /* private mode */ } }
+  // the GM is told who has been shown the reveal, so stragglers can be nudged. Told once for each stage.
+  var megaTold = 0;
+  function megaTell(n, st) {
+    if (megaTold >= st) return;
+    megaTold = st;
+    api("POST", "/api/night/reveal-seen", { stage: st }).catch(function () { megaTold = 0; });
+  }
   function megaCheck() {
     var b = hall && hall.night;
-    if (mega || stage || !b || b.game !== "ladder" || b.status !== "open" || !(b.closed > 0) || megaSeen(b.n) >= b.closed) return;
+    if (mega || !b || b.game !== "ladder" || b.status !== "open" || !(b.closed > 0)) return;
+    if (megaSeen(b.n) >= b.closed) return megaTell(b.n, b.closed);
+    if (stage) return;
     if (document.hidden) return;
     // not over the call to the game, the tour, the rules or the end of the game
     if (["gamecall", "tour", "vbrief", "vreveal", "face", "look"].indexOf(ui.scene) >= 0 || HALL.indexOf(ui.scene) < 0) return;
@@ -2743,6 +2755,14 @@
     var j = LADDER.isJoker(c);
     return '<span class="mg-card' + (j ? " joker" : "") + (o.cls ? " " + o.cls : "") + '"><b>' + (j ? "★" : c) + "</b>" + (o.boost ? "<em>+2</em>" : "") + "</span>";
   }
+  // played on request, from the bell, whether or not it has been seen
+  function megaNow() {
+    if (mega) return;
+    mega = { loading: true };
+    api("GET", "/api/night").then(function (v) { if (!v || !v.mega) { mega = null; return toast("No stage has closed yet."); } megaPlay(v); }).catch(function (err) { mega = null; toast(err.message); });
+  }
+  setInterval(megaCheck, 20000);
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) setTimeout(megaCheck, 800); });
   function megaPlay(v) {
     var m = v.mega, you = v.you, box = document.createElement("div");
     box.id = "mega";
@@ -2754,13 +2774,14 @@
     function close(to) {
       mega.timers.forEach(clearTimeout);
       megaMark(v.n, m.stage);
+      megaTell(v.n, m.stage);
       box.classList.add("out");
       setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 350);
       mega = null;
       if (to) go(to);
     }
     box.querySelector("#mega-skip").onclick = function () { close(); };
-    megaMark(v.n, m.stage); // shown once, even if the page is closed half way
+    // marked as seen only once the ladder has been reached or the player skips: a page closed half way plays it again
 
     // 1. the title
     function title() {
@@ -2807,6 +2828,7 @@
       box.querySelector("#mega-go").onclick = function () { close("arena"); };
       box.querySelector("#mega-done").onclick = function () { close(); };
       box.querySelector("#mega-skip").style.display = "none";
+      megaMark(v.n, m.stage); megaTell(v.n, m.stage);
     }
     title();
   }
@@ -4460,6 +4482,7 @@
     else if (name === "sealNo") { ui.confirm = false; refreshChoose(); }
     else if (name === "seal") act("POST", "/api/seal", { bag: ui.pick }, function () { ui.scene = "sealed"; ui.stamped = true; });
     else if (name === "hall") go("hall");
+    else if (name === "megaNow") megaNow();
     else if (name === "go") go(el.getAttribute("data-scene"));
     else if (name === "seat") { ui.withN = Number(el.getAttribute("data-n")); ui.card = 0; go("whisper"); }
     else if (name === "pzDone") { var done = $("pz-result"); if (done) done.remove(); }
