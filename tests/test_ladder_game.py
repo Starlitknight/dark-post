@@ -166,6 +166,7 @@ RANK = {c: i for i, c in enumerate(CARDS)}
 check("the talk of the stage is named for everyone", up and up["stage"] == 1 and up["kind"] in ("upset", "fall") and up == night(by[7])["upset"] and ((RANK[up["cw"]] < RANK[up["cl"]]) == (up["kind"] == "upset") or up["cw"][0] == "X"))
 check("the absent player's three lowest cards are burned", sorted(v["used"]["16"]) == ["2", "3", "4"])
 r16 = night(by[16])["results"][0]["duels"]
+check("the first stage of Game 1 is not played to anyone by itself", hall(A)["night"]["revealSeen"] is True and hall(by[9])["night"]["revealSeen"] is True)
 mg = v["mega"]
 check("every player is sent the whole closed stage for the reveal: 24 duels, the ladder, the upset", mg["stage"] == 1 and len(mg["duels"]) == 24 and len(mg["table"]) == 16 and mg["upset"] == v["upset"] and sum(1 for d in mg["duels"] if d["fa"] or d["fb"]) == 3 and hall(A)["night"]["closed"] == 1 and mg == night(by[9])["mega"])
 check("the absent player forfeits all three duels", [d["r"] for d in r16] == [-1, -1, -1] and all(d["mf"] == 1 and d["tf"] == 0 for d in r16) and [x for x in v["table"] if x["n"] == 16][0]["pts"] == -3)
@@ -184,6 +185,9 @@ o = v["opponents"][1]
 seal(A, [{"opp": o[0], "card": "10", "boost": True}, {"opp": o[1], "card": "A"}, {"opp": o[2], "card": "Q"}])
 play_stage(2)
 call("POST", "/api/host/night/stage", {}, host)
+check("a later stage is played to each player once: unseen until their page says it has started", hall(A)["night"]["closed"] == 2 and hall(A)["night"]["revealSeen"] is False)
+call("POST", "/api/night/reveal-seen", {"stage": 2}, seat(A))
+check("and then never by itself again, whatever browser they return in", hall(A)["night"]["revealSeen"] is True and hall(by[9])["night"]["revealSeen"] is False)
 v = night(A)
 o = v["opponents"][2]
 pts3 = [r for r in v["table"] if r["n"] == 3][0]["pts"]

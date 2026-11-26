@@ -136,8 +136,12 @@ await hostPage.$eval('[data-night="stage"]', (el) => el.click()); await sleep(20
 ok("the GM closes stage 1 and stage 2 opens", (await hostPage.$eval("#night-box", (el) => el.innerText)).includes("Stage 2 of 5 is open"));
 
 // the stage reveal plays for every player, over whatever they were doing
+await sleep(3500);
+ok("the reveal of Game 1's first stage no longer plays by itself", (await guest.$("#mega")) === null && (await call("GET", "/api/hall", null, seat(0))).night.revealSeen === true);
+// it is played on request, as the bell's row does
+await guest.evaluate(() => { const b = document.createElement("button"); b.setAttribute("data-act", "megaNow"); b.style.display = "none"; (document.getElementById("app") || document.body).appendChild(b); b.click(); b.remove(); });
 for (let i = 0; i < 40 && !(await guest.$("#mega")); i++) await sleep(250);
-ok("the stage reveal opens by itself", (await guest.$("#mega")) !== null);
+ok("the stage reveal plays when asked for", (await guest.$("#mega")) !== null);
 await sleep(1700); await shot(guest, "mega-title");
 ok("it opens on the stage's name", /Stage 1/.test(await guest.$eval("#mega", (el) => el.innerText)) && /cards are turned/i.test(await guest.$eval("#mega", (el) => el.innerText)));
 for (let i = 0; i < 40 && !(await guest.$(".mg-wall")); i++) await sleep(250);

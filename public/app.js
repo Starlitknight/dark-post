@@ -2070,14 +2070,13 @@
   // The bell's number counts only what the player has not yet been shown. Opening the bell shows everything, so the
   // number clears whether or not they act. A row that is only an offer (once: a bet nobody has to place) is shown one time.
   function todoKey(t) { return "td:" + t.title + "|" + (t.sub || ""); }
-  function todoNew() { return todoList().filter(function (t) { return !heard(todoKey(t)); }).length; }
+  function todoNew() { return todoList().filter(function (t) { return !t.quiet && !heard(todoKey(t)); }).length; }
   function todoSeen() { todoList().forEach(function (t) { markHeard(todoKey(t)); }); }
   function todoList() { return todoAll().filter(function (t) { return !t.once || !heard(todoKey(t)) || (stage && stage.bellKeep && stage.bellKeep[todoKey(t)]); }); }
 
   function todoAll() {
     var out = [], u = hall.unread, n = hall.night;
-    // the reveal of the last closed stage can be played, and played again, from the bell
-    if (n && n.game === "ladder" && n.status === "open" && n.closed > 0) out.push({ title: "Stage " + n.closed + " results are in", sub: "Every duel turned over, the biggest upset and the ladder.", act: "megaNow", go: megaSeen(n.n) >= n.closed ? "Replay" : "Watch" });
+    // the reveal of the last closed stage can be played, and played again, from the foot of the bell
     if (n && n.status === "open" && !n.opened && !hall.out) {
       if (!briefed()) out.push({ title: "Game " + n.n + " has begun", sub: gameName() + ".", walk: "Walk to the arena. The attendant has the rules." });
       // the walk to the table is for the first time; after that the bell goes straight there
@@ -2100,6 +2099,7 @@
     if (u.table) out.push({ title: plural(u.table, "new broadcast", "new broadcasts"), sub: "Said to every player.", scene: "table", go: "Read" });
     if (betsOn() && hall.bets.taking && !hall.bets.placed && !hall.out) out.push({ once: true, title: "Bets are open on your Game 1 score", sub: "Pays " + [5, 4, 3, 2][hall.bets.stage - 1] + " coins a coin in this stage. Less in the next.", walk: "If you want to bet, walk to the betting room." });
     if (hall.bettingOpen && !betsOn() && u.deals && !hall.out) out.push({ title: plural(u.deals, "player offers", "players offer") + " you a deal", sub: "Answer in the betting room.", scene: "deal", go: "Answer" });
+    if (n && n.game === "ladder" && n.status === "open" && n.closed > 0) out.push({ title: "Stage " + n.closed + " results are in", sub: "Every duel turned over, the biggest upset and the ladder.", act: "megaNow", go: megaSeen(n.n) >= n.closed || n.revealSeen ? "Replay" : "Watch", quiet: true });
     return out;
   }
 
@@ -2738,6 +2738,8 @@
   function megaCheck() {
     var b = hall && hall.night;
     if (mega || !b || b.game !== "ladder" || b.status !== "open" || !(b.closed > 0)) return;
+    // it plays by itself once for each stage. The game remembers that, as well as this phone.
+    if (b.revealSeen) return megaMark(b.n, b.closed);
     if (megaSeen(b.n) >= b.closed) return megaTell(b.n, b.closed);
     if (stage) return;
     if (document.hidden) return;
@@ -2761,7 +2763,6 @@
     mega = { loading: true };
     api("GET", "/api/night").then(function (v) { if (!v || !v.mega) { mega = null; return toast("No stage has closed yet."); } megaPlay(v); }).catch(function (err) { mega = null; toast(err.message); });
   }
-  setInterval(megaCheck, 20000);
   document.addEventListener("visibilitychange", function () { if (!document.hidden) setTimeout(megaCheck, 800); });
   function megaPlay(v) {
     var m = v.mega, you = v.you, box = document.createElement("div");
@@ -2781,7 +2782,8 @@
       if (to) go(to);
     }
     box.querySelector("#mega-skip").onclick = function () { close(); };
-    // marked as seen only once the ladder has been reached or the player skips: a page closed half way plays it again
+    // seen from the moment it starts: it never plays by itself twice. It can always be played again from the bell.
+    megaMark(v.n, m.stage); megaTell(v.n, m.stage);
 
     // 1. the title
     function title() {

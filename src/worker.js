@@ -1457,6 +1457,14 @@ export class Game extends DurableObject {
       subs: night.status === "open" ? this.ladderSubmitted(night).length : 0,
       // how many stages have closed: every player is shown the reveal of the last one, once
       closed: night.status === "open" ? night.stage - 1 : night.stages,
+      // has this player already been shown the reveal of that stage? Kept here, not only on their phone, so it
+      // plays by itself once and never again, whatever browser they come back in. The reveal of the first stage
+      // of Game 1 has had its day: it no longer plays by itself for anyone, and stays in the bell.
+      revealSeen: (() => {
+        const closed = night.status === "open" ? night.stage - 1 : night.stages;
+        if (night.n === 1 && closed === 1) return true;
+        return (JSON.parse(this.get("reveal_seen", "{}"))[night.n + ":" + inv.number] || 0) >= closed;
+      })(),
       unseen: night.status === "done" && !!row && !row.seen,
     };
   }
