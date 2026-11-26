@@ -164,14 +164,17 @@ check("played cards leave the hand and are public", v["hand"] == [c for c in CAR
 up = v["upset"]
 RANK = {c: i for i, c in enumerate(CARDS)}
 check("the talk of the stage is named for everyone", up and up["stage"] == 1 and up["kind"] in ("upset", "fall") and up == night(by[7])["upset"] and ((RANK[up["cw"]] < RANK[up["cl"]]) == (up["kind"] == "upset") or up["cw"][0] == "X"))
-check("the absent player was given their three lowest cards", sorted(v["used"]["16"]) == ["2", "3", "4"])
+check("the absent player's three lowest cards are burned", sorted(v["used"]["16"]) == ["2", "3", "4"])
+r16 = night(by[16])["results"][0]["duels"]
+check("the absent player forfeits all three duels", [d["r"] for d in r16] == [-1, -1, -1] and all(d["mf"] == 1 and d["tf"] == 0 for d in r16) and [x for x in v["table"] if x["n"] == 16][0]["pts"] == -3)
+check("and each of their opponents is given the win", all([d for d in night(by[d0["opp"]])["results"][0]["duels"] if d["opp"] == 16][0]["r"] == 1 and [d for d in night(by[d0["opp"]])["results"][0]["duels"] if d["opp"] == 16][0]["tf"] == 1 for d0 in r16))
 check("one boost is left and the coin stays spent", v["boostsLeft"] == 1 and coins(A) == before - 1)
 check("the ladder adds up to nothing", sum(row["pts"] for row in v["table"]) == 0 and len(v["table"]) == 16)
 check("an already played card is refused", seal(A, [{"opp": v["opponents"][1][0], "card": "9"}, {"opp": v["opponents"][1][1], "card": "A"}, {"opp": v["opponents"][1][2], "card": "Q"}])[0] == 400)
 bv = betv(by[2])
 check("stage 2: a coin pays 4, and the reachable scores have narrowed", bv["mult"] == 4 and bv["left"] == 12 and bv["high"] - bv["low"] == 24)
 c2 = coins(by[2])
-check("a stage 2 bet is taken at 4", bet(by[2], 4, 1)[1]["bet"]["pays"] == 4)
+check("a stage 2 bet is taken at 4", bet(by[2], 6, 1)[1]["bet"]["pays"] == 4)
 v = call("POST", "/api/night/stage-seen", {}, seat(A))[1]
 check("the stage result is shown once", v["seenStage"] == 1)
 
@@ -198,7 +201,7 @@ check("nothing more can be closed", call("POST", "/api/host/night/stage", {}, ho
 
 v = night(A)
 final = {r["n"]: r["pts"] for r in v["table"]}
-check("the seeded game ends where the bets expect", final[1] == -2 and final[2] == 4)
+check("the seeded game ends where the bets expect", final[1] == -2 and final[2] == 6)
 check("a right bet is paid: 2 coins at 5", betv(A)["bet"]["won"] is True and betv(A)["bet"]["paid"] == 10 and v["bet"]["won"] is True)
 check("a right stage 2 bet is paid at 4", betv(by[2])["bet"]["paid"] == 4 and coins(by[2]) == c2 - 1 + 4 + v["result"]["prizes"].get("2", 0))
 check("a wrong bet is lost", betv(by[3])["bet"]["won"] is False and betv(by[3])["bet"]["paid"] == 0)
@@ -207,7 +210,7 @@ act = call("GET", "/api/host/activity", cookies=host)[1]["active"]
 rank = [x["n"] for x in act]
 check("the GM gets every player ranked by activity, the absent one last", len(act) == 16 and rank[-1] == 16 and act[-1]["stages"] == 0 and act[0]["score"] >= act[5]["score"] >= act[-1]["score"] and [x for x in act if x["n"] == 1][0]["stages"] == 5 and [x for x in act if x["n"] == 1][0]["bet"] == 1)
 check("no player is sent the ranking", "active" not in hall(A) and "active" not in night(A) and '"partners"' not in json.dumps([hall(A), night(A)]) and call("GET", "/api/host/activity", cookies=seat(A))[0] == 401)
-check("the GM sees every bet", [(b["number"], b["score"], b["stake"], b["mult"]) for b in hb] == [(1, -2, 2, 5), (2, 4, 1, 4), (3, pts3 - 9, 3, 3)])
+check("the GM sees every bet", [(b["number"], b["score"], b["stake"], b["mult"]) for b in hb] == [(1, -2, 2, 5), (2, 6, 1, 4), (3, pts3 - 9, 3, 3)])
 res = v["result"]
 table = v["table"]
 check("every player played all fifteen cards", all(sorted(v["used"][str(n)]) == sorted(CARDS) for n in range(1, 17)) and v["hand"] == [])

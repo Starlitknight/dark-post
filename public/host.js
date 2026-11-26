@@ -814,7 +814,7 @@
     }
     if (what === "stage") {
       var late = Number(act.getAttribute("data-waiting"));
-      if (!window.confirm(late ? late + " players have not sealed. If you close now they play their lowest cards. Close the stage?" : "Close the stage and turn the cards?")) return;
+      if (!window.confirm(late ? late + " players have not sealed. If you close now they forfeit: they lose all three duels and their three lowest cards are burned. Close the stage?" : "Close the stage and turn the cards?")) return;
       api("POST", "/api/host/night/stage", {}).then(function (res) { toast(res.status === "done" ? "The game is over." : "The cards are turned. Stage " + res.stage + " is open."); return refresh(); }).catch(function (err) { toast(err.message); });
       return;
     }

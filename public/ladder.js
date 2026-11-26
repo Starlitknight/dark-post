@@ -26,6 +26,16 @@
     return pa > pb ? 1 : pa < pb ? -1 : 0;
   }
 
+  // The points of one duel, [a's, b's]. A player who submitted nothing forfeits: they lose the duel whatever
+  // card was burned for them (d.fa, d.fb). When both forfeit, both lose.
+  function score(d) {
+    if (d.fa && d.fb) return [-1, -1];
+    if (d.fa) return [-1, 1];
+    if (d.fb) return [1, -1];
+    var r = duel(d.ca, d.ba, d.cb, d.bb);
+    return [r, -r];
+  }
+
   // Who meets whom. Every pair meets once (the circle method). With an odd number, one player rests each round.
   // Returns rounds: each a list of [a, b] pairs of player numbers.
   function rounds(players) {
@@ -63,7 +73,7 @@
     return Math.ceil((m - 1) / RULES.perStage);
   }
 
-  // A player who sealed nothing plays their lowest unused cards, lowest first, with no boost.
+  // A player who sealed nothing forfeits the stage: their lowest unused cards are burned, lowest first.
   function lowest(hand, count) {
     return hand.slice().sort(function (x, y) { return power(x) - power(y); }).slice(0, count);
   }
@@ -74,10 +84,9 @@
     var rows = {};
     players.forEach(function (n) { rows[n] = { n: n, pts: 0, w: 0, l: 0, t: 0 }; });
     duels.forEach(function (d) {
-      var r = duel(d.ca, d.ba, d.cb, d.bb);
+      var s = score(d);
       if (!rows[d.a] || !rows[d.b]) return;
-      rows[d.a].pts += r; rows[d.b].pts -= r;
-      if (r > 0) { rows[d.a].w += 1; rows[d.b].l += 1; } else if (r < 0) { rows[d.a].l += 1; rows[d.b].w += 1; } else { rows[d.a].t += 1; rows[d.b].t += 1; }
+      [[d.a, s[0]], [d.b, s[1]]].forEach(function (x) { var row = rows[x[0]]; row.pts += x[1]; if (x[1] > 0) row.w += 1; else if (x[1] < 0) row.l += 1; else row.t += 1; });
     });
     return players.map(function (n) { return rows[n]; }).sort(function (x, y) { return y.pts - x.pts || y.w - x.w || x.n - y.n; });
   }
@@ -100,5 +109,5 @@
     return { last: tied, out: down.length === 1 ? down[0] : null, level: down.length === 1 ? [] : down };
   }
 
-  root.LADDER = { CARDS: CARDS, RULES: RULES, isJoker: isJoker, label: label, power: power, duel: duel, rounds: rounds, stagesFor: stagesFor, stageCount: stageCount, lowest: lowest, table: table, lastPlace: lastPlace };
+  root.LADDER = { CARDS: CARDS, RULES: RULES, isJoker: isJoker, label: label, power: power, duel: duel, score: score, rounds: rounds, stagesFor: stagesFor, stageCount: stageCount, lowest: lowest, table: table, lastPlace: lastPlace };
 })(typeof self !== "undefined" ? self : globalThis);

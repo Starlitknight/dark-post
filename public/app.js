@@ -3153,8 +3153,8 @@
   // One stage's three duels, turned over one after another.
   function ladderRevealHTML(st) {
     return '<div class="ld-duels">' + st.duels.map(function (d, i) {
-      return '<div class="ld-duel ' + (d.r > 0 ? "won" : d.r < 0 ? "lost" : "level") + '" style="--i:' + i + '"><span class="ld-me"><i>You</i>' + cardHTML(d.mine, { boost: d.mb }) + '</span><strong>' + (d.r > 0 ? "+1" : d.r < 0 ? "−1" : "0") + "</strong>" +
-        '<span class="ld-them">' + cardHTML(d.theirs, { boost: d.tb }) + '<i><span class="ld-face">' + faceHTML(d.opp) + "</span>Player " + d.opp + "</i></span></div>";
+      return '<div class="ld-duel ' + (d.r > 0 ? "won" : d.r < 0 ? "lost" : "level") + '" style="--i:' + i + '"><span class="ld-me' + (d.mf ? " forfeit" : "") + '"><i>You</i>' + cardHTML(d.mine, { boost: d.mb }) + (d.mf ? "<u>Forfeit</u>" : "") + '</span><strong>' + (d.r > 0 ? "+1" : d.r < 0 ? "−1" : "0") + "</strong>" +
+        '<span class="ld-them' + (d.tf ? " forfeit" : "") + '">' + cardHTML(d.theirs, { boost: d.tb }) + (d.tf ? "<u>Forfeit</u>" : "") + '<i><span class="ld-face">' + faceHTML(d.opp) + "</span>Player " + d.opp + "</i></span></div>";
     }).join("") + "</div>";
   }
 
@@ -3170,7 +3170,7 @@
     } else {
       var last = n.results[n.results.length - 1];
       var closeAt = n.endsAt ? new Date(n.endsAt).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }) + " ET" : "";
-      var count = n.endsAt ? '<i>This stage closes in</i><b class="s-count small" id="v-count">' + span(Math.max(0, new Date(n.endsAt).getTime() - Date.now())) + '</b><p class="ld-closeat">At <b>' + esc(closeAt) + "</b>. Anyone who has not submitted by then plays their three lowest cards.</p>" : "<p>The GM closes each stage.</p>";
+      var count = n.endsAt ? '<i>This stage closes in</i><b class="s-count small" id="v-count">' + span(Math.max(0, new Date(n.endsAt).getTime() - Date.now())) + '</b><p class="ld-closeat">At <b>' + esc(closeAt) + "</b>. Anyone who has not submitted by then <b>forfeits</b>: they lose all three duels and their three lowest cards are burned.</p>" : "<p>The GM closes each stage.</p>";
       out += '<div class="s-card now"><i>Game ' + n.n + " · The Ladder</i><h2>Stage " + n.stage + " of " + n.stages + "</h2>" + count + "</div>";
       var subs = n.submitted || [], all = (n.table || []).map(function (r) { return r.n; }).sort(function (a, b) { return a - b; });
       if (all.length) out += '<div class="s-card ld-subs"><i>Submitted · ' + subs.length + " of " + all.length + '</i><div class="subs">' + all.map(function (k) {

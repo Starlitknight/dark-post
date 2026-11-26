@@ -1403,6 +1403,7 @@ export class Game extends DurableObject {
     let upset = null, fall = null;
     for (const d of duels) {
       if (d.stage !== stage) continue;
+      if (d.fa || d.fb) continue; // a forfeit is nobody's upset
       const r = LADDER.duel(d.ca, d.ba, d.cb, d.bb);
       if (!r) continue;
       const w = r > 0 ? [d.a, d.ca, d.ba] : [d.b, d.cb, d.bb], l = r > 0 ? [d.b, d.cb, d.bb] : [d.a, d.ca, d.ba];
@@ -1454,8 +1455,8 @@ export class Game extends DurableObject {
         stage: s,
         duels: mine.map((d) => {
           const am = d.a === you;
-          const r = LADDER.duel(d.ca, d.ba, d.cb, d.bb);
-          return { opp: am ? d.b : d.a, mine: am ? d.ca : d.cb, theirs: am ? d.cb : d.ca, mb: am ? d.ba : d.bb, tb: am ? d.bb : d.ba, r: am ? r : -r };
+          const s = LADDER.score(d);
+          return { opp: am ? d.b : d.a, mine: am ? d.ca : d.cb, theirs: am ? d.cb : d.ca, mb: am ? d.ba : d.bb, tb: am ? d.bb : d.ba, r: am ? s[0] : s[1], mf: (am ? d.fa : d.fb) ? 1 : 0, tf: (am ? d.fb : d.fa) ? 1 : 0 };
         }),
       });
     }
@@ -1583,7 +1584,7 @@ export class Game extends DurableObject {
     return json({ ok: true, players: players.length });
   }
 
-  // Close the stage: every sealed card is turned. A player who sealed nothing plays their lowest cards.
+  // Close the stage: every sealed card is turned. A player who sealed nothing forfeits: they lose all their duels of the stage and their lowest cards are burned.
   // After the last stage the ladder is final: the top three are paid and the bottom player goes home.
   closeLadderStage() {
     const night = this.night();
@@ -1599,15 +1600,15 @@ export class Game extends DurableObject {
       const ok = seal && opps.every((o) => seal.some((p) => p.opp === o && hand.includes(p.card)));
       laid[n] = {};
       if (ok) for (const p of seal) laid[n][p.opp] = [p.card, p.boost ? 1 : 0];
-      else LADDER.lowest(hand, opps.length).forEach((c, i) => { laid[n][opps[i]] = [c, 0]; });
+      else LADDER.lowest(hand, opps.length).forEach((c, i) => { laid[n][opps[i]] = [c, 0, 1]; }); // forfeit: lowest cards burned
     }
     const per = LADDER.RULES.perStage;
     for (const pairs of LADDER.rounds(players).slice((night.stage - 1) * per, night.stage * per)) {
-      for (const [a, b] of pairs) duels.push({ stage: night.stage, a, b, ca: laid[a][b][0], cb: laid[b][a][0], ba: laid[a][b][1], bb: laid[b][a][1] });
+      for (const [a, b] of pairs) duels.push({ stage: night.stage, a, b, ca: laid[a][b][0], cb: laid[b][a][0], ba: laid[a][b][1], bb: laid[b][a][1], ...(laid[a][b][2] ? { fa: 1 } : {}), ...(laid[b][a][2] ? { fb: 1 } : {}) });
     }
     this.set("ladder_duels", JSON.stringify(duels));
     // any coin still riding on a duel of this stage is settled now (a duel a no-show was part of)
-    for (const d of duels) if (d.stage === night.stage) this.settleDuelBets(d.stage, d.a, d.b, LADDER.duel(d.ca, d.ba, d.cb, d.bb));
+    for (const d of duels) if (d.stage === night.stage) this.settleDuelBets(d.stage, d.a, d.b, d.fa && d.fb ? 0 : LADDER.score(d)[0]);
     if (night.stage >= night.stages) {
       const table = LADDER.table(players, duels);
       const lp = LADDER.lastPlace(players, duels);
@@ -1694,8 +1695,8 @@ export class Game extends DurableObject {
           sealed: night.status === "open" ? this.ladderSealOf(n, night.stage) : null,
           played: duels.filter((d) => d.a === n || d.b === n).map((d) => {
             const am = d.a === n;
-            const r = LADDER.duel(d.ca, d.ba, d.cb, d.bb);
-            return { stage: d.stage, opp: am ? d.b : d.a, card: am ? d.ca : d.cb, boost: am ? d.ba : d.bb, r: am ? r : -r };
+            const s = LADDER.score(d);
+            return { stage: d.stage, opp: am ? d.b : d.a, card: am ? d.ca : d.cb, boost: am ? d.ba : d.bb, r: am ? s[0] : s[1], forfeit: (am ? d.fa : d.fb) ? 1 : 0 };
           }),
         }));
       })(),
