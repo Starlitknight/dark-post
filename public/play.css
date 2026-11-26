@@ -546,8 +546,11 @@ body, body.desk { transition:none; }
 #app .ld-me.forfeit .pcard, #app .ld-them.forfeit .pcard { filter:grayscale(1) brightness(.6); }
 #app .ld-me.forfeit u, #app .ld-them.forfeit u { position:absolute; left:50%; top:88%; transform:translate(-50%,-50%) rotate(-6deg); font:800 10px/1 var(--label); letter-spacing:.12em; text-transform:uppercase; text-decoration:none; color:#ff8d7a; border:1.5px solid #ff8d7a; border-radius:4px; padding:3px 5px; background:rgba(20,10,8,.85); white-space:nowrap; z-index:2; }
 /* ----- the treasury ----- */
-#app .tr-vault { flex:0 0 auto; width:84px; height:84px; border-radius:50%; border:3px solid #ddb65a; background:radial-gradient(circle at 35% 30%, #4a3f1e, #1d1a10); display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:inset 0 0 0 5px #17151b, 0 4px 14px #0008; }
-#app .tr-vault b { font:700 30px/1 var(--label); color:#f3d98f; } #app .tr-vault small { font:700 9px/1 var(--label); letter-spacing:.14em; text-transform:uppercase; color:#c9a85a; margin-top:3px; }
+#app .tr-vault { flex:0 0 auto; width:92px; display:flex; flex-direction:column; align-items:center; }
+#app .tr-vault svg { width:100%; height:auto; display:block; filter:drop-shadow(0 4px 10px #0009); }
+#app .tr-vault small { font:700 9px/1.2 var(--label); letter-spacing:.1em; text-transform:uppercase; color:#c9a85a; margin-top:4px; white-space:nowrap; }
+#app .tr-vault small b { font:inherit; font-size:12px; color:#f3d98f; }
+#app .tr-vault.big { width:150px; } #app .tr-vault.big small { font-size:11px; } #app .tr-vault.big small b { font-size:15px; }
 #app .tr-head { display:flex; align-items:center; gap:14px; margin-top:8px; } #app .tr-head p { margin:0; font:500 14px/1.4 var(--sans); color:#d9ddd4; }
 #app .tr-blanks { display:grid; grid-template-columns:repeat(8, 26px); gap:5px; } #app .tr-blanks i { height:32px; border-radius:5px; border:1.5px solid #46524e; background:#1c2423; font:700 17px/30px var(--label); font-style:normal; text-align:center; color:#f3d98f; }
 #app .tr-blanks i.me { border-color:#f3d98f; background:#2a2412; box-shadow:0 0 12px rgba(243,217,143,.4); }

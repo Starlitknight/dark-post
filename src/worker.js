@@ -1886,7 +1886,10 @@ export class Game extends DurableObject {
   treasuryMake(code, players) {
     const order = players.slice();
     for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
-    const base = Math.floor(Math.random() * 1e6) + 1;
+    // the grids follow from the passcode alone, so the GM can check all of them before opening the treasury
+    let base = 2166136261;
+    for (const ch of code) base = Math.imul(base ^ ch.charCodeAt(0), 16777619) >>> 0;
+    base = (base % 1000000) + 1;
     const grids = code.split("").map((ch, i) => TREASURY.letterGrid(ch, base + i * 31).map((r) => r.join("")));
     // order[slot] is the player who holds that place; a place nobody holds is open to everyone from the start
     return { on: true, startedAt: Date.now(), code, order: code.split("").map((_, i) => order[i] || 0), grids, help: code.split("").map((_, i) => (order[i] ? 0 : 1)), opened: null, reward: TREASURY_PAY };

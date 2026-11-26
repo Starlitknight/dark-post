@@ -3329,12 +3329,32 @@
     return '<div class="tr-pix' + (cls ? " " + cls : "") + '" style="--n:' + rows[0].length + '">' + rows.map(function (r) { return r.split("").map(function (c) { return "<i" + (c === "1" ? ' class="on"' : "") + "></i>"; }).join(""); }).join("") + "</div>";
   }
 
+  // The treasury itself: a strongroom door with its wheel, gold showing through the seam.
+  function trVault(pot, big) {
+    var spokes = "";
+    for (var k = 0; k < 6; k++) spokes += '<rect x="58.5" y="34" width="3" height="52" rx="1.5" fill="#e8c874" transform="rotate(' + k * 30 + ' 60 60)"/>';
+    var bolts = "";
+    for (var j = 0; j < 12; j++) bolts += '<circle cx="' + (60 + 43 * Math.cos(j * Math.PI / 6)).toFixed(1) + '" cy="' + (60 + 43 * Math.sin(j * Math.PI / 6)).toFixed(1) + '" r="2.6" fill="#8d7436" stroke="#f0d68c" stroke-width=".6"/>';
+    return '<div class="tr-vault' + (big ? " big" : "") + '"><svg viewBox="0 0 120 132" aria-hidden="true">' +
+      '<defs><radialGradient id="trg" cx="38%" cy="30%" r="80%"><stop offset="0" stop-color="#6d5a2a"/><stop offset=".55" stop-color="#3a3018"/><stop offset="1" stop-color="#191610"/></radialGradient>' +
+      '<radialGradient id="trglow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffe9a8" stop-opacity=".55"/><stop offset="1" stop-color="#ffe9a8" stop-opacity="0"/></radialGradient></defs>' +
+      '<rect x="4" y="6" width="112" height="116" rx="9" fill="#14131a" stroke="#6f5c2c" stroke-width="2"/>' +
+      '<circle cx="60" cy="60" r="56" fill="url(#trglow)"/>' +
+      '<circle cx="60" cy="60" r="50" fill="url(#trg)" stroke="#ddb65a" stroke-width="3"/>' +
+      '<circle cx="60" cy="60" r="36" fill="none" stroke="#a88a42" stroke-width="1.2"/>' + bolts +
+      '<circle cx="60" cy="60" r="26" fill="none" stroke="#e8c874" stroke-width="4"/>' + spokes +
+      '<circle cx="60" cy="60" r="8" fill="#f3d98f" stroke="#7a6530" stroke-width="1.5"/>' +
+      '<rect x="108" y="40" width="9" height="14" rx="2" fill="#8d7436"/><rect x="108" y="68" width="9" height="14" rx="2" fill="#8d7436"/>' +
+      '<g fill="#f3d98f" stroke="#7a6530" stroke-width=".8"><ellipse cx="22" cy="124" rx="9" ry="3.4"/><ellipse cx="22" cy="120.5" rx="9" ry="3.4"/><ellipse cx="22" cy="117" rx="9" ry="3.4"/><ellipse cx="40" cy="125" rx="9" ry="3.4"/><ellipse cx="40" cy="121.5" rx="9" ry="3.4"/><ellipse cx="96" cy="124.5" rx="9" ry="3.4"/><ellipse cx="96" cy="121" rx="9" ry="3.4"/></g>' +
+      '</svg><small><b>' + pot + "</b> coins inside</small></div>";
+  }
+
   function trTiles(v) {
     function pic(inner, cls) { return '<div class="vb-draw' + (cls ? " " + cls : "") + '">' + inner + "</div>"; }
     var blanks = ""; for (var i = 0; i < 16; i++) blanks += '<i' + (i === v.mine ? ' class="me"' : "") + ">" + (i === v.mine ? "?" : "") + "</i>";
     var lineDemo = '<div class="tr-demo"><b>3 1</b><span><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i class="on"></i><i></i><i></i></span></div><div class="tr-demo"><b>2 2</b><span><i></i><i class="on"></i><i class="on"></i><i></i><i></i><i class="on"></i><i class="on"></i></span></div>';
     return [
-      { line: "The treasury holds " + v.pot + " coins. A passcode of " + v.length + " letters opens it.", pic: pic('<div class="tr-vault"><b>' + v.pot + '</b><small>coins</small></div><div class="tr-blanks">' + blanks.replace(' class="me"', "").replace("?", "") + "</div>") },
+      { line: "The treasury holds " + v.pot + " coins. A passcode of " + v.length + " letters opens it.", pic: pic(trVault(v.pot, true) + '<div class="tr-blanks">' + blanks.replace(' class="me"', "").replace("?", "") + "</div>") },
       { line: "You hold one place in the passcode. A puzzle that only you have hides the letter that goes there.", pic: pic('<div class="tr-blanks">' + blanks + '</div><div class="tr-mineface"><span class="rung-face">' + faceHTML(v.you) + "</span><b>Your place: " + (v.mine + 1) + "</b></div>") },
       { line: "The puzzle is a grid. The numbers beside a line say how many squares in a row are filled: 3 1 means three together, a gap, then one.", pic: pic(lineDemo) },
       { line: "Fill the whole grid and it draws your letter. Then tell the others, in the broadcast room. Nobody is shown your letter unless you tell them.", pic: pic(trPixels(["01111110", "00011000", "00011000", "00011000", "00011000", "00011000", "00011000", "00011000"], "big") + '<div class="tr-say"><span class="rung-face">' + faceHTML(v.you) + '</span><span class="bubble">Place ' + (v.mine + 1) + " is T.</span></div>") },
@@ -3358,7 +3378,7 @@
     if (v.opened) {
       out += '<div class="s-card now tr-open"><i>The treasury is open</i><h2>' + esc(v.opened.code.split("").join(" ")) + "</h2><p>" + esc(who(v.opened.by)) + " entered the passcode. Every player was paid <b>" + v.reward + " coins</b>.</p></div>";
     } else {
-      out += '<div class="s-card now"><i>The treasury</i><div class="tr-head"><div class="tr-vault"><b>' + v.pot + "</b><small>coins</small></div><p>" + found + " of " + v.length + " letters have been found. A tick under a place means its holder has the letter. Ask them for it.</p></div></div>";
+      out += '<div class="s-card now"><i>The treasury</i><div class="tr-head">' + trVault(v.pot) + "<p>" + found + " of " + v.length + " letters have been found. A tick under a place means its holder has the letter. Ask them for it.</p></div></div>";
     }
     // the sixteen places
     var filled = 0;
