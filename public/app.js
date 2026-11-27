@@ -2231,7 +2231,8 @@
   function showNotice() {
     if (!hall || !hall.notices || !me || me.state !== "hall") return;
     var list = hall.notices, top = list.length ? list[0].id : 0;
-    if (noteSeen == null) noteSeen = hall.noticeMark || 0;
+    // news that came while the player was away does not pop up when they open the game: it waits in the bell
+    if (noteSeen == null) noteSeen = Math.max(hall.noticeMark || 0, top);
     if (top <= noteSeen) return;
     // not while a question or a panel covers the screen: it would be missed
     var saying = $("say") && $("say").textContent.trim(); // the narrator's line sits where the pop-up goes
@@ -2736,7 +2737,9 @@
     api("POST", "/api/night/reveal-seen", { stage: st }).catch(function () { megaTold = 0; });
   }
   function megaCheck() {
-    var b = hall && hall.night;
+    // Nothing plays by itself when the game is opened. The reveal waits in the bell, to be played when wanted.
+    return;
+    var b = hall && hall.night; // eslint-disable-line no-unreachable
     if (mega || !b || b.game !== "ladder" || b.status !== "open" || !(b.closed > 0)) return;
     // it plays by itself once for each stage. The game remembers that, as well as this phone.
     if (b.revealSeen) return megaMark(b.n, b.closed);
