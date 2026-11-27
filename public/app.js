@@ -286,6 +286,8 @@
   function loadHall() {
     return api("GET", "/api/hall").then(function (data) {
       hall = data;
+      // a player who has already played this game has had its rules, even if this browser has forgotten
+      if (data.night && data.night.played) ["vb", "vbB", "table"].forEach(function (k) { if (!heard(k + data.night.n)) markHeard(k + data.night.n); });
       syncWallet();
       setTimeout(megaCheck, 600);
       return data;
@@ -2445,13 +2447,14 @@
     // the vaults are not offered until the attendant has given the rules
     if (spot && stage.room === "arena" && hall.night && hall.night.status === "open" && !briefed()) spot = null;
     // a player who has submitted can look at their duels from anywhere in the estate, not only at the table
-    if (!spot && hall.night && isLadder() && hall.night.status === "open" && hall.night.opened && !hall.out) spot = DUELS_SPOT;
+    // so can anyone who has played an earlier stage: their past duels are always theirs to look at
+    if (!spot && hall.night && isLadder() && hall.night.status === "open" && (hall.night.opened || hall.night.played) && !hall.out) spot = DUELS_SPOT;
     if (spot === stage.spot) return;
     stage.spot = spot;
     var btn = $("hud-action");
     btn.hidden = !spot;
     if (spot) {
-      btn.textContent = spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? (isLadder() ? (hall.night.opened ? "See your duels" : "Play your cards") : "Open the vaults") : spot.scene === "deal" && betsOn() ? (hall.bets.placed ? "See your bet" : "Place a bet") : spot.scene === "puzzle" && treasOn() ? "Open the treasury" : spot.label;
+      btn.textContent = spot === DUELS_SPOT ? "See your duels" : spot.scene === "arena" && hall && hall.night && hall.night.status === "open" ? (isLadder() ? (hall.night.opened ? "See your duels" : "Play your cards") : "Open the vaults") : spot.scene === "deal" && betsOn() ? (hall.bets.placed ? "See your bet" : "Place a bet") : spot.scene === "puzzle" && treasOn() ? "Open the treasury" : spot.label;
       btn.style.setProperty("--place", PLACES[stage.room].color);
     }
     measureStage();

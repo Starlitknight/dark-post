@@ -239,6 +239,17 @@ for (let s = 2; s <= 5; s++) {
     if (s === 2) { await into(guest, ".ladder"); await shot(guest, "ladder-after-2"); }
     await click('[data-act="ldSeen"]'); await sleep(700);
     if (s === 2) {
+      // a private tab remembers nothing: the game must not send a player who has played back to the attendant
+      const ctx = await browser.createBrowserContext(), tab = await ctx.newPage();
+      await tab.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+      await tab.setCookie(...(await guest.cookies()));
+      await tab.goto(BASE + "/", { waitUntil: "networkidle0" }); await sleep(2500);
+      ok("a fresh private tab is told by the game that this player has had the rules", (await call("GET", "/api/hall", null, seat(0))).night.played === true && (await tab.evaluate(() => Object.keys(localStorage).filter((k) => /^dp_heard_(vbB|table)1_/.test(k)).length)) === 2);
+      await tab.evaluate(() => { const b = document.createElement("button"); b.setAttribute("data-act", "go"); b.setAttribute("data-scene", "arena"); b.style.display = "none"; (document.getElementById("app") || document.body).appendChild(b); b.click(); b.remove(); });
+      await sleep(2000);
+      ok("and shows the duels, not the walk-to-the-arena card", (await tab.$("#ld-past")) !== null && !/attendant will give you the rules/i.test(await tab.$eval("#sched", (el) => el.innerText)));
+      await tab.screenshot({ path: (process.env.SHOTS || "/tmp") + "/duels-private-tab.png" });
+      await ctx.close();
       await sleep(600);
       ok("after Continue, both stages' duels stay on show", (await guest.$$("#ld-past .ld-duel")).length === 6 && /Stage 2[\s\S]*Stage 1/i.test(await guest.$eval("#ld-past", (el) => el.innerText)));
       await into(guest, "#ld-past"); await shot(guest, "past-duels");

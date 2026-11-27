@@ -1463,6 +1463,9 @@ export class Game extends DurableObject {
       endsAt: night.endsAt || "",
       stage: night.stage,
       opened: night.status === "open" && !!row && !!this.ladderSealOf(inv.number, night.stage),
+      // has this player ever submitted cards in this game? Then they have had the rules, whatever their phone
+      // remembers: a private tab forgets, and must not send them back to the attendant.
+      played: this.sql.exec(`SELECT COUNT(*) AS c FROM ladder_seals WHERE number = ?`, inv.number).one().c > 0,
       // how many have submitted this stage: the play screen redraws when it changes
       subs: night.status === "open" ? this.ladderSubmitted(night).length : 0,
       // how many stages have closed: every player is shown the reveal of the last one, once
