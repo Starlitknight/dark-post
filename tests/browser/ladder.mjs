@@ -215,12 +215,20 @@ for (let s = 2; s <= 5; s++) {
     await sleep(2400); await shot(guest, "mega-stage2-ladder");
     await guest.$eval("#mega-done", (el) => el.click()); await sleep(600);
     await guest.evaluate(() => { for (let n = 1; n <= 16; n++) localStorage.setItem("dp_mega_" + n + "_1", "99"); });
+    for (let i = 0; i < 40 && !(await guest.$(".ld-shown")); i++) await sleep(250);
+    ok("stage 1's duels are still on show under the new results", (await guest.$$("#ld-past .ld-duel")).length === 3 && /Stage 1/i.test(await guest.$eval("#ld-past", (el) => el.innerText)));
+
   }
   if (s < 5) {
     for (let i = 0; i < 64 && !(await guest.$(".ld-shown")); i++) await sleep(250);
     await sleep(800);
     if (s === 2) { await into(guest, ".ladder"); await shot(guest, "ladder-after-2"); }
     await click('[data-act="ldSeen"]'); await sleep(700);
+    if (s === 2) {
+      await sleep(600);
+      ok("after Continue, both stages' duels stay on show", (await guest.$$("#ld-past .ld-duel")).length === 6 && /Stage 2[\s\S]*Stage 1/i.test(await guest.$eval("#ld-past", (el) => el.innerText)));
+      await into(guest, "#ld-past"); await shot(guest, "past-duels");
+    }
   }
 }
 for (let i = 0; i < 80 && (await sceneOf()) !== "vreveal"; i++) await sleep(250);

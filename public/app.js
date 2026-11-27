@@ -2788,7 +2788,7 @@
       box.classList.add("out");
       setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 350);
       mega = null;
-      if (to) go(to);
+      if (to) { ui.toDuels = true; go(to); }
     }
     box.querySelector("#mega-skip").onclick = function () { close(); };
     // seen from the moment it starts: it never plays by itself twice. It can always be played again from the bell.
@@ -3318,7 +3318,8 @@
   function drawLadder() {
     var box = $("sched"), n = ui.night;
     if (!box || !n) return;
-    var acting = ui.matchAct && n.playing && !n.out;
+    // a player who has submitted sees their duels of this stage from anywhere, not only at the table
+    var acting = (ui.matchAct || !!n.sealed) && n.playing && !n.out;
     var out = "";
     if (n.status === "done") {
       out = '<div class="s-card now"><i>Game ' + n.n + " · The Ladder · result</i>" + ladderTableHTML(n, true) + "</div>";
@@ -3373,6 +3374,12 @@
             : '<button type="button" class="btn" data-act="ldAsk"' + (placed === d.plays.length ? "" : " disabled") + ">" + (placed === d.plays.length ? "Submit these " + (placed === 3 ? "three" : placed) + " cards" : "Play a card against each opponent") + '</button><p class="ld-final">Submitted cards are final.</p>') + "</div>";
         }
       }
+      // every duel of the stages already closed stays on show, newest first
+      var past = n.results.filter(function (r) { return !(last && n.seenStage < last.stage && r.stage === last.stage); }).slice().reverse();
+      if (past.length) out += '<div class="s-card ld-past" id="ld-past"><i>Your duels so far</i>' + past.map(function (r) {
+        var net = r.duels.reduce(function (t, d) { return t + d.r; }, 0);
+        return '<p class="ld-pasthead"><span>Stage ' + r.stage + "</span><b>" + (net > 0 ? "+" : net < 0 ? "−" : "") + Math.abs(net) + "</b></p>" + ladderRevealHTML(r);
+      }).join("") + "</div>";
       out += '<div class="s-card"><i>The ladder' + (n.liveCount ? " · live" : n.results.length ? " after stage " + n.results[n.results.length - 1].stage : "") + "</i>" +
         (n.liveCount ? '<p class="ld-livecap">Stage ' + n.stage + " is still open. A duel counts here as soon as both players have submitted.</p>" : "") + ladderTableHTML(n, false) + "</div>";
       if (n.upset && !(last && n.seenStage < last.stage)) out += '<div class="s-card">' + upsetHTML(n) + "</div>";
@@ -3381,6 +3388,8 @@
     if (box.getAttribute("data-sig") === out) return;
     box.setAttribute("data-sig", out);
     box.innerHTML = out;
+    // "See your duels" lands on the duels
+    if (ui.toDuels) { ui.toDuels = false; var tgt = box.querySelector(".ld-live") || box.querySelector(".ld-shown") || $("ld-past"); if (tgt) setTimeout(function () { tgt.scrollIntoView({ block: "start" }); }, 80); }
   }
 
   function ladderAct(name, el) {
@@ -4539,7 +4548,7 @@
       var n = Number(el.getAttribute("data-n"));
       if (n !== me.number) approach(n);
       else setMenu(true);
-    } else if (name === "use") { if (stage) useSpot(el.hasAttribute("data-i") ? WORLD.ROOMS[stage.room].spots[Number(el.getAttribute("data-i"))] : stage.spot); }
+    } else if (name === "use") { if (stage && stage.spot === DUELS_SPOT) ui.toDuels = true; if (stage) useSpot(el.hasAttribute("data-i") ? WORLD.ROOMS[stage.room].spots[Number(el.getAttribute("data-i"))] : stage.spot); }
     else if (name === "card") { var cn = Number(el.getAttribute("data-n")); if ($("card")) showCard(cn); else { ui.card = cn; go("players"); } }
     else if (name === "pzNext") { var dz = demoHallStore().pz; dz.kind = ((dz.kind || 0) + 1) % 4; dz.tries = 0; dz.solved = false; api("GET", "/api/puzzle").then(function (pz) { ui.pz = pz; drawPuzzle(); var pg = document.querySelector(".page"); if (pg) pg.scrollTop = 0; }); }
     else if (name === "vaultPick") {
