@@ -2764,6 +2764,12 @@
     api("GET", "/api/night").then(function (v) { if (!v || !v.mega) { mega = null; return toast("No stage has closed yet."); } megaPlay(v); }).catch(function (err) { mega = null; toast(err.message); });
   }
   document.addEventListener("visibilitychange", function () { if (!document.hidden) setTimeout(megaCheck, 800); });
+  // "an Ace", "a King", "an 8", "a Joker"
+  function mgName(c, cap) {
+    var w = LADDER.isJoker(c) ? "Joker" : ({ A: "Ace", K: "King", Q: "Queen", J: "Jack" })[c] || c;
+    var an = w === "Ace" || w === "8";
+    return (cap ? (an ? "An " : "A ") : (an ? "an " : "a ")) + w;
+  }
   function megaPlay(v) {
     var m = v.mega, you = v.you, box = document.createElement("div");
     box.id = "mega";
@@ -2784,11 +2790,12 @@
     box.querySelector("#mega-skip").onclick = function () { close(); };
     // seen from the moment it starts: it never plays by itself twice. It can always be played again from the bell.
     megaMark(v.n, m.stage); megaTell(v.n, m.stage);
+    if (hall && hall.night && hall.night.closed <= m.stage) hall.night.revealSeen = true;
 
     // 1. the title
     function title() {
       body.innerHTML = '<div class="mg-title"><i>The Ladder</i><h1>Stage ' + m.stage + '</h1><p>The cards are turned</p><div class="mg-fan">' + mgCard("A") + mgCard("K") + mgCard("2") + mgCard("X1") + "</div></div>";
-      later(3400, wall);
+      later(2200, wall);
     }
     // 2. every duel of the stage. The player's own duels come last.
     function wall() {
@@ -2798,9 +2805,9 @@
         html += '<div class="mg-duel' + (d.a === you || d.b === you ? " mine" : "") + '" data-i="' + i + '"><span class="mg-face">' + faceHTML(d.a) + '</span><span class="mg-slot a">' + mgCard("", { down: true }) + '</span><span class="mg-slot b">' + mgCard("", { down: true }) + '</span><span class="mg-face">' + faceHTML(d.b) + "</span></div>";
       });
       body.innerHTML = html + '</div><p class="mg-tally" id="mg-tally">&nbsp;</p>';
-      var step = Math.max(140, Math.min(300, Math.round(6500 / Math.max(1, list.length)))), forfeits = 0;
+      var step = Math.max(90, Math.min(200, Math.round(3400 / Math.max(1, list.length)))), forfeits = 0;
       list.forEach(function (d, i) {
-        later(700 + i * step, function () {
+        later(500 + i * step, function () {
           var el = body.querySelector('.mg-duel[data-i="' + i + '"]');
           if (!el) return;
           el.querySelector(".mg-slot.a").innerHTML = mgCard(d.ca, { boost: d.ba, cls: d.fa ? "forfeit" : d.pa > 0 ? "won" : d.pa < 0 ? "lost" : "" });
@@ -2811,22 +2818,22 @@
           if (t) t.textContent = (i + 1) + " of " + list.length + " turned" + (forfeits ? " · " + forfeits + " forfeited" : "");
         });
       });
-      later(700 + list.length * step + 1800, m.upset ? upset : ladder);
+      later(500 + list.length * step + 1300, m.upset ? upset : ladder);
     }
     // 3. the talk of the stage
     function upset() {
       var u = m.upset;
       body.innerHTML = '<div class="mg-upset"><i>' + (u.kind === "upset" ? "Biggest upset" : "Strongest card to fall") + '</i><div class="mg-vs"><div class="mg-side won"><span class="mg-bigface">' + faceHTML(u.w) + "</span>" + mgCard(u.cw, { boost: u.bw, cls: "big" }) + "<b>" + esc(who(u.w)) + '</b></div><strong>beat</strong><div class="mg-side lost"><span class="mg-bigface">' + faceHTML(u.l) + "</span>" + mgCard(u.cl, { boost: u.bl, cls: "big" }) + "<b>" + esc(who(u.l)) + "</b></div></div><p>" +
-        (LADDER.isJoker(u.cl) && u.cw === "2" ? "A 2 over a Joker." : "A " + LADDER.label(u.cw) + (u.bw ? " with a boost" : "") + " over " + (LADDER.isJoker(u.cl) ? "a Joker" : "a " + LADDER.label(u.cl)) + ".") + "</p></div>";
-      later(3800, ladder);
+        (LADDER.isJoker(u.cl) && u.cw === "2" ? "A 2 over a Joker." : mgName(u.cw, true) + (u.bw ? " with a boost" : "") + " over " + mgName(u.cl) + ".") + "</p></div>";
+      later(2800, ladder);
     }
     // 4. the ladder, read from the bottom up
     function ladder() {
       var rows = m.table, n = rows.length, html = '<div class="mg-head"><i>After stage ' + m.stage + '</i><h2>The ladder</h2></div><div class="mg-ladder">';
       rows.forEach(function (r, i) {
-        html += '<div class="mg-row' + (i < 3 ? " top" : "") + (i === n - 1 ? " last" : "") + (r.n === you ? " you" : "") + '" style="--d:' + ((n - 1 - i) * 0.24).toFixed(2) + 's"><em>' + (i + 1) + '</em><span class="mg-face">' + faceHTML(r.n) + "</span><b>" + (r.n === you ? "You" : esc(who(r.n))) + "</b>" + (i === n - 1 ? "<u>Danger</u>" : "") + "<strong>" + (r.pts > 0 ? "+" : r.pts < 0 ? "−" : "") + Math.abs(r.pts) + "</strong></div>";
+        html += '<div class="mg-row' + (i < 3 ? " top" : "") + (i === n - 1 ? " last" : "") + (r.n === you ? " you" : "") + '" style="--d:' + ((n - 1 - i) * 0.1).toFixed(2) + 's"><em>' + (i + 1) + '</em><span class="mg-face">' + faceHTML(r.n) + "</span><b>" + (r.n === you ? "You" : esc(who(r.n))) + "</b>" + (i === n - 1 ? "<u>Danger</u>" : "") + "<strong>" + (r.pts > 0 ? "+" : r.pts < 0 ? "−" : "") + Math.abs(r.pts) + "</strong></div>";
       });
-      body.innerHTML = html + '</div><div class="mg-foot" style="--d:' + (n * 0.24 + 0.4).toFixed(2) + 's"><button type="button" class="btn" id="mega-go">See your duels</button><button type="button" class="btn ghost" id="mega-done">Close</button></div>';
+      body.innerHTML = html + '</div><div class="mg-foot" style="--d:' + (n * 0.1 + 0.3).toFixed(2) + 's"><button type="button" class="btn" id="mega-go">See your duels</button><button type="button" class="btn ghost" id="mega-done">Close</button></div>';
       box.querySelector("#mega-go").onclick = function () { close("arena"); };
       box.querySelector("#mega-done").onclick = function () { close(); };
       box.querySelector("#mega-skip").style.display = "none";

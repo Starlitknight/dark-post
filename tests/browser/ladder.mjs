@@ -142,8 +142,9 @@ ok("the reveal of Game 1's first stage no longer plays by itself", (await guest.
 await guest.evaluate(() => { const b = document.createElement("button"); b.setAttribute("data-act", "megaNow"); b.style.display = "none"; (document.getElementById("app") || document.body).appendChild(b); b.click(); b.remove(); });
 for (let i = 0; i < 40 && !(await guest.$("#mega")); i++) await sleep(250);
 ok("the stage reveal plays when asked for", (await guest.$("#mega")) !== null);
-await sleep(1700); await shot(guest, "mega-title");
+await sleep(500);
 ok("it opens on the stage's name", /Stage 1/.test(await guest.$eval("#mega", (el) => el.innerText)) && /cards are turned/i.test(await guest.$eval("#mega", (el) => el.innerText)));
+await sleep(500); await shot(guest, "mega-title");
 for (let i = 0; i < 40 && !(await guest.$(".mg-wall")); i++) await sleep(250);
 ok("every duel of the stage is laid face down: 24", (await guest.$$(".mg-duel")).length === 24 && (await guest.$$(".mg-duel.mine")).length === 3 && (await guest.$eval(".mg-wall", (el) => el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().right <= window.innerWidth)));
 await sleep(2600); await shot(guest, "mega-wall-half");
@@ -199,7 +200,23 @@ for (let s = 2; s <= 5; s++) {
   for (const c of free.slice(-3)) await click('.ld-card[data-c="' + c + '"]');
   await click('[data-act="ldAsk"]'); await click('[data-act="ldSeal"]'); await sleep(600);
   await playOthers(s);
+  // a later stage: its reveal plays by itself, once, even to a phone that remembers nothing
+  if (s === 2) await guest.evaluate(() => { Object.keys(localStorage).filter((k) => k.indexOf("dp_mega_") === 0).forEach((k) => localStorage.removeItem(k)); });
   await call("POST", "/api/host/night/stage", {}, host);
+  if (s === 2) {
+    for (let i = 0; i < 60 && !(await guest.$("#mega")); i++) await sleep(250);
+    const t0 = Date.now();
+    ok("the reveal of stage 2 plays by itself, and it is stage 2's", (await guest.$("#mega")) !== null && /Stage 2/.test(await guest.$eval("#mega", (el) => el.innerText)));
+    for (let i = 0; i < 80 && !(await guest.$(".mg-ladder")); i++) await sleep(250);
+    ok("it reaches the ladder after stage 2 in under fourteen seconds", /After stage 2/i.test(await guest.$eval("#mega", (el) => el.innerText)) && Date.now() - t0 < 14000);
+    await sleep(2400); await shot(guest, "mega-stage2-ladder");
+    await guest.$eval("#mega-done", (el) => el.click()); await sleep(600);
+    ok("the game remembers it was shown", (await call("GET", "/api/hall", null, seat(0))).night.revealSeen === true);
+    await guest.evaluate(() => { Object.keys(localStorage).filter((k) => k.indexOf("dp_mega_") === 0).forEach((k) => localStorage.removeItem(k)); document.dispatchEvent(new Event("visibilitychange")); });
+    await sleep(2500);
+    ok("so it does not play again, even with the phone's own memory wiped", (await guest.$("#mega")) === null);
+    await guest.evaluate(() => { for (let n = 1; n <= 16; n++) localStorage.setItem("dp_mega_" + n + "_1", "99"); });
+  }
   if (s < 5) {
     for (let i = 0; i < 64 && !(await guest.$(".ld-shown")); i++) await sleep(250);
     await sleep(800);
