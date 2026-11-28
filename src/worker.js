@@ -49,6 +49,8 @@ const TREASURY_TRIES = 3;
 const GAME_DAY_STARTS_UTC_MS = 5 * 60 * 60 * 1000; // midnight EST is 05:00 UTC
 const PUZZLE_TRIES = 3;
 const PUZZLE_REWARD = 1;
+const PUZZLE_REWARDS = { truth: 5 }; // AI among us pays more than a daily puzzle
+const rewardOf = (p) => PUZZLE_REWARDS[p.type] || PUZZLE_REWARD;
 // A deal: each player stakes this many coins and seals Cooperate (c) or Betray (b).
 // The table gives what each one gains or loses, first player then second.
 const DEAL_STAKE = 2;
@@ -920,7 +922,7 @@ export class Game extends DurableObject {
       day,
       held: this.puzzleHeld(),
       resetAt: this.puzzleEnds(),
-      reward: PUZZLE_REWARD,
+      reward: rewardOf(p),
       paid: this.phase() === "revealed",
     };
   }
@@ -943,7 +945,8 @@ export class Game extends DurableObject {
     if (row.solved) return json({ error: "You have already solved today's puzzle." }, 409);
     if (row.tries >= PUZZLE_TRIES) return json({ error: "No tries left today." }, 409);
     if (!String(body.answer || "").trim()) return json({ error: "Type an answer first." }, 400);
-    const right = sameAnswer(body.answer, this.puzzleFor(inv.number, day).answer);
+    const now = this.puzzleFor(inv.number, day);
+    const right = sameAnswer(body.answer, now.answer);
     this.sql.exec(
       `INSERT INTO puzzle_tries (number, day, tries, solved) VALUES (?, ?, 1, ?)
        ON CONFLICT(number, day) DO UPDATE SET tries = tries + 1, solved = excluded.solved`,
@@ -952,7 +955,7 @@ export class Game extends DurableObject {
       right ? 1 : 0,
     );
     if (right) {
-      this.addCoins(inv.number, PUZZLE_REWARD);
+      this.addCoins(inv.number, rewardOf(now));
       // every other player is told, so those who have not tried today are nudged to
       this.sql.exec(`INSERT INTO notices (kind, n, day, at) VALUES ('solved', ?, ?, ?)`, inv.number, day, Date.now());
       this.broadcast({ t: "news" });
@@ -978,7 +981,7 @@ export class Game extends DurableObject {
 
   puzzleStanding(inv) {
     const row = this.puzzleRow(inv.number, this.puzzleDay());
-    return { solved: !!row.solved, left: Math.max(0, PUZZLE_TRIES - row.tries), reward: PUZZLE_REWARD };
+    return { solved: !!row.solved, left: Math.max(0, PUZZLE_TRIES - row.tries), reward: rewardOf(this.puzzleFor(inv.number, this.puzzleDay())) };
   }
 
   // The player opened the bell: everything up to this piece of news has been read.

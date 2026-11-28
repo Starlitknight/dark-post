@@ -3186,11 +3186,22 @@
       lineup += '<span class="lzi-sub' + (ai >= 0 ? " ai" : "") + '" style="--d:' + (ai >= 0 ? ai * 0.7 : 0) + 's">' + AV.draw(LZI_FACES[i], { label: "", ring: "#8d7a4e" }) + (ai >= 0 ? LZ_VISOR : "") + "</span>";
     }
     return [
-      { line: "Ten people. Four are secretly AIs.", pic: '<div class="lzi-lineup">' + lineup + "</div>" },
+      { line: "Four of these ten are AIs. You don’t know which.", pic: '<div class="lzi-lineup">' + lineup + "</div>" },
       { line: "Humans always tell the truth.", pic: '<div class="lzi-scene">' + lziFace(0, "speaker h") + '<div class="lzi-says">' + lziSays(true, true) + "</div>" + lziFace(3, "target h") + "</div>" },
       { line: "AIs always lie.", pic: '<div class="lzi-scene">' + lziFace(1, "speaker l") + '<div class="lzi-says">' + lziSays(false, false) + "</div>" + lziFace(7, "target h") + "</div>" },
       { line: "Tap once: human. Twice: AI.", pic: '<div class="lzi-tap"><span class="lzi-tapface">' + AV.draw(LZI_FACES[5], { label: "", ring: "#8d7a4e" }) + LZ_VISOR + '<i class="lzi-b h">' + LZ_HONEST + '</i><i class="lzi-b l">' + LZ_LIAR + '</i></span><span class="lzi-finger"></span></div>' },
+      { line: "Mark all ten correctly, human or AI, to win " + (ui.pz && ui.pz.reward || 5) + " coins.", pic: lziWin() },
     ];
+  }
+  // the last picture: every "?" in the line-up turns into human or AI, one by one, and the coins pop
+  function lziWin() {
+    var row = "";
+    for (var i = 0; i < 10; i++) {
+      var ai = [1, 4, 6, 9].indexOf(i) >= 0, d = (0.5 + i * 0.22).toFixed(2);
+      row += '<span class="lzi-sub w" style="--d:' + d + 's">' + AV.draw(LZI_FACES[i], { label: "", ring: "#8d7a4e" }) + (ai ? LZ_VISOR : "") +
+        '<i class="lzi-q">?</i><i class="lzi-m ' + (ai ? "l" : "h") + '">' + (ai ? LZ_LIAR : LZ_HONEST) + "</i></span>";
+    }
+    return '<div class="lzi-winbox"><div class="lzi-lineup">' + row + '</div><div class="lzi-prize"><span class="lzi-coin">' + ART.bigCoin() + "</span><b>+" + (ui.pz && ui.pz.reward || 5) + "</b></div></div>";
   }
   function lziHTML(step) {
     var screens = lziScreens(), sc = screens[step], last = step === screens.length - 1;
@@ -3255,7 +3266,7 @@
         : '<div class="composer pz-form" id="pz-form"><input type="text" id="pz-answer" maxlength="24" autocomplete="off" autocapitalize="characters" enterkeyhint="send" inputmode="' + (p.type === "cipher" ? "text" : "numeric") + '" placeholder="Your answer" aria-label="Your answer">' +
           '<button type="button" class="btn send" id="pz-send">Try</button></div><p class="pz-left">' + plural(p.left, "try", "tries") + " left today</p>";
     box.innerHTML =
-      '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + "</h2>" + (p.type === "truth" ? '<p class="lz-intro">Ten subjects. Four of them are AIs pretending to be human. Each one says something.</p>' : "") + '<div class="pz-body">' + body + "</div>" + (p.type === "truth" ? "" : "<p>" + esc(p.type === "keys" ? (open ? "Or type the six numbers in order." : "") : (p.data && p.data.ask) || p.ask) + "</p>") + end + "</div>" +
+      '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + "</h2>" + (p.type === "truth" ? '<p class="lz-intro">Ten subjects. You don’t know who is human and who is an AI. Work out who is who for all ten to win ' + plural(p.reward, "coin", "coins") + ".</p>" : "") + '<div class="pz-body">' + body + "</div>" + (p.type === "truth" ? "" : "<p>" + esc(p.type === "keys" ? (open ? "Or type the six numbers in order." : "") : (p.data && p.data.ask) || p.ask) + "</p>") + end + "</div>" +
       (p.held
         // the GM is holding this puzzle: it does not change at midnight, and nobody knows yet when it will
         ? '<div class="s-card"><i>Next puzzle</i><b class="s-count small">TBD</b><p>This puzzle stays open until the GM starts the next one. Every player gets the same puzzle.</p>'
@@ -5081,12 +5092,12 @@
     if (method === "POST" && !d.pz.solved && d.pz.tries < 3) {
       d.pz.tries += 1;
       right = String(body.answer).toUpperCase().replace(/[^A-Z0-9]/g, "") === sample.answer.replace(/[^A-Z0-9]/g, "");
-      if (right) { d.pz.solved = true; d.extra += 1; }
+      if (right) { d.pz.solved = true; d.extra += sample.type === "truth" ? 5 : 1; }
     }
     return {
       right: right, type: sample.type, title: sample.title, ask: sample.ask, data: sample.data,
       tries: d.pz.tries, left: 3 - d.pz.tries, solved: d.pz.solved, answer: d.pz.solved || d.pz.tries >= 3 ? sample.answer : undefined,
-      resetAt: Date.now() + (5 * 60 + 12) * 60000, reward: 1, paid: me.phase === "revealed",
+      resetAt: Date.now() + (5 * 60 + 12) * 60000, reward: sample.type === "truth" ? 5 : 1, paid: me.phase === "revealed",
     };
   }
 

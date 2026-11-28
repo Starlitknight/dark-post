@@ -79,7 +79,7 @@ had = coins(1)
 r = answer(1, wrong, p["no"])[1]
 check("a wrong four costs a try", r["right"] is False and r["left"] == 2)
 r = answer(1, right.lower(), p["no"])[1]
-check("the right four solves it and pays", r["right"] is True and r["solved"] is True and coins(1) == had + 1 and r["answer"].upper().split() == right.split())
+check("the right four solves it and pays 5 coins", r["right"] is True and r["solved"] is True and r["reward"] == 5 and hall(1)["puzzle"]["reward"] == 5 and coins(1) == had + 5 and r["answer"].upper().split() == right.split())
 act = call("GET", "/api/host/activity", cookies=host)[1]
 check("the GM sees it in the console", "puzzle" in act)
 # the next ordinary puzzle goes back to the daily turns
