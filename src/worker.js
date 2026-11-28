@@ -829,6 +829,9 @@ export class Game extends DurableObject {
       if (body.kind === "truth") { const kinds = JSON.parse(this.get("puzzle_kinds", "{}")); kinds[day + 1] = "truth"; this.set("puzzle_kinds", JSON.stringify(kinds)); }
       if (this.puzzleHeld()) this.set("puzzle_held_day", String(day + 1));
       else this.set("puzzle_lag", String(this.today() - (day + 1)));
+      // every player is told: it rings the bell and pops up for anyone in the game now
+      this.sql.exec(`DELETE FROM notices WHERE kind = 'newpz'`);
+      this.sql.exec(`INSERT INTO notices (kind, n, m, day, at) VALUES ('newpz', 0, 0, ?, ?)`, day + 1, Date.now());
     } else if (body.hold === true) {
       this.set("puzzle_held_day", String(day));
       this.set("puzzle_hold", "1");
@@ -970,7 +973,7 @@ export class Game extends DurableObject {
     const today = this.puzzleDay();
     const me = inv.number;
     return this.sql
-      .exec(`SELECT id, kind, n, m, day, at FROM notices WHERE (kind IN ('solved', 'tfound', 'thelp', 'topen') AND n != ?) OR kind = 'duel' OR (kind IN ('wait', 'betwon', 'betlost', 'betlevel', 'tsolved') AND m = ?) ORDER BY id DESC LIMIT 60`, me, me)
+      .exec(`SELECT id, kind, n, m, day, at FROM notices WHERE (kind IN ('solved', 'tfound', 'thelp', 'topen', 'newpz') AND n != ?) OR kind = 'duel' OR (kind IN ('wait', 'betwon', 'betlost', 'betlevel', 'tsolved') AND m = ?) ORDER BY id DESC LIMIT 60`, me, me)
       .toArray()
       .map((r) => {
         const x = { id: r.id, kind: r.kind, n: r.n, at: r.at, today: r.day === today };

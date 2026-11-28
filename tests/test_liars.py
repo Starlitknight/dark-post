@@ -67,6 +67,8 @@ before = pz(1)
 status, _, _ = call("POST", "/api/host/puzzle", {"next": True, "kind": "truth"}, host)
 p = pz(1)
 check("the GM starts AI among us", status == 200 and p["type"] == "truth" and p["title"] == "AI among us" and p["day"] == before["day"] + 1)
+news = [x for x in hall(1)["notices"] if x["kind"] == "newpz"]
+check("every player is told a new puzzle has started", len(news) == 1 and all(any(x["kind"] == "newpz" for x in hall(n)["notices"]) for n in (2, 9, 16)))
 d = p["data"]
 check("ten subjects, each saying first that they are human, then something about others", sorted(d["cast"]) == list(range(10)) and len(d["says"]) == 10 and all(2 <= len(s) <= 3 and s[0]["who"] == i and s[0]["lie"] is False for i, s in enumerate(d["says"])) and d["liars"] == 4)
 check("the answer is not sent before it is solved", p.get("answer") is None)
@@ -84,6 +86,7 @@ act = call("GET", "/api/host/activity", cookies=host)[1]
 check("the GM sees it in the console", "puzzle" in act)
 # the next ordinary puzzle goes back to the daily turns
 call("POST", "/api/host/puzzle", {"next": True}, host)
+check("and only the latest start is announced", len([x for x in hall(1)["notices"] if x["kind"] == "newpz"]) == 1)
 check("the next puzzle after it is an ordinary one", pz(1)["type"] in ("code", "keys", "cipher"))
 
 print()

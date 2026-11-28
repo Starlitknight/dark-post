@@ -351,7 +351,7 @@ status, body, _ = call("POST", "/api/host/puzzle", {"next": True}, host)
 after = call("GET", "/api/puzzle", cookies=seat(A))[1]
 check("the GM starts the next puzzle while holding: a new puzzle, still held", status == 200 and after["day"] == before["day"] + 1 and after["no"] != before["no"] and after["held"] is True and after["type"] != before["type"] and after["tries"] == 0)
 check("the second puzzle is the six keys, and its clues leave exactly the answer the server holds", after["type"] == "keys" and 5 <= len(after["data"]["clues"]) <= 7 and call("GET", "/api/host/activity", cookies=host)[1]["puzzle"]["players"][0]["answer"] == solve(after))
-check("everyone can play the new puzzle, and the old news is no longer today's", hall_of(B)["puzzle"] == {"solved": False, "left": 3, "reward": 1} and not any(x["today"] for x in hall_of(A)["notices"]))
+check("everyone can play the new puzzle, and the old news is no longer today's", hall_of(B)["puzzle"] == {"solved": False, "left": 3, "reward": 1} and not any(x["today"] for x in hall_of(A)["notices"] if x["kind"] != "newpz") and [x["kind"] for x in hall_of(A)["notices"]].count("newpz") == 1)
 status, body, _ = call("POST", "/api/puzzle", {"answer": "1", "no": before["no"]}, seat(A))
 check("an answer to a puzzle that has ended is not counted", status == 409 and call("GET", "/api/puzzle", cookies=seat(A))[1]["tries"] == 0)
 status, body, _ = call("POST", "/api/host/puzzle", {"hold": False}, host)
@@ -594,7 +594,7 @@ call("POST", "/api/host/invite/reset", {"token": A}, host)
 check("resetting a player erases their messages", all(m["from"] != nA for m in read(B, "table", after=0)) and read(B, "whisper", **{"with": nA}) == [])
 check("and where they stood", str(nA) not in call("GET", "/api/hall", cookies=seat(B))[1]["pos"])
 call("POST", "/api/host/invite/reset", {"token": B}, host)
-check("resetting a player erases the news about them", [x["n"] for x in hall_of(C)["notices"]] == [numbers[6], numbers[5], numbers[4], numbers[3]])
+check("resetting a player erases the news about them", [x["n"] for x in hall_of(C)["notices"] if x["kind"] != "newpz"] == [numbers[6], numbers[5], numbers[4], numbers[3]])
 for t in tokens[:16]:
     call("POST", "/api/host/invite/reset", {"token": t}, host)
 for i, t in enumerate(tokens[:16]):

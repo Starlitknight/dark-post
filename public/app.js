@@ -2139,6 +2139,7 @@
     if (x.kind === "thelp") return "Player " + x.n + " asks for help with their puzzle";
     if (x.kind === "tsolved") return "Player " + x.n + " solved your puzzle. Your letter is waiting";
     if (x.kind === "topen") return "Player " + x.n + " opened the treasury: 5 coins for everyone";
+    if (x.kind === "newpz") return "A new puzzle has started. Visit the puzzle room";
     if (x.kind === "betwon") return "Your bet on Player " + x.n + " won: +2 coins";
     if (x.kind === "betlost") return "Your bet on Player " + x.n + " lost";
     if (x.kind === "betlevel") return "The duel you bet on was level: your coin is back";
@@ -2147,7 +2148,7 @@
   // News that is about this player: it counts on the bell and pops up. Other players' duels are only listed.
   // "Waiting for you" stops mattering once this player has submitted.
   function noticeLive(x) { return x.kind !== "wait" || (hall.night && hall.night.status === "open" && !hall.night.opened); }
-  function noticeMine(x) { return x.kind === "solved" || (x.kind === "duel" && x.mine) || (x.kind === "wait" && noticeLive(x)) || /^bet(won|lost|level)$/.test(x.kind) || x.kind === "tsolved" || x.kind === "topen"; }
+  function noticeMine(x) { return x.kind === "solved" || (x.kind === "duel" && x.mine) || (x.kind === "wait" && noticeLive(x)) || /^bet(won|lost|level)$/.test(x.kind) || x.kind === "tsolved" || x.kind === "topen" || x.kind === "newpz"; }
 
   function bellHTML() {
     var todo = todoList(), fresh = stage.bellMark || 0;
@@ -2159,7 +2160,8 @@
     });
     // news is shown once: whatever was new when the bell was opened, and gone the next time
     var news = (hall.notices || []).filter(function (x) { return x.id > fresh && noticeLive(x); }).map(function (x) {
-      var inner = '<span class="bell-face">' + faceHTML(x.n) + '</span><span class="bell-text"><b>' + esc(noticeLine(x)) + "</b><small>" + esc(stamp(x.at, x.today)) + "</small></span>";
+      var inner = '<span class="bell-face">' + (x.kind === "newpz" ? AV.executor() : faceHTML(x.n)) + '</span><span class="bell-text"><b>' + esc(noticeLine(x)) + "</b><small>" + esc(stamp(x.at, x.today)) + "</small></span>";
+      if (x.kind === "newpz") return '<button type="button" class="bell-row news fresh" data-act="go" data-scene="puzzle">' + inner + "<em>Go</em></button>";
       // a duel of mine: the row opens the table, where both cards are shown
       if (x.kind === "duel" && x.mine) return '<button type="button" class="bell-row news fresh" data-act="go" data-scene="arena">' + inner + "<em>See</em></button>";
       return '<div class="bell-row news' + (x.id > fresh ? " fresh" : "") + '">' + inner + (x.id > fresh ? '<i class="bell-new">New</i>' : "") + "</div>";
@@ -2245,12 +2247,12 @@
       return;
     }
     var fresh = list.filter(function (x) { return x.id > noteSeen && x.kind === "solved" && x.today; });
-    var tnews = list.filter(function (x) { return x.id > noteSeen && (x.kind === "topen" || x.kind === "tsolved" || x.kind === "thelp"); });
+    var tnews = list.filter(function (x) { return x.id > noteSeen && (x.kind === "topen" || x.kind === "tsolved" || x.kind === "thelp" || x.kind === "newpz"); });
     if (tnews.length && stage && $("note")) {
       var tn = tnews[0], elT = $("note");
       noteSeen = top;
       if ($("onair")) $("onair").hidden = true;
-      elT.innerHTML = '<span class="onair-face">' + faceHTML(tn.n) + '</span><span class="onair-text"><i>The treasury</i><b>' + esc(noticeLine(tn)) + ".</b><small>" + (tn.kind === "thelp" ? "Tap to help them." : "Tap to see.") + "</small></span>";
+      elT.innerHTML = '<span class="onair-face">' + (tn.kind === "newpz" ? AV.executor() : faceHTML(tn.n)) + '</span><span class="onair-text"><i>' + (tn.kind === "newpz" ? "New puzzle" : "The treasury") + "</i><b>" + esc(noticeLine(tn)) + ".</b><small>" + (tn.kind === "thelp" ? "Tap to help them." : tn.kind === "newpz" ? "Tap to go there." : "Tap to see.") + "</small></span>";
       elT.setAttribute("data-to", "puzzle");
       elT.hidden = false; elT.classList.remove("on"); void elT.offsetWidth; elT.classList.add("on");
       clearTimeout(noteTimer);
