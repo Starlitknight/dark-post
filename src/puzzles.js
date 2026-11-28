@@ -234,11 +234,11 @@ function sequence(r) {
   return { type: "sequence", title: "What comes next", ask: "One rule makes this row. What is the next number?", data: { terms: terms.slice(0, 6) }, answer: String(terms[6]) };
 }
 
-// ----- four liars -----
-// Ten of the Crane household each say something. Six are honest: everything they say is true. Four are liars:
-// everything they say is false. Which four are lying? Exactly one answer fits.
+// ----- AI among us -----
+// Ten subjects each say something. Six are human: everything they say is true. Four are AIs hiding among them:
+// everything an AI says is false. Which four are the AIs? Exactly one answer fits.
 
-export const HOUSEHOLD = ["Butler", "Cook", "Maid", "Gardener", "Chauffeur", "Nurse", "Lawyer", "Doctor", "Painter", "Pianist"];
+export const HOUSEHOLD = ["Ada", "Basil", "Clara", "Dev", "Esme", "Felix", "Greta", "Hugo", "Iris", "Jonah"];
 const LIARS = 4;
 
 // Does a way of marking the ten fit every statement? Honest speakers say only true things, liars only false ones.
@@ -292,8 +292,8 @@ function truth(r) {
     const answer = liar.map((l, i) => (l ? HOUSEHOLD[cast[i]].toUpperCase() : "")).filter(Boolean).join(" ");
     return {
       type: "truth",
-      title: "Four liars",
-      ask: "Six are honest: everything they say is true. Four are liars: everything they say is false. Mark the four liars.",
+      title: "AI among us",
+      ask: "Six are human: everything they say is true. Four are AIs: everything they say is false. Find the four AIs.",
       data: { cast, says, liars: LIARS },
       answer,
     };

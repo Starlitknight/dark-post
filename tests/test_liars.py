@@ -47,7 +47,7 @@ for i, t in enumerate(tokens):
 call("POST", "/api/host/reveal", {}, host)
 
 
-HOUSEHOLD = ["Butler", "Cook", "Maid", "Gardener", "Chauffeur", "Nurse", "Lawyer", "Doctor", "Painter", "Pianist"]
+HOUSEHOLD = ["Ada", "Basil", "Clara", "Dev", "Esme", "Felix", "Greta", "Hugo", "Iris", "Jonah"]
 hall = lambda n: call("GET", "/api/hall", cookies=seat(by[n]))[1]
 coins = lambda n: hall(n)["coins"]
 pz = lambda n: call("GET", "/api/puzzle", cookies=seat(by[n]))[1]
@@ -66,12 +66,12 @@ check("a player cannot start a puzzle", call("POST", "/api/host/puzzle", {"next"
 before = pz(1)
 status, _, _ = call("POST", "/api/host/puzzle", {"next": True, "kind": "truth"}, host)
 p = pz(1)
-check("the GM starts Four liars", status == 200 and p["type"] == "truth" and p["title"] == "Four liars" and p["day"] == before["day"] + 1)
+check("the GM starts AI among us", status == 200 and p["type"] == "truth" and p["title"] == "AI among us" and p["day"] == before["day"] + 1)
 d = p["data"]
-check("ten of the household, each saying something", sorted(d["cast"]) == list(range(10)) and len(d["says"]) == 10 and all(1 <= len(s) <= 3 for s in d["says"]) and d["liars"] == 4)
+check("ten subjects, each saying something", sorted(d["cast"]) == list(range(10)) and len(d["says"]) == 10 and all(1 <= len(s) <= 3 for s in d["says"]) and d["liars"] == 4)
 check("the answer is not sent before it is solved", p.get("answer") is None)
 sols = solutions(d["says"])
-check("exactly one set of four liars fits", len(sols) == 1)
+check("exactly one set of four AIs fits", len(sols) == 1)
 right = " ".join(HOUSEHOLD[d["cast"][i]].upper() for i in sols[0])
 check("every player gets the same puzzle", pz(2)["data"] == d and pz(16)["no"] == p["no"])
 wrong = " ".join(HOUSEHOLD[d["cast"][i]].upper() for i in [j for j in range(10) if j not in sols[0]][:4])

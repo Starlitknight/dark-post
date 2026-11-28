@@ -3061,24 +3061,27 @@
     return '<div class="pz-tiles">' + String(text).split("").map(function (ch) { return "<b>" + esc(ch) + "</b>"; }).join("") + "</div>";
   }
 
-  // ----- Four liars: ten of the Crane household speak. Six are honest, four always lie. -----
-  var HOUSEHOLD = ["Butler", "Cook", "Maid", "Gardener", "Chauffeur", "Nurse", "Lawyer", "Doctor", "Painter", "Pianist"];
-  // what each of them looks like, drawn in the same hand as the players
+  // ----- AI among us: ten subjects speak. Six are human and tell the truth; four are AIs and always lie. -----
+  var HOUSEHOLD = ["Ada", "Basil", "Clara", "Dev", "Esme", "Felix", "Greta", "Hugo", "Iris", "Jonah"];
+  // what each of them looks like, drawn in the same hand as the players: every one of them looks human
   var HOUSE_LOOKS = [
-    { f: 1, s: 0, h: 22, c: 5, b: 3, m: 1, o: 8, t: 0 },          // Butler: grey, bearded, grey coat
-    { s: 2, h: 15, c: 1, e: 1, m: 0, o: 7, t: 0 },                // Cook: kitchen whites
-    { s: 1, h: 4, c: 0, e: 1, m: 3, x: 7, o: 1, t: 0 },           // Maid: brass hair slides, red
-    { f: 1, s: 3, h: 23, c: 0, b: 4, m: 0, x: 3, o: 5, t: 2 },    // Gardener: peaked cap, green
-    { f: 1, s: 1, h: 1, c: 1, m: 1, x: 1, o: 3, t: 1 },           // Chauffeur: trilby, blue
-    { s: 0, h: 5, c: 3, e: 1, m: 0, g: 1, o: 2, t: 3 },           // Nurse: glasses, teal
-    { f: 1, s: 2, h: 14, c: 0, m: 2, g: 3, o: 4, t: 0 },          // Lawyer: glasses, purple
-    { s: 4, h: 6, c: 0, e: 1, m: 3, x: 6, o: 7, t: 0 },           // Doctor: loupe, white coat
-    { s: 3, h: 10, c: 7, e: 1, m: 0, x: 8, o: 6, t: 3 },          // Painter: headband, orange
-    { f: 1, s: 5, h: 19, c: 0, b: 2, m: 0, x: 5, o: 0, t: 3 },    // Pianist: hoops, gold
+    { s: 1, h: 4, c: 0, e: 1, m: 3, x: 7, o: 1, t: 0 },           // Ada
+    { f: 1, s: 1, h: 1, c: 1, m: 1, x: 1, o: 3, t: 1 },           // Basil
+    { s: 0, h: 5, c: 3, e: 1, m: 0, g: 1, o: 2, t: 3 },           // Clara
+    { f: 1, s: 2, h: 14, c: 0, m: 2, g: 3, o: 4, t: 0 },          // Dev
+    { s: 3, h: 10, c: 7, e: 1, m: 0, x: 8, o: 6, t: 3 },          // Esme
+    { f: 1, s: 3, h: 23, c: 0, b: 4, m: 0, x: 3, o: 5, t: 2 },    // Felix
+    { s: 4, h: 6, c: 0, e: 1, m: 3, x: 6, o: 7, t: 0 },           // Greta
+    { f: 1, s: 0, h: 22, c: 5, b: 3, m: 1, o: 8, t: 0 },          // Hugo
+    { s: 2, h: 15, c: 1, e: 1, m: 0, o: 7, t: 0 },                // Iris
+    { f: 1, s: 5, h: 19, c: 0, b: 2, m: 0, x: 5, o: 0, t: 3 },    // Jonah
   ];
-  var LZ_HONEST = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3l14 5v10c0 9-6 15-14 19C12 33 6 27 6 18V8z" fill="#35C2B0"/><path d="M20 3l14 5v10c0 9-6 15-14 19z" fill="#000" opacity=".12"/><path d="M13 20l5 5 9-10" fill="none" stroke="#0b2622" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var LZ_LIAR = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M2 15c6-4 12-4 18-.5 6-3.5 12-3.5 18 .5 0 9.5-4.5 14.5-10.5 14.5-4 0-6.3-2.6-7.5-5-1.2 2.4-3.5 5-7.5 5C6.5 29.5 2 24.5 2 15z" fill="#FF5A4D"/><path d="M2 15c6-4 12-4 18-.5V24.5c-1.2 2.4-3.5 5-7.5 5C6.5 29.5 2 24.5 2 15z" fill="#fff" opacity=".12"/><ellipse cx="11.5" cy="19.5" rx="4" ry="2.8" fill="#2A0E0C"/><ellipse cx="28.5" cy="19.5" rx="4" ry="2.8" fill="#2A0E0C"/></svg>';
-  function lzPortrait(role, ring) { return AV.draw(HOUSE_LOOKS[role], { label: "The " + HOUSEHOLD[role], ring: ring || "#D0BC8A" }); }
+  // human: a fingerprint. AI: a robot head.
+  var LZ_HONEST = '<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="19" fill="#35C2B0"/><g fill="none" stroke="#0b2622" stroke-width="2.2" stroke-linecap="round"><path d="M12 14.5a10 10 0 0 1 16 0"/><path d="M10.5 21a9.5 9.5 0 0 1 19 0c0 3-.6 5.4-1.6 7.6"/><path d="M14.2 29a13 13 0 0 0 1.5-6.4 4.3 4.3 0 0 1 8.6 0c0 3.3-.8 6-2.2 8.2"/><path d="M20 22.6c0 4.2-1.2 7.3-3.2 9.6"/></g></svg>';
+  var LZ_LIAR = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3.5v4" stroke="#FF5A4D" stroke-width="2.6" stroke-linecap="round"/><circle cx="20" cy="3.5" r="2.6" fill="#FF5A4D"/><rect x="6" y="8.5" width="28" height="24" rx="7" fill="#FF5A4D"/><rect x="2.5" y="16" width="4" height="9" rx="2" fill="#FF5A4D"/><rect x="33.5" y="16" width="4" height="9" rx="2" fill="#FF5A4D"/><rect x="10" y="14" width="20" height="9" rx="4.5" fill="#2A0E0C"/><circle cx="15.5" cy="18.5" r="2.4" fill="#FFD7D2"/><circle cx="24.5" cy="18.5" r="2.4" fill="#FFD7D2"/><path d="M14 27.5h12" stroke="#2A0E0C" stroke-width="2.2" stroke-linecap="round"/></svg>';
+  // laid over the portrait of anyone marked as an AI: a visor with glowing eyes, and scan lines
+  var LZ_VISOR = '<svg class="lz-visor" viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="lzv" x1="0" x2="1"><stop offset="0" stop-color="#FF5A4D" stop-opacity="0"/><stop offset=".5" stop-color="#FF5A4D"/><stop offset="1" stop-color="#FF5A4D" stop-opacity="0"/></linearGradient></defs><rect x="16" y="47" width="88" height="19" rx="9.5" fill="#160707" fill-opacity=".92" stroke="#FF5A4D" stroke-width="2"/><rect x="26" y="55" width="68" height="3" rx="1.5" fill="url(#lzv)"/><circle cx="43" cy="56.5" r="4.6" fill="#FF5A4D"/><circle cx="77" cy="56.5" r="4.6" fill="#FF5A4D"/><circle cx="43" cy="56.5" r="1.8" fill="#FFE1DD"/><circle cx="77" cy="56.5" r="1.8" fill="#FFE1DD"/></svg>';
+  function lzPortrait(role, ring) { return AV.draw(HOUSE_LOOKS[role], { label: HOUSEHOLD[role], ring: ring || "#D0BC8A" }); }
   function lzKey(p) { return "dp_lz_" + (me ? me.number : 0) + "_" + p.no; }
   function lzMarks(p) {
     if (ui.lz && ui.lz.no === p.no) return ui.lz.marks;
@@ -3099,29 +3102,29 @@
     var ready = nH === 6 && nL === 4;
     var cards = d.cast.map(function (role, i) {
       var lines = d.says[i].map(function (c) {
-        var pill = c.lie ? '<span class="lz-pill l">' + LZ_LIAR + "a liar</span>" : '<span class="lz-pill h">' + LZ_HONEST + "honest</span>";
+        var pill = c.lie ? '<span class="lz-pill l">' + LZ_LIAR + "an AI</span>" : '<span class="lz-pill h">' + LZ_HONEST + "human</span>";
         if (c.who === i) return '<div class="lz-line"><span class="lz-ref me">I</span><span class="lz-is">am</span>' + pill + "</div>";
         var r = d.cast[c.who];
         return '<div class="lz-line"><button type="button" class="lz-ref" data-to="' + c.who + '"><span class="lz-mini">' + lzPortrait(r) + "</span>" + HOUSEHOLD[r] + '</button><span class="lz-is">is</span>' + pill + "</div>";
       }).join("");
       var m = marks[i];
-      return '<div class="lz-card' + (m === 1 ? " m-h" : m === 2 ? " m-l" : "") + '" id="lz-c' + i + '" data-i="' + i + '"' + (open ? ' role="button" tabindex="0" aria-label="The ' + HOUSEHOLD[role] + '. Tap to mark."' : "") + ">" +
-        '<div class="lz-who"><span class="lz-pic">' + lzPortrait(role, m === 1 ? "#35C2B0" : m === 2 ? "#FF5A4D" : null) + '<i class="lz-badge">' + (m === 1 ? LZ_HONEST : m === 2 ? LZ_LIAR : "") + "</i></span><b>" + HOUSEHOLD[role] + "</b></div>" +
+      return '<div class="lz-card' + (m === 1 ? " m-h" : m === 2 ? " m-l" : "") + '" id="lz-c' + i + '" data-i="' + i + '"' + (open ? ' role="button" tabindex="0" aria-label="' + HOUSEHOLD[role] + '. Tap to mark."' : "") + ">" +
+        '<div class="lz-who"><span class="lz-pic">' + lzPortrait(role, m === 1 ? "#35C2B0" : m === 2 ? "#FF5A4D" : null) + (m === 2 ? LZ_VISOR : "") + '<i class="lz-badge">' + (m === 1 ? LZ_HONEST : m === 2 ? LZ_LIAR : "") + "</i></span><b>" + HOUSEHOLD[role] + "</b></div>" +
         '<div class="lz-say">' + lines + "</div></div>";
     }).join("");
     // the line-up: all ten at a glance, against a height chart, with the marks so far
     var lineup = '<div class="lz-lineup"><span class="lz-lu-tag">Line-up</span><div class="lz-lu-row">' + d.cast.map(function (role, i) {
       var m = marks[i];
-      return '<button type="button" class="lz-lu lz-ref' + (m === 1 ? " m-h" : m === 2 ? " m-l" : "") + '" data-to="' + i + '" aria-label="The ' + HOUSEHOLD[role] + '"><span class="lz-lu-pic">' + lzPortrait(role, m === 1 ? "#35C2B0" : m === 2 ? "#FF5A4D" : "#8d7a4e") + '</span><i>' + (m === 1 ? LZ_HONEST : m === 2 ? LZ_LIAR : "?") + "</i></button>";
+      return '<button type="button" class="lz-lu lz-ref' + (m === 1 ? " m-h" : m === 2 ? " m-l" : "") + '" data-to="' + i + '" aria-label="' + HOUSEHOLD[role] + '"><span class="lz-lu-pic">' + lzPortrait(role, m === 1 ? "#35C2B0" : m === 2 ? "#FF5A4D" : "#8d7a4e") + (m === 2 ? LZ_VISOR : "") + '</span><i>' + (m === 1 ? LZ_HONEST : m === 2 ? LZ_LIAR : "?") + "</i></button>";
     }).join("") + "</div></div>";
     return '<div class="lz">' + lineup +
-      '<div class="lz-rules"><div class="lz-rule h">' + LZ_HONEST + "<b>6 honest</b><small>Everything they say is true.</small></div>" +
-      '<div class="lz-rule l">' + LZ_LIAR + "<b>4 liars</b><small>Everything they say is false.</small></div></div>" +
-      (open ? '<p class="lz-how">Tap a person once: honest. Twice: liar. Tap a name in a speech bubble to find that person.</p>' : '<p class="lz-how">The four liars, unmasked.</p>') +
+      '<div class="lz-rules"><div class="lz-rule h">' + LZ_HONEST + "<b>6 humans</b><small>Everything they say is true.</small></div>" +
+      '<div class="lz-rule l">' + LZ_LIAR + "<b>4 AIs</b><small>Everything they say is false.</small></div></div>" +
+      (open ? '<p class="lz-how">Tap a person once: human. Twice: AI. Tap a name in a speech bubble to find that person.</p>' : '<p class="lz-how">The four AIs, exposed.</p>') +
       '<div class="lz-list" id="lz-list">' + cards + "</div>" +
       (open ? '<div class="lz-bar"><div class="lz-tally"><span class="h' + (nH === 6 ? " full" : "") + '">' + LZ_HONEST + "<b>" + nH + "</b>/6</span>" +
         '<span class="l' + (nL === 4 ? " full" : "") + '">' + LZ_LIAR + "<b>" + nL + "</b>/4</span></div>" +
-        '<button type="button" class="btn" id="lz-send"' + (ready ? "" : " disabled") + ">" + (ready ? "Accuse these four" : nL > 4 ? "Only four are liars" : nH > 6 ? "Only six are honest" : "Mark all ten") + "</button></div>" : "") +
+        '<button type="button" class="btn" id="lz-send"' + (ready ? "" : " disabled") + ">" + (ready ? "Expose the four AIs" : nL > 4 ? "Only four are AIs" : nH > 6 ? "Only six are human" : "Mark all ten") + "</button></div>" : "") +
       "</div>";
   }
   function bindLiars(p, send) {
@@ -3200,7 +3203,7 @@
         : '<div class="composer pz-form" id="pz-form"><input type="text" id="pz-answer" maxlength="24" autocomplete="off" autocapitalize="characters" enterkeyhint="send" inputmode="' + (p.type === "cipher" ? "text" : "numeric") + '" placeholder="Your answer" aria-label="Your answer">' +
           '<button type="button" class="btn send" id="pz-send">Try</button></div><p class="pz-left">' + plural(p.left, "try", "tries") + " left today</p>";
     box.innerHTML =
-      '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + "</h2>" + (p.type === "truth" ? '<p class="lz-intro">The household is lined up in the hall. Each of them says one thing.</p>' : "") + '<div class="pz-body">' + body + "</div>" + (p.type === "truth" ? "" : "<p>" + esc(p.type === "keys" ? (open ? "Or type the six numbers in order." : "") : (p.data && p.data.ask) || p.ask) + "</p>") + end + "</div>" +
+      '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + "</h2>" + (p.type === "truth" ? '<p class="lz-intro">Ten subjects. Four of them are AIs pretending to be human. Each one says something.</p>' : "") + '<div class="pz-body">' + body + "</div>" + (p.type === "truth" ? "" : "<p>" + esc(p.type === "keys" ? (open ? "Or type the six numbers in order." : "") : (p.data && p.data.ask) || p.ask) + "</p>") + end + "</div>" +
       (p.held
         // the GM is holding this puzzle: it does not change at midnight, and nobody knows yet when it will
         ? '<div class="s-card"><i>Next puzzle</i><b class="s-count small">TBD</b><p>This puzzle stays open until the GM starts the next one. Every player gets the same puzzle.</p>'
@@ -5016,7 +5019,7 @@
     { type: "code", title: "Crack the code", ask: "The code has three different digits, from 1 to 9. What is it?", data: { clues: [{ guess: "358", place: 1, digit: 1 }, { guess: "641", place: 0, digit: 1 }, { guess: "924", place: 0, digit: 0 }, { guess: "692", place: 0, digit: 1 }, { guess: "837", place: 0, digit: 1 }, { guess: "643", place: 0, digit: 2 }] }, answer: "365" },
     { type: "keys", title: "The six keys", ask: "Type the six numbers in the order the keys are used.", data: { ask: "Type the six numbers in the order the keys are used.", clues: [{ k: "before", a: 2, b: 6 }, { k: "gap", a: 3, b: 5, n: 2 }, { k: "before", a: 4, b: 2 }, { k: "gap", a: 3, b: 6, n: 3 }, { k: "next", a: 3, b: 2 }], lines: ["Key 2 is used before key 6.", "Exactly two keys are used between keys 3 and 5.", "Key 4 is used before key 2.", "Exactly three keys are used between keys 3 and 6.", "Key 2 is used right after key 3."] }, answer: "432156" },
     { type: "cipher", title: "Break the cipher", ask: "Every letter was moved the same number of places along the alphabet. What is the word?", data: { text: "THYISL" }, answer: "MARBLE" },
-    {"type":"truth","title":"Four liars","ask":"Six are honest: everything they say is true. Four are liars: everything they say is false. Mark the four liars.","data":{"cast":[6,9,3,0,5,2,1,4,7,8],"says":[[{"who":7,"lie":false},{"who":9,"lie":false}],[{"who":6,"lie":true}],[{"who":3,"lie":false}],[{"who":0,"lie":true}],[{"who":1,"lie":true},{"who":7,"lie":false}],[{"who":5,"lie":false},{"who":4,"lie":false}],[{"who":7,"lie":false},{"who":8,"lie":true}],[{"who":1,"lie":true},{"who":8,"lie":true}],[{"who":5,"lie":true},{"who":1,"lie":false}],[{"who":2,"lie":true},{"who":4,"lie":false}]],"liars":4},"answer":"PIANIST GARDENER BUTLER DOCTOR"},
+    {"type":"truth","title":"AI among us","ask":"Six are human: everything they say is true. Four are AIs: everything they say is false. Find the four AIs.","data":{"cast":[6,9,3,0,5,2,1,4,7,8],"says":[[{"who":7,"lie":false},{"who":9,"lie":false}],[{"who":6,"lie":true}],[{"who":3,"lie":false}],[{"who":0,"lie":true}],[{"who":1,"lie":true},{"who":7,"lie":false}],[{"who":5,"lie":false},{"who":4,"lie":false}],[{"who":7,"lie":false},{"who":8,"lie":true}],[{"who":1,"lie":true},{"who":8,"lie":true}],[{"who":5,"lie":true},{"who":1,"lie":false}],[{"who":2,"lie":true},{"who":4,"lie":false}]],"liars":4},"answer":"JONAH DEV ADA HUGO"},
   ];
 
   function demoPuzzle(method, body) {
