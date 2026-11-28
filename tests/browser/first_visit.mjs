@@ -92,7 +92,12 @@ const sheet = await page.$eval(".bell-sheet", (el) => el.innerText.replace(/\s+/
 await snap("bell-open");
 ok("the puzzle cannot be opened from the bell: the player has to walk to the puzzle room", (await page.$$('.bell-sheet [data-scene="puzzle"]')).length === 0 && sheet.includes("Walk to the puzzle room to solve it."));
 ok("the bell keeps a place for the GM's notices", /from the gm/i.test(sheet));
-ok("the bell lists what to do now, and the news", /to do now/i.test(sheet) && sheet.includes("Solve today’s puzzle") && sheet.includes("1 player has solved it.") && sheet.includes("Player " + solver.number + " solved today’s puzzle") && /new/i.test(sheet));
+await page.$eval('[data-act="menuClose"]', (el) => el.click()); await new Promise((r) => setTimeout(r, 400));
+await page.$eval("#bell-btn", (el) => el.click()); await new Promise((r) => setTimeout(r, 500));
+const again = await page.$eval(".bell-sheet", (el) => el.innerText.replace(/\s+/g, " "));
+ok("opened again, the rows already read are gone", !/New puzzle: \w/.test(again) && /Nothing is waiting for you/i.test(again));
+await page.$eval('[data-act="menuClose"]', (el) => el.click()); await new Promise((r) => setTimeout(r, 300));
+ok("the bell lists what to do now, and the news", /to do now/i.test(sheet) && /New puzzle: \w/.test(sheet) && sheet.includes("1 player has solved it.") && sheet.includes("Player " + solver.number + " solved today’s puzzle") && /new/i.test(sheet));
 ok("opening the bell marks the news as read on the server", (await call("GET", "/api/hall", null, seat(0))).noticeMark > 0);
 await tryClick(".menu-close"); await sleep(500);
 ok("once the bell has been opened its number clears, even with the puzzle still waiting", (await bellCount()) === "");

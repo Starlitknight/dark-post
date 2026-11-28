@@ -363,6 +363,7 @@ export class Game extends DurableObject {
       if (path === "/api/puzzle" && method === "GET") return this.puzzle(request);
       if (path === "/api/puzzle" && method === "POST") return this.puzzleAnswer(request);
       if (path === "/api/notices/seen" && method === "POST") return this.noticesSeen(request);
+      if (path === "/api/bell/seen" && method === "POST") return this.bellSeen(request);
       if (path === "/api/deals" && method === "GET") return this.deals(request);
       if (path === "/api/deal" && method === "POST") return this.dealOffer(request);
       if (path === "/api/deal/answer" && method === "POST") return this.dealAnswer(request);
@@ -684,6 +685,8 @@ export class Game extends DurableObject {
       },
       notices: this.noticesFor(inv),
       noticeMark: mark("notices"),
+      // the bell's to-do rows this player has already seen: each is shown once, on any browser
+      bellSeen: JSON.parse(this.get("bell_seen:" + inv.number, "[]")),
       // this player's own standing on today's puzzle, so the game can nudge only those who have not done it
       puzzle: this.puzzleStanding(inv),
       pos: this.positions(),
@@ -984,10 +987,23 @@ export class Game extends DurableObject {
 
   puzzleStanding(inv) {
     const row = this.puzzleRow(inv.number, this.puzzleDay());
-    return { solved: !!row.solved, left: Math.max(0, PUZZLE_TRIES - row.tries), reward: rewardOf(this.puzzleFor(inv.number, this.puzzleDay())) };
+    const p = this.puzzleFor(inv.number, this.puzzleDay());
+    return { solved: !!row.solved, left: Math.max(0, PUZZLE_TRIES - row.tries), reward: rewardOf(p), no: this.puzzleMark(p), title: p.title };
   }
 
   // The player opened the bell: everything up to this piece of news has been read.
+  // The bell was opened with these to-do rows on it: they are not shown again.
+  async bellSeen(request) {
+    const inv = this.inHall(request);
+    if (!inv) return json({ error: "You are not in the hall yet." }, 403);
+    const body = await readJson(request);
+    const keys = (Array.isArray(body.keys) ? body.keys : []).map(String).filter((k) => /^[a-z0-9]{1,16}$/.test(k)).slice(0, 30);
+    const had = JSON.parse(this.get("bell_seen:" + inv.number, "[]"));
+    const all = had.filter((k) => !keys.includes(k)).concat(keys).slice(-200);
+    this.set("bell_seen:" + inv.number, JSON.stringify(all));
+    return json({ ok: true });
+  }
+
   async noticesSeen(request) {
     const inv = this.inHall(request);
     if (!inv) return json({ error: "You are not in the hall yet." }, 403);

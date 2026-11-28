@@ -307,7 +307,7 @@ status, body, _ = call("POST", "/api/puzzle", {"answer": "  "}, seat(B))
 check("an empty answer is not counted", status == 400 and call("GET", "/api/puzzle", cookies=seat(B))[1]["left"] == 3)
 status, body, _ = call("POST", "/api/puzzle", {"answer": "zzzz"}, seat(B))
 check("a wrong answer costs a try", status == 200 and body["right"] is False and body["left"] == 2 and "answer" not in body)
-check("a wrong answer tells nobody, and the game knows who has not tried", hall_of(A)["notices"] == [] and hall_of(A)["puzzle"] == {"solved": False, "left": 3, "reward": 1} and hall_of(B)["puzzle"]["left"] == 2)
+check("a wrong answer tells nobody, and the game knows who has not tried", hall_of(A)["notices"] == [] and {k: hall_of(A)["puzzle"][k] for k in ("solved", "left", "reward")} == {"solved": False, "left": 3, "reward": 1} and hall_of(B)["puzzle"]["left"] == 2)
 status, body, _ = call("POST", "/api/puzzle", {"answer": " " + solve(pz).lower() + " "}, seat(B))
 check("the right answer solves it", status == 200 and body["right"] is True and body["solved"] is True and body["paid"] is False)
 status, body, _ = call("POST", "/api/puzzle", {"answer": solve(pz)}, seat(B))
@@ -321,7 +321,7 @@ for _ in range(3):
 check("after three wrong tries the answer is shown", body["left"] == 0 and body["solved"] is False and body.get("answer") == solve(others[0]))
 status, body, _ = call("POST", "/api/puzzle", {"answer": solve(others[0])}, seat(C))
 check("and no fourth try is allowed", status == 409)
-check("failing tells nobody, and the game knows that player has no tries left", len(hall_of(A)["notices"]) == 1 and hall_of(C)["puzzle"] == {"solved": False, "left": 0, "reward": 1})
+check("failing tells nobody, and the game knows that player has no tries left", len(hall_of(A)["notices"]) == 1 and {k: hall_of(C)["puzzle"][k] for k in ("solved", "left", "reward")} == {"solved": False, "left": 0, "reward": 1})
 solved_all = True
 for i, t in enumerate(tokens[3:7]):
     solved_all = solved_all and call("POST", "/api/puzzle", {"answer": solve(others[i + 1])}, seat(t))[1].get("right") is True
@@ -351,7 +351,7 @@ status, body, _ = call("POST", "/api/host/puzzle", {"next": True}, host)
 after = call("GET", "/api/puzzle", cookies=seat(A))[1]
 check("the GM starts the next puzzle while holding: a new puzzle, still held", status == 200 and after["day"] == before["day"] + 1 and after["no"] != before["no"] and after["held"] is True and after["type"] != before["type"] and after["tries"] == 0)
 check("the second puzzle is the six keys, and its clues leave exactly the answer the server holds", after["type"] == "keys" and 5 <= len(after["data"]["clues"]) <= 7 and call("GET", "/api/host/activity", cookies=host)[1]["puzzle"]["players"][0]["answer"] == solve(after))
-check("everyone can play the new puzzle, and the old news is no longer today's", hall_of(B)["puzzle"] == {"solved": False, "left": 3, "reward": 1} and not any(x["today"] for x in hall_of(A)["notices"] if x["kind"] != "newpz") and [x["kind"] for x in hall_of(A)["notices"]].count("newpz") == 1)
+check("everyone can play the new puzzle, and the old news is no longer today's", {k: hall_of(B)["puzzle"][k] for k in ("solved", "left", "reward")} == {"solved": False, "left": 3, "reward": 1} and not any(x["today"] for x in hall_of(A)["notices"] if x["kind"] != "newpz") and [x["kind"] for x in hall_of(A)["notices"]].count("newpz") == 1)
 status, body, _ = call("POST", "/api/puzzle", {"answer": "1", "no": before["no"]}, seat(A))
 check("an answer to a puzzle that has ended is not counted", status == 409 and call("GET", "/api/puzzle", cookies=seat(A))[1]["tries"] == 0)
 status, body, _ = call("POST", "/api/host/puzzle", {"hold": False}, host)

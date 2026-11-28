@@ -2071,10 +2071,22 @@
   // The things waiting for this player, most pressing first. Each one has a button that takes them there.
   // The bell's number counts only what the player has not yet been shown. Opening the bell shows everything, so the
   // number clears whether or not they act. A row that is only an offer (once: a bet nobody has to place) is shown one time.
-  function todoKey(t) { return "td:" + t.title + "|" + (t.sub || ""); }
-  function todoNew() { return todoList().filter(function (t) { return !t.quiet && !heard(todoKey(t)); }).length; }
-  function todoSeen() { todoList().forEach(function (t) { markHeard(todoKey(t)); }); }
-  function todoList() { return todoAll().filter(function (t) { return !t.once || !heard(todoKey(t)) || (stage && stage.bellKeep && stage.bellKeep[todoKey(t)]); }); }
+  // Every to-do row is shown once. Opened in the bell, it is gone the next time, unless what it says changes
+  // (a new stage's results, more broadcasts, a new puzzle). The game keeps what was seen, so a private tab does too.
+  function todoKey(t) {
+    var text = t.key || t.title + "|" + (t.sub || ""), h = 5381;
+    for (var i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+    return "td" + h.toString(36);
+  }
+  function todoSeenBefore(t) { var k = todoKey(t); return heard(k) || (hall && hall.bellSeen && hall.bellSeen.indexOf(k) >= 0); }
+  function todoNew() { return todoList().filter(function (t) { return !t.quiet && !todoSeenBefore(t); }).length; }
+  function todoSeen() {
+    var keys = todoList().map(todoKey);
+    keys.forEach(markHeard);
+    if (hall) hall.bellSeen = (hall.bellSeen || []).concat(keys);
+    if (keys.length) api("POST", "/api/bell/seen", { keys: keys }).catch(function () {});
+  }
+  function todoList() { return todoAll().filter(function (t) { return !todoSeenBefore(t) || (stage && stage.bellKeep && stage.bellKeep[todoKey(t)]); }); }
 
   function todoAll() {
     var out = [], u = hall.unread, n = hall.night, tr = hall.treasury;
@@ -2090,12 +2102,13 @@
     }
     if (treasOn() && !hall.treasury.opened) {
       var tz = hall.treasury;
-      if (tz.slot >= 0 && !tz.solved) out.push({ title: "Solve your puzzle for the treasury", sub: "It hides one letter of the passcode. " + tz.found + " of " + tz.of + " letters found so far.", walk: "Walk to the puzzle room." });
-      else out.push({ once: true, title: "Help open the treasury", sub: tz.found + " of " + tz.of + " letters found. 5 coins for everyone when it opens.", walk: "Share your letter in the broadcast room. The door is in the puzzle room." });
+      if (tz.slot >= 0 && !tz.solved) out.push({ key: "trsolve", title: "Solve your puzzle for the treasury", sub: "It hides one letter of the passcode. " + tz.found + " of " + tz.of + " letters found so far.", walk: "Walk to the puzzle room." });
+      else out.push({ key: "trhelp", title: "Help open the treasury", sub: tz.found + " of " + tz.of + " letters found. 5 coins for everyone when it opens.", walk: "Share your letter in the broadcast room. The door is in the puzzle room." });
     }
     if (puzzleOpen()) {
       var done = solvedToday().length;
-      out.push({ title: "Solve today’s puzzle", sub: "Worth " + plural(hall.puzzle.reward, "coin", "coins") + "." + (done ? " " + plural(done, "player has", "players have") + " solved it." : ""), walk: "Walk to the puzzle room to solve it." });
+      // named, and first on the list: a new puzzle is the news
+      out.unshift({ key: "pz:" + hall.puzzle.no, title: hall.puzzle.title ? "New puzzle: " + hall.puzzle.title : "Solve today’s puzzle", sub: "Worth " + plural(hall.puzzle.reward, "coin", "coins") + "." + (done ? " " + plural(done, "player has", "players have") + " solved it." : ""), walk: "Walk to the puzzle room to solve it." });
     }
     if (u.whispers) out.push({ title: plural(u.whispers, "new message", "new messages"), sub: "From " + hall.whispers.filter(function (t) { return t.unread; }).map(function (t) { return who(t.with); }).join(", ") + ".", scene: "whispers", go: "Read" });
     if (u.study) out.push({ title: "The GM wrote to you", sub: "Only you can read it.", scene: "study", go: "Read" });

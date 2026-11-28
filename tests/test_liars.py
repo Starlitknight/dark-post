@@ -89,6 +89,12 @@ call("POST", "/api/host/puzzle", {"next": True}, host)
 check("and only the latest start is announced", len([x for x in hall(1)["notices"] if x["kind"] == "newpz"]) == 1)
 check("the next puzzle after it is an ordinary one", pz(1)["type"] in ("code", "keys", "cipher"))
 
+# the bell's to-do rows: seen once, kept by the game
+check("a player starts with nothing seen in the bell", hall(3)["bellSeen"] == [])
+call("POST", "/api/bell/seen", {"keys": ["td1abc", "td2def", "BAD KEY!"]}, seat(by[3]))
+check("rows seen in the bell are kept by the game, and nothing odd", hall(3)["bellSeen"] == ["td1abc", "td2def"] and hall(4)["bellSeen"] == [])
+check("the puzzle row knows which puzzle it is about, by name", hall(3)["puzzle"]["no"] == pz(3)["no"] and hall(3)["puzzle"]["title"] == pz(3)["title"])
+
 print()
 print(f"{check.failed} failed")
 sys.exit(1 if check.failed else 0)
