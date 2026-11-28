@@ -138,10 +138,22 @@ if (wrongFirst) {
   ok("a place can be retyped", (await guest.$eval('.tr-in[data-slot="15"]', (el) => el.value)) === CODE[15]);
 }
 const before = (await call("GET", "/api/hall", null, seat(7))).coins;
-await click('[data-act="trTry"]'); await click('[data-act="trTry"]'); await sleep(2000);
+await click('[data-act="trTry"]'); await click('[data-act="trTry"]');
+for (let i = 0; i < 40 && !(await guest.$(".tr-open")); i++) await sleep(100);
+await guest.evaluate(() => window.scrollTo(0, 0));
+ok("the door opening plays, the first time", (await guest.$(".tr-open.play .tr-ov .door")) !== null);
+await sleep(500); await guest.screenshot({ path: S + "16a-wheel.png" });
+await sleep(1300); await guest.screenshot({ path: S + "16b-opening.png" });
+await sleep(900); await guest.screenshot({ path: S + "16c-coins.png" });
+await sleep(1500);
+ok("the game remembers that this player has seen it", (await call("GET", "/api/treasury", null, seat(0))).opened.seen === true && (await call("GET", "/api/treasury", null, seat(7))).opened.seen === false);
 t = await text(guest);
 ok("the right passcode opens the treasury for everyone", /The treasury is open/i.test(t) && t.includes("QUIET LITTLE WORDS") && /turning out his pockets/i.test(t) && (await call("GET", "/api/hall", null, seat(7))).coins === before + 5);
 await guest.evaluate(() => window.scrollTo(0, 0)); await guest.screenshot({ path: S + "16-open.png" });
+await sleep(9500);
+ok("afterwards the card stands still", (await guest.$(".tr-open")) !== null && (await guest.$(".tr-open.play")) === null);
+await guest.$eval('[data-act="trReplay"]', (el) => el.click()); await sleep(300);
+ok("and it can be watched again", (await guest.$(".tr-open.play")) !== null);
 await hostPage.reload({ waitUntil: "networkidle0" }); await sleep(1500);
 ok("the GM sees who opened it", /The treasury was opened by/i.test(await hostPage.$eval("#treasury-box", (el) => el.innerText)));
 console.log(problems.length ? "\n" + problems.join("\n") : "\nALL PASSED");

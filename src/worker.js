@@ -379,6 +379,7 @@ export class Game extends DurableObject {
       if (path === "/api/treasury/solve" && method === "POST") return this.treasurySolve(request);
       if (path === "/api/treasury/help" && method === "POST") return this.treasuryHelp(request);
       if (path === "/api/treasury/buy" && method === "POST") return this.treasuryBuy(request);
+      if (path === "/api/treasury/saw" && method === "POST") return this.treasurySaw(request);
       if (path === "/api/treasury/open" && method === "POST") return this.treasuryOpen(request);
       if (path === "/api/night/stage-seen" && method === "POST") return this.ladderStageSeen(request);
       if (path === "/api/night/reveal-seen" && method === "POST") return this.ladderRevealSeen(request);
@@ -1994,7 +1995,8 @@ export class Game extends DurableObject {
       letters: known.map((slot) => ({ slot, letter: t.code[slot] })),
       triesLeft: this.treasuryTriesLeft(me),
       tries: TREASURY_TRIES,
-      opened: t.opened ? { by: t.opened.by, at: t.opened.at, code: t.code, said: t.said || t.code } : null,
+      // seen: has this player already been shown the door opening? It plays once for each, then only on request.
+      opened: t.opened ? { by: t.opened.by, at: t.opened.at, code: t.code, said: t.said || t.code, seen: (t.saw || []).includes(inv.number) } : null,
       out: inv.out || 0,
     };
   }
@@ -2076,6 +2078,14 @@ export class Game extends DurableObject {
       this.broadcast({ t: "news" });
     }
     return json({ ok: true, slot, letter: t.code[slot], place: slot + 1, mask: t.boards[slot].mask });
+  }
+
+  // A player's page says it has played the door opening. Remembered here, so no browser plays it twice by itself.
+  treasurySaw(request) {
+    const a = this.treasuryActor(request);
+    if (a.error) return a.error;
+    if (a.t.opened && !(a.t.saw || []).includes(a.inv.number)) { a.t.saw = (a.t.saw || []).concat([a.inv.number]); this.set("treasury", JSON.stringify(a.t)); }
+    return json({ ok: true });
   }
 
   // A player pays coins and their own puzzle is solved for them: they are given the letter as if they had wired it.

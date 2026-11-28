@@ -3486,6 +3486,25 @@
       '</svg><small><b>' + pot + "</b> coins inside</small></div>";
   }
 
+  // The strongroom with its door swung open: gold inside, the door edge-on at the left.
+  function trVaultOpen() {
+    var spokes = "", bolts = "", rays = "", coins = "", k;
+    for (k = 0; k < 6; k++) spokes += '<rect x="118.5" y="70" width="3" height="52" rx="1.5" fill="#e8c874" transform="rotate(' + k * 30 + ' 120 96)"/>';
+    for (k = 0; k < 12; k++) bolts += '<circle cx="' + (120 + 56 * Math.cos(k * Math.PI / 6)).toFixed(1) + '" cy="' + (96 + 56 * Math.sin(k * Math.PI / 6)).toFixed(1) + '" r="3" fill="#8d7436" stroke="#f0d68c" stroke-width=".6"/>';
+    for (k = 0; k < 14; k++) rays += '<path d="M120 96L' + (120 + 150 * Math.cos(k * Math.PI / 7)).toFixed(1) + " " + (96 + 150 * Math.sin(k * Math.PI / 7)).toFixed(1) + '" stroke="#ffe9a8" stroke-width="' + (k % 2 ? 5 : 9) + '" stroke-linecap="round" opacity=".16"/>';
+    [[92, 146], [112, 150], [132, 148], [150, 144], [102, 140], [122, 141], [141, 138], [112, 132], [130, 131], [121, 123]].forEach(function (c) { coins += '<ellipse cx="' + c[0] + '" cy="' + c[1] + '" rx="12" ry="4.6"/><ellipse cx="' + c[0] + '" cy="' + (c[1] - 4) + '" rx="12" ry="4.6"/>'; });
+    return '<svg viewBox="0 0 240 192" aria-hidden="true"><defs>' +
+      '<radialGradient id="trin" cx="50%" cy="62%" r="62%"><stop offset="0" stop-color="#fff3c4"/><stop offset=".45" stop-color="#e9bd55"/><stop offset="1" stop-color="#5b4514"/></radialGradient>' +
+      '<radialGradient id="trdoor" cx="38%" cy="30%" r="80%"><stop offset="0" stop-color="#6d5a2a"/><stop offset=".55" stop-color="#3a3018"/><stop offset="1" stop-color="#191610"/></radialGradient>' +
+      '<clipPath id="trhole"><circle cx="120" cy="96" r="68"/></clipPath></defs>' +
+      '<g class="rays">' + rays + '</g>' +
+      '<rect x="34" y="10" width="172" height="172" rx="12" fill="#14131a" stroke="#6f5c2c" stroke-width="2.5"/>' +
+      '<g class="inside"><circle cx="120" cy="96" r="68" fill="url(#trin)"/><g clip-path="url(#trhole)" fill="#f3d98f" stroke="#7a6530" stroke-width="1">' + coins + '</g></g>' +
+      '<circle cx="120" cy="96" r="68" fill="none" stroke="#ddb65a" stroke-width="4"/>' +
+      '<g class="door"><circle cx="120" cy="96" r="68" fill="url(#trdoor)" stroke="#ddb65a" stroke-width="4"/><circle cx="120" cy="96" r="48" fill="none" stroke="#a88a42" stroke-width="1.4"/>' + bolts +
+      '<g class="wheel"><circle cx="120" cy="96" r="30" fill="none" stroke="#e8c874" stroke-width="5"/>' + spokes + '<circle cx="120" cy="96" r="9" fill="#f3d98f" stroke="#7a6530" stroke-width="1.5"/></g></g></svg>';
+  }
+
   // One wire piece. Four bits: a wire to the north (1), east (2), south (4), west (8).
   function trTile(m, cls, attrs) {
     var w = "";
@@ -3534,9 +3553,16 @@
     v.letters.forEach(function (l) { mineKnown[l.slot] = l.letter; });
     var found = v.slots.filter(function (x) { return x.found; }).length;
     if (v.opened) {
-      var rain = ""; for (var c = 0; c < 14; c++) rain += '<i style="--x:' + (6 + (c * 37) % 88) + "%;--d:" + ((c * 0.23) % 1.6).toFixed(2) + "s;--t:" + (1.5 + (c % 4) * 0.25).toFixed(2) + 's"></i>';
-      out += '<div class="s-card now tr-open"><i>The treasury is open</i><div class="tr-stage"><div class="tr-rain">' + rain + '</div><div class="tr-gm">' + AV.executor() + '</div><div class="tr-quote"><b>“' + esc(v.opened.said || v.opened.code) + '”</b><small>The Gamemaster, turning out his pockets</small></div></div>' +
-        "<p>" + esc(who(v.opened.by)) + " entered the passcode. His " + v.pot + " coins are gone: every player was paid <b>" + v.reward + " coins</b>.</p></div>";
+      // The door opening plays once for each player, the first time they come to the treasury after it has opened.
+      // After that the same card stands still, with a link to watch it again.
+      var play = !v.opened.seen || t.replay;
+      if (play) { t.playUntil = Date.now() + 5200; if (!v.opened.seen) { v.opened.seen = true; api("POST", "/api/treasury/saw", {}).catch(function () {}); } }
+      t.replay = false;
+      var rain = ""; for (var c = 0; c < 16; c++) rain += '<i style="--x:' + (4 + (c * 37) % 92) + "%;--d:" + (2.05 + (c * 0.11) % 0.9).toFixed(2) + "s;--t:" + (1.1 + (c % 4) * 0.2).toFixed(2) + 's"></i>';
+      out += '<div class="s-card now tr-open' + (play ? " play" : "") + '"><i>The treasury is open</i><div class="tr-ov">' + trVaultOpen() + '<div class="tr-rain">' + rain + '</div></div>' +
+        '<div class="tr-plus"><b>+' + v.reward + '</b><span>coins to every player</span></div>' +
+        '<div class="tr-stage"><div class="tr-gm">' + AV.executor() + '</div><div class="tr-quote"><b>“' + esc(v.opened.said || v.opened.code) + '”</b><small>The Gamemaster, turning out his pockets</small></div></div>' +
+        '<p class="tr-who">' + esc(who(v.opened.by)) + " entered the passcode. His " + v.pot + ' coins are gone.</p><button type="button" class="link" data-act="trReplay">Watch it open again</button></div>';
     } else {
       out += '<div class="s-card now"><i>The treasury</i><div class="tr-head">' + trVault(v.pot) + "<p>" + found + " of " + v.length + " letters have been found. A tick under a place means its holder has the letter. Ask them for it.</p></div></div>";
     }
@@ -3563,6 +3589,8 @@
       return '<div class="tr-helprow"><span class="rung-face">' + faceHTML(o.x.holder || 0) + "</span><span>" + (o.x.holder ? esc(who(o.x.holder)) + "’s puzzle" : "A puzzle nobody holds") + "<small>Place " + (o.i + 1) + (o.x.found ? " · already solved" : "") + '</small></span><button type="button" class="btn small" data-act="trSolve" data-slot="' + o.i + '">Help</button></div>';
     }).join("") + "</div>";
     out += '<div class="s-card"><button type="button" class="link" data-act="trRules">How the treasury works</button></div>';
+    // while the door is opening, the eight-second refresh leaves the card alone
+    if (t.playUntil && Date.now() < t.playUntil && box.querySelector(".tr-open.play")) return;
     box.innerHTML = out;
   }
 
@@ -3642,6 +3670,7 @@
         window.scrollTo(0, 0); drawTrSolve();
       }).catch(function (err) { toast(err.message); }).then(function () { ui.busy = false; });
     }
+    if (name === "trReplay") { t.replay = true; t.playUntil = 0; return drawTreasury(); }
     if (name === "trBuy") {
       if (!t.sureBuy) { t.sureBuy = true; setTimeout(function () { t.sureBuy = false; }, 6000); return toast("Pay " + plural(ui.tr.buy, "coin", "coins") + " to have your puzzle solved? Tap again to confirm."); }
       t.sureBuy = false;

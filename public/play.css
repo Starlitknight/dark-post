@@ -611,13 +611,14 @@ body, body.desk { transition:none; }
 #app .tr-pix.big { width:112px; }
 /* the door opens */
 #app .tr-stage { position:relative; display:flex; align-items:center; gap:12px; padding:18px 6px 8px; overflow:hidden; }
-#app .tr-gm { flex:0 0 96px; } #app .tr-gm svg { width:96px; height:96px; display:block; animation:tr-shrug 1.6s ease-in-out infinite; transform-origin:50% 90%; }
+#app .tr-gm { flex:0 0 96px; } #app .tr-gm svg { width:96px; height:96px; display:block; transform-origin:50% 90%; }
 @keyframes tr-shrug { 0%, 100% { transform:rotate(-3deg); } 50% { transform:rotate(3deg) translateY(-2px); } }
 #app .tr-quote { position:relative; flex:1; background:#f6edd3; color:#221a08; border-radius:12px; padding:12px 14px; }
 #app .tr-quote::before { content:""; position:absolute; left:-9px; top:50%; margin-top:-8px; border:8px solid transparent; border-right-color:#f6edd3; border-left:0; }
 #app .tr-quote b { display:block; font:800 19px/1.25 var(--label); letter-spacing:.04em; } #app .tr-quote small { display:block; margin-top:6px; font:600 11px/1.3 var(--body, inherit); color:#6b5a2c; }
-#app .tr-rain { position:absolute; inset:0; pointer-events:none; } #app .tr-rain i { position:absolute; top:-14px; left:var(--x); width:11px; height:11px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #fff1b8, #d7a93b); border:1px solid #8a6a1c; animation:tr-fall var(--t) linear var(--d) infinite; opacity:0; }
-@keyframes tr-fall { 0% { transform:translateY(0); opacity:0; } 12% { opacity:1; } 100% { transform:translateY(170px) rotate(260deg); opacity:0; } }
+#app .tr-rain { position:absolute; inset:0; pointer-events:none; overflow:hidden; } #app .tr-rain i { position:absolute; top:42%; left:var(--x); width:12px; height:12px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #fff1b8, #d7a93b); border:1px solid #8a6a1c; opacity:0; }
+#app .tr-open.play .tr-rain i { animation:tr-fall var(--t) cubic-bezier(.3,.1,.7,1) var(--d) 2 both; }
+@keyframes tr-fall { 0% { transform:translateY(-30px) scale(.6); opacity:0; } 15% { opacity:1; } 100% { transform:translateY(150px) rotate(260deg) scale(1); opacity:0; } }
 
 /* the stage reveal, over everything */
 #mega { position:fixed; inset:0; z-index:9000; background:radial-gradient(ellipse at 50% 20%, #2a2212 0%, #0d0e10 62%); color:#f1ead6; display:flex; flex-direction:column; overflow:hidden; animation:mg-in .35s ease-out; font-family:var(--body, system-ui, sans-serif); }
@@ -674,3 +675,27 @@ body, body.desk { transition:none; }
 /* every past duel, kept on show */
 #app .ld-past .ld-pasthead { margin:12px 0 2px; font:700 12px/1 var(--label); letter-spacing:.14em; text-transform:uppercase; color:#c9a85a; display:flex; justify-content:space-between; align-items:baseline; width:100%; box-sizing:border-box; }
 #app .ld-past .ld-pasthead b { font-size:15px; color:#f3d98f; } #app .ld-past .ld-duel { animation:none; opacity:1; }
+
+/* the treasury door opens: the wheel turns, the door swings aside, gold light and coins come out */
+#app .tr-open { align-items:center; text-align:center; }
+#app .tr-ov { position:relative; width:100%; max-width:300px; margin:6px auto 0; } #app .tr-ov svg { display:block; width:100%; height:auto; overflow:visible; }
+#app .tr-ov .door { transform-box:fill-box; transform-origin:0% 50%; transform:scaleX(.12); }
+#app .tr-ov .wheel { transform-box:fill-box; transform-origin:50% 50%; }
+#app .tr-ov .rays { transform-box:fill-box; transform-origin:50% 50%; }
+#app .tr-open.play .tr-ov .wheel { animation:tr-wheel 1.25s cubic-bezier(.5,0,.3,1) .15s both; }
+@keyframes tr-wheel { from { transform:rotate(0); } to { transform:rotate(460deg); } }
+#app .tr-open.play .tr-ov .door { animation:tr-door 2.4s both; }
+@keyframes tr-door { 0%, 58% { transform:scaleX(1); } 60% { transform:scaleX(1) translateX(-2px); } 62% { transform:scaleX(1) translateX(2px); } 64% { transform:scaleX(1); } 100% { transform:scaleX(.12); } }
+#app .tr-open.play .tr-ov .inside { animation:tr-inside 2.4s both; }
+@keyframes tr-inside { 0%, 62% { opacity:0; } 80%, 100% { opacity:1; } }
+#app .tr-open.play .tr-ov .rays { animation:tr-rays 3.4s ease-out both; }
+@keyframes tr-rays { 0%, 44% { opacity:0; transform:scale(.4) rotate(0); } 62% { opacity:1; transform:scale(1.05) rotate(10deg); } 100% { opacity:.55; transform:scale(1) rotate(22deg); } }
+#app .tr-plus { display:flex; align-items:baseline; justify-content:center; gap:10px; margin:6px 0 2px; } #app .tr-plus b { font:800 44px/1 var(--label); color:#f3d98f; text-shadow:0 0 22px #f3d98f77; } #app .tr-plus span { font:700 13px/1 var(--label); letter-spacing:.14em; text-transform:uppercase; color:#f1ead6; }
+#app .tr-open.play .tr-plus { animation:tr-pop .5s cubic-bezier(.2,1.6,.4,1) 2.5s both; }
+@keyframes tr-pop { from { transform:scale(.3); opacity:0; } to { transform:none; opacity:1; } }
+#app .tr-open .tr-stage { width:100%; text-align:left; padding-top:8px; }
+#app .tr-open.play .tr-stage { animation:tr-fadeup .45s ease-out 3.1s both; } #app .tr-open.play .tr-gm svg { animation:tr-shrug 1.2s ease-in-out 3.5s 2; }
+#app .tr-open.play .tr-who, #app .tr-open.play > .link { animation:tr-fadeup .4s ease-out 3.6s both; }
+@keyframes tr-fadeup { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+#app .tr-open .tr-who { margin:8px 0 4px; }
+@media (prefers-reduced-motion: reduce) { #app .tr-open.play * { animation:none !important; } }
