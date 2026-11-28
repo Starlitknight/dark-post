@@ -2075,7 +2075,9 @@
   function todoList() { return todoAll().filter(function (t) { return !t.once || !heard(todoKey(t)) || (stage && stage.bellKeep && stage.bellKeep[todoKey(t)]); }); }
 
   function todoAll() {
-    var out = [], u = hall.unread, n = hall.night;
+    var out = [], u = hall.unread, n = hall.night, tr = hall.treasury;
+    // the treasury has been opened: every player is offered the door opening, from wherever they are
+    if (tr && tr.on && tr.opened) out.push({ title: "The treasury is open", sub: (tr.openedBy === (me && me.number) ? "You" : who(tr.openedBy)) + " found the passcode. Every player got coins. Watch the door open.", act: "trOpenNow", go: tr.openSeen ? "Replay" : "Watch", quiet: tr.openSeen });
     // the reveal of the last closed stage can be played, and played again, from the foot of the bell
     if (n && n.status === "open" && !n.opened && !hall.out) {
       if (!briefed()) out.push({ title: "Game " + n.n + " has begun", sub: gameName() + ".", walk: "Walk to the arena. The attendant has the rules." });
@@ -3486,6 +3488,33 @@
       '</svg><small><b>' + pot + "</b> coins inside</small></div>";
   }
 
+  // The card that shows the treasury open. With play, the door opens first.
+  function trOpenCardHTML(v, play, again) {
+    // The player who entered the passcode walks up to the door, turns the wheel and opens it. Then they are
+    // credited, everyone is congratulated, and the Gamemaster says the passcode.
+    var by = v.opened.by, seat = seatOf(by), mine = by === v.you;
+    var fig = seat && seat.avatar ? AV.sprite(seat.avatar, by) : '<span class="tr-nofig">' + faceHTML(by) + "</span>";
+    var rain = ""; for (var c = 0; c < 16; c++) rain += '<i style="--x:' + (4 + (c * 37) % 92) + "%;--d:" + (3.5 + (c * 0.11) % 0.9).toFixed(2) + "s;--t:" + (1.1 + (c % 4) * 0.2).toFixed(2) + 's"></i>';
+    return '<div class="s-card now tr-open' + (play ? " play" : "") + '"><i>The treasury is open</i><div class="tr-ov">' + trVaultOpen() + '<div class="tr-rain">' + rain + '</div><div class="tr-walker"><span>' + fig + "</span><em>" + (mine ? "You" : "P" + by) + "</em></div></div>" +
+      '<h2 class="tr-by">' + (mine ? "You" : esc(who(by))) + ' opened the treasury</h2>' +
+      '<div class="tr-plus"><b>+' + v.reward + '</b><span>coins to every player</span></div>' +
+      '<p class="tr-congrats">Congratulations, everyone. ' + v.length + " letters, " + v.length + ' players, one passcode.</p>' +
+      '<div class="tr-stage"><div class="tr-gm">' + AV.executor() + '</div><div class="tr-quote"><b>“' + esc(v.opened.said || v.opened.code) + '”</b><small>The Gamemaster, turning out his pockets</small></div></div>' +
+      '<button type="button" class="link" data-act="' + again + '">Watch it open again</button></div>';
+  }
+  // The door opening, played from the bell over whatever room the player is in.
+  function trOpenNow() {
+    api("GET", "/api/treasury").then(function (v) {
+      if (!v || !v.opened) return toast("The treasury is still shut.");
+      var old = $("tr-over"); if (old) old.parentNode.removeChild(old);
+      var ov = document.createElement("div");
+      ov.id = "tr-over";
+      ov.innerHTML = '<div class="tr-overbox">' + trOpenCardHTML(v, true, "trOverAgain") + '<button type="button" class="btn" data-act="trOverClose">Close</button></div>';
+      root.appendChild(ov);
+      if (!v.opened.seen) api("POST", "/api/treasury/saw", {}).then(function () { if (hall && hall.treasury) hall.treasury.openSeen = true; drawBell(); }).catch(function () {});
+    }).catch(function (err) { toast(err.message); });
+  }
+
   // The strongroom with its door swung open: gold inside, the door edge-on at the left.
   function trVaultOpen() {
     var spokes = "", bolts = "", rays = "", coins = "", k;
@@ -3556,13 +3585,9 @@
       // The door opening plays once for each player, the first time they come to the treasury after it has opened.
       // After that the same card stands still, with a link to watch it again.
       var play = !v.opened.seen || t.replay;
-      if (play) { t.playUntil = Date.now() + 5200; if (!v.opened.seen) { v.opened.seen = true; api("POST", "/api/treasury/saw", {}).catch(function () {}); } }
+      if (play) { t.playUntil = Date.now() + 7200; if (!v.opened.seen) { v.opened.seen = true; api("POST", "/api/treasury/saw", {}).catch(function () {}); } }
       t.replay = false;
-      var rain = ""; for (var c = 0; c < 16; c++) rain += '<i style="--x:' + (4 + (c * 37) % 92) + "%;--d:" + (2.05 + (c * 0.11) % 0.9).toFixed(2) + "s;--t:" + (1.1 + (c % 4) * 0.2).toFixed(2) + 's"></i>';
-      out += '<div class="s-card now tr-open' + (play ? " play" : "") + '"><i>The treasury is open</i><div class="tr-ov">' + trVaultOpen() + '<div class="tr-rain">' + rain + '</div></div>' +
-        '<div class="tr-plus"><b>+' + v.reward + '</b><span>coins to every player</span></div>' +
-        '<div class="tr-stage"><div class="tr-gm">' + AV.executor() + '</div><div class="tr-quote"><b>“' + esc(v.opened.said || v.opened.code) + '”</b><small>The Gamemaster, turning out his pockets</small></div></div>' +
-        '<p class="tr-who">' + esc(who(v.opened.by)) + " entered the passcode. His " + v.pot + ' coins are gone.</p><button type="button" class="link" data-act="trReplay">Watch it open again</button></div>';
+      out += trOpenCardHTML(v, play, "trReplay");
     } else {
       out += '<div class="s-card now"><i>The treasury</i><div class="tr-head">' + trVault(v.pot) + "<p>" + found + " of " + v.length + " letters have been found. A tick under a place means its holder has the letter. Ask them for it.</p></div></div>";
     }
@@ -4552,6 +4577,9 @@
     else if (name === "seal") act("POST", "/api/seal", { bag: ui.pick }, function () { ui.scene = "sealed"; ui.stamped = true; });
     else if (name === "hall") go("hall");
     else if (name === "megaNow") megaNow();
+    else if (name === "trOpenNow") trOpenNow();
+    else if (name === "trOverClose") { var ov = $("tr-over"); if (ov) ov.parentNode.removeChild(ov); }
+    else if (name === "trOverAgain") trOpenNow();
     else if (name === "go") go(el.getAttribute("data-scene"));
     else if (name === "seat") { ui.withN = Number(el.getAttribute("data-n")); ui.card = 0; go("whisper"); }
     else if (name === "pzDone") { var done = $("pz-result"); if (done) done.remove(); }

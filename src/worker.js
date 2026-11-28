@@ -1963,7 +1963,8 @@ export class Game extends DurableObject {
     if (!t || !t.on) return null;
     const slot = t.order.indexOf(inv.number);
     const found = new Set(this.sql.exec(`SELECT k.number FROM treasury_known k`).toArray().map((r) => r.number));
-    return { on: true, opened: !!t.opened, slot, solved: slot >= 0 && this.treasuryKnows(inv.number, slot), found: t.order.filter((n) => n && this.treasuryKnows(n, t.order.indexOf(n))).length, of: t.order.length };
+    // openedBy and openSeen feed the bell: every player is offered the door opening there until they have watched it
+    return { on: true, opened: !!t.opened, openedBy: t.opened ? t.opened.by : 0, openSeen: !!t.opened && (t.saw || []).includes(inv.number), slot, solved: slot >= 0 && this.treasuryKnows(inv.number, slot), found: t.order.filter((n) => n && this.treasuryKnows(n, t.order.indexOf(n))).length, of: t.order.length };
   }
 
   treasuryKnows(number, slot) {
