@@ -68,7 +68,7 @@ status, _, _ = call("POST", "/api/host/puzzle", {"next": True, "kind": "truth"},
 p = pz(1)
 check("the GM starts AI among us", status == 200 and p["type"] == "truth" and p["title"] == "AI among us" and p["day"] == before["day"] + 1)
 d = p["data"]
-check("ten subjects, each saying something", sorted(d["cast"]) == list(range(10)) and len(d["says"]) == 10 and all(1 <= len(s) <= 3 for s in d["says"]) and d["liars"] == 4)
+check("ten subjects, each saying first that they are human, then something about others", sorted(d["cast"]) == list(range(10)) and len(d["says"]) == 10 and all(2 <= len(s) <= 3 and s[0]["who"] == i and s[0]["lie"] is False for i, s in enumerate(d["says"])) and d["liars"] == 4)
 check("the answer is not sent before it is solved", p.get("answer") is None)
 sols = solutions(d["says"])
 check("exactly one set of four AIs fits", len(sols) == 1)

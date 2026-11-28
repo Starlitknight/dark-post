@@ -272,14 +272,13 @@ function truth(r) {
     const liar = new Array(10).fill(false);
     const order = [...Array(10).keys()].map((i) => [r(), i]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
     for (let k = 0; k < LIARS; k++) liar[order[k]] = true;
-    // each speaks about one or two others, and some begin by vouching for themselves
+    // each vouches for themselves, then speaks about one or two others
     const says = [];
     for (let i = 0; i < 10; i++) {
       const many = r() < 0.45 ? 2 : 1;
       const others = [...Array(10).keys()].filter((j) => j !== i).map((j) => [r(), j]).sort((a, b) => a[0] - b[0]).slice(0, many).map((x) => x[1]);
-      const claims = [];
-      if (many === 1 && r() < 0.4) claims.push(i);
-      claims.push(...others);
+      // everyone starts by speaking for themselves: "I am human". It is what a human and an AI would both say.
+      const claims = [i, ...others];
       // a claim is "X lies" or "X is honest": true for an honest speaker, false for a liar
       says.push(claims.map((who) => ({ who, lie: liar[i] ? !liar[who] : liar[who] })));
     }
