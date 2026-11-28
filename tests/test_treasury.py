@@ -111,7 +111,7 @@ check("the GM opens it for play, spaces and small letters allowed", status == 20
 v = view(1)
 slots = {n: view(n)["mine"] for n in range(1, 17)}
 check("every player holds one place of the sixteen, each a different one", sorted(slots.values()) == list(range(16)) and v["length"] == 16 and v["pot"] == 80 and v["reward"] == 5)
-check("nobody starts with a character", all(view(n)["letters"] == [] for n in (1, 7, 16)) and hall(1)["treasury"] == {"on": True, "opened": False, "slot": slots[1], "solved": False, "found": 0, "of": 16})
+check("nobody starts with a character", all(view(n)["letters"] == [] for n in (1, 7, 16)) and hall(1)["treasury"] == {"on": True, "opened": False, "openedBy": 0, "openSeen": False, "slot": slots[1], "solved": False, "found": 0, "of": 16})
 check("the passcode is not sent to players", CODE not in json.dumps([view(1), hall(1), puzzle(1, slots[1])[1]]))
 
 status, pz, _ = puzzle(1, slots[1])
