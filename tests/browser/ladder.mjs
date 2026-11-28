@@ -200,16 +200,30 @@ for (let s = 2; s <= 5; s++) {
   for (const c of free.slice(-3)) await click('.ld-card[data-c="' + c + '"]');
   await click('[data-act="ldAsk"]'); await click('[data-act="ldSeal"]'); await sleep(600);
   await playOthers(s);
-  // a later stage: nothing plays by itself; the reveal is there to be asked for
+  // stage 3: the absent player submits last, and the stage closes by itself
+  if (s === 3) {
+    const va = await call("GET", "/api/night", null, seat(ABSENT));
+    ok("stage 3 is still open with one player to go", va.stage === 3);
+    const ra = await call("POST", "/api/night/seal", { plays: va.opponents[2].map((opp, j) => ({ opp, card: va.hand[j] })) }, seat(ABSENT));
+    ok("the last player submits", ra.status === 200);
+    for (let i = 0; i < 40 && !(await guest.$("#mega")); i++) await sleep(250);
+    const n3 = await call("GET", "/api/night", null, seat(0));
+    ok("the stage closed by itself and stage 4 opened at once", n3.stage === 4 && n3.status === 200 && !n3.sealed);
+    ok("and the stage 3 reveal played by itself, there and then", (await guest.$("#mega")) !== null && /Stage 3/.test(await guest.$eval("#mega", (el) => el.innerText)));
+    await sleep(1500); await shot(guest, "auto-close-stage3");
+    await guest.$eval("#mega-skip", (el) => el.click()); await sleep(600);
+    await guest.reload({ waitUntil: "networkidle0" }); await sleep(3500);
+    ok("opening the game again does not play it", (await guest.$("#mega")) === null);
+    await guest.evaluate(() => { const b = document.createElement("button"); b.setAttribute("data-act", "go"); b.setAttribute("data-scene", "arena"); b.style.display = "none"; document.getElementById("app").appendChild(b); b.click(); b.remove(); });
+    for (let i = 0; i < 40 && (await sceneOf()) !== "arena"; i++) await sleep(250);
+  }
+  // a later stage: its reveal plays by itself at the moment it closes, to a player who has the game open
   if (s === 2) await guest.evaluate(() => { Object.keys(localStorage).filter((k) => k.indexOf("dp_mega_") === 0).forEach((k) => localStorage.removeItem(k)); });
-  await call("POST", "/api/host/night/stage", {}, host);
+  if (s !== 3) await call("POST", "/api/host/night/stage", {}, host);
   if (s === 2) {
-    await sleep(4000);
-    ok("no reveal plays by itself, even to a phone that remembers nothing", (await guest.$("#mega")) === null);
-    await guest.evaluate(() => { const b = document.createElement("button"); b.setAttribute("data-act", "megaNow"); b.style.display = "none"; (document.getElementById("app") || document.body).appendChild(b); b.click(); b.remove(); });
     for (let i = 0; i < 40 && !(await guest.$("#mega")); i++) await sleep(250);
     const t0 = Date.now();
-    ok("asked for, it is the reveal of stage 2", (await guest.$("#mega")) !== null && /Stage 2/.test(await guest.$eval("#mega", (el) => el.innerText)));
+    ok("the moment the stage closes, its reveal plays by itself to a player with the game open", (await guest.$("#mega")) !== null && /Stage 2/.test(await guest.$eval("#mega", (el) => el.innerText)));
     for (let i = 0; i < 80 && !(await guest.$(".mg-ladder")); i++) await sleep(250);
     ok("it reaches the ladder after stage 2 in under fourteen seconds", /After stage 2/i.test(await guest.$eval("#mega", (el) => el.innerText)) && Date.now() - t0 < 14000);
     await sleep(2400); await shot(guest, "mega-stage2-ladder");

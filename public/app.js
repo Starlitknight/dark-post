@@ -2738,24 +2738,21 @@
     megaTold = st;
     api("POST", "/api/night/reveal-seen", { stage: st }).catch(function () { megaTold = 0; });
   }
+  // The reveal plays by itself only at the moment a stage closes, to players who have the game open then.
+  // Opening the game later never plays it: it waits in the bell. Each player sees it by itself once at most.
+  var megaClosedAtLoad = null;
   function megaCheck() {
-    // Nothing plays by itself when the game is opened. The reveal waits in the bell, to be played when wanted.
-    return;
-    var b = hall && hall.night; // eslint-disable-line no-unreachable
-    if (mega || !b || b.game !== "ladder" || b.status !== "open" || !(b.closed > 0)) return;
-    // it plays by itself once for each stage. The game remembers that, as well as this phone.
-    if (b.revealSeen) return megaMark(b.n, b.closed);
-    if (megaSeen(b.n) >= b.closed) return megaTell(b.n, b.closed);
-    if (stage) return;
-    if (document.hidden) return;
-    // not over the call to the game, the tour, the rules or the end of the game
-    if (["gamecall", "tour", "vbrief", "vreveal", "face", "look"].indexOf(ui.scene) >= 0 || HALL.indexOf(ui.scene) < 0) return;
-    mega = { loading: true };
-    api("GET", "/api/night").then(function (v) {
-      if (!v || !v.mega || megaSeen(v.n) >= v.mega.stage) { mega = null; return; }
-      megaPlay(v);
-    }).catch(function () { mega = null; });
+    var b = hall && hall.night;
+    if (!b || b.game !== "ladder") return;
+    if (megaClosedAtLoad == null || b.n !== megaClosedAtLoad.n) { megaClosedAtLoad = { n: b.n, closed: b.closed || 0 }; return; }
+    if (!(b.closed > megaClosedAtLoad.closed)) return;
+    megaClosedAtLoad.closed = b.closed; // a stage has just closed while this page was open
+    if (mega || b.status !== "open" || b.revealSeen || document.hidden) return;
+    // not over the call to a new game, the tour, the rules or the end of the game: there it waits in the bell
+    if (["gamecall", "tour", "vbrief", "vreveal", "face", "look"].indexOf(ui.scene) >= 0) return;
+    megaNow();
   }
+
   function mgCard(c, o) {
     o = o || {};
     if (o.down) return '<span class="mg-card down"></span>';
