@@ -860,3 +860,37 @@ body, body.desk { transition:none; }
 #app .lzi-prize { display:flex; align-items:center; gap:8px; opacity:0; animation:lzi-show .5s cubic-bezier(.2,1.6,.4,1) 3s both; }
 #app .lzi-coin { width:48px; height:48px; display:block; } #app .lzi-coin svg { width:100%; height:100%; }
 #app .lzi-prize b { font:800 38px/1 var(--label); color:#f3d98f; text-shadow:0 0 18px #f3d98f77; }
+
+/* ----- AI among us: the people side by side, swiped left and right ----- */
+#app .lz-lineup { padding:10px 8px; }
+#app .lz-lu-tag { display:none; }
+#app .lz-lu { transition:transform .2s; }
+#app .lz-lu.cur { transform:translateY(-3px); }
+#app .lz-lu.cur .lz-lu-pic svg { filter:drop-shadow(0 0 0 #f3d98f) drop-shadow(0 4px 8px #000c); }
+#app .lz-lu.cur::after { content:""; position:absolute; left:20%; right:20%; bottom:-7px; height:3px; border-radius:2px; background:#f3d98f; }
+#app .lz-rules { grid-template-columns:1fr 1fr; }
+#app .lz-rule { grid-template-columns:28px 1fr; padding:8px 10px; }
+#app .lz-rule svg { width:28px; height:28px; }
+#app .lz-rule b { font-size:15px; } #app .lz-rule small { font-size:11.5px; }
+#app .lz-deck { display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory; padding:6px 9% 12px; margin:0 -18px; scrollbar-width:none; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; }
+#app .lz-deck::-webkit-scrollbar { display:none; }
+#app .lz-deck .lz-card { flex:0 0 82%; min-width:0; scroll-snap-align:center; display:flex; flex-direction:column; align-items:stretch; gap:12px; padding:16px 12px 14px; }
+#app .lz-who { display:flex; flex-direction:column; align-items:center; gap:6px; padding:0; border:0; background:none; color:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+#app .lz-who:disabled { cursor:default; }
+#app .lz-deck .lz-pic { width:150px; height:150px; }
+#app .lz-deck .lz-badge { width:46px; height:46px; right:-2px; bottom:0; } #app .lz-deck .lz-badge svg { width:34px; height:34px; }
+#app .lz-deck .lz-who b { font:800 20px/1 var(--label); letter-spacing:.1em; color:#f1ead6; }
+#app .lz-state { font:700 11px/1 var(--label); letter-spacing:.16em; text-transform:uppercase; color:#8d7a4e; }
+#app .m-h .lz-state { color:#6fe0d1; } #app .m-l .lz-state { color:#ff8a7f; }
+#app .lz-deck .lz-say { padding:7px 9px; gap:5px; }
+#app .lz-deck .lz-say::before { left:50%; top:-8px; margin:0 0 0 -8px; border:8px solid transparent; border-bottom-color:#f6edd3; border-top:0; }
+#app .lz-deck .lz-line { font-size:12.5px; gap:4px; justify-content:center; }
+#app .lz-deck .lz-ref { font-size:12px; padding:1px 7px 1px 1px; } #app .lz-deck .lz-mini { width:20px; height:20px; }
+#app .lz-deck .lz-ref.me { padding:3px 8px; }
+#app .lz-deck .lz-is { font-size:11.5px; }
+#app .lz-deck .lz-pill { font-size:10.5px; padding:2px 7px 2px 3px; } #app .lz-deck .lz-pill svg { width:14px; height:14px; }
+#app .lz-nav { display:flex; align-items:center; justify-content:center; gap:16px; margin-top:-4px; }
+#app .lz-nav span { font:700 13px/1 var(--label); letter-spacing:.14em; text-transform:uppercase; color:#c9a85a; min-width:70px; text-align:center; }
+#app .lz-step { width:44px; height:44px; border-radius:50%; border:1px solid #6f5c2c; background:#121418; color:#f3d98f; font:700 26px/1 var(--sans); display:flex; align-items:center; justify-content:center; padding:0 0 3px; cursor:pointer; }
+#app .lz .lz-bar { position:static; box-shadow:0 0 0 1px #6f5c2c; }
+#app .lz-lu-row { gap:6px 2px; } #app .lz-lu, #app .lz-lu-pic { width:50px; } #app .lz-lu-pic { height:50px; }

@@ -3099,7 +3099,14 @@
   function lzHTML(p, open) {
     var d = p.data, marks = open ? lzMarks(p) : lzTruth(p);
     var nH = marks.filter(function (m) { return m === 1; }).length, nL = marks.filter(function (m) { return m === 2; }).length;
-    var ready = nH === 6 && nL === 4;
+    var ready = nH === 6 && nL === 4, at = ui.lzAt || 0;
+    function ring(m, idle) { return m === 1 ? "#35C2B0" : m === 2 ? "#FF5A4D" : idle; }
+    // the line-up: all ten at a glance, with the marks so far; tap a face to go to that person
+    var lineup = '<div class="lz-lineup"><div class="lz-lu-row">' + d.cast.map(function (role, i) {
+      var m = marks[i];
+      return '<button type="button" class="lz-lu lz-ref' + (m === 1 ? " m-h" : m === 2 ? " m-l" : "") + (i === at ? " cur" : "") + '" data-to="' + i + '" aria-label="' + HOUSEHOLD[role] + '"><span class="lz-lu-pic">' + lzPortrait(role, ring(m, "#8d7a4e")) + (m === 2 ? LZ_VISOR : "") + '</span><i>' + (m === 1 ? LZ_HONEST : m === 2 ? LZ_LIAR : "?") + "</i></button>";
+    }).join("") + "</div></div>";
+    // one card for each person, side by side: swipe left and right
     var cards = d.cast.map(function (role, i) {
       var lines = d.says[i].map(function (c) {
         var pill = c.lie ? '<span class="lz-pill l">' + LZ_LIAR + "an AI</span>" : '<span class="lz-pill h">' + LZ_HONEST + "human</span>";
@@ -3108,56 +3115,76 @@
         return '<div class="lz-line"><button type="button" class="lz-ref" data-to="' + c.who + '"><span class="lz-mini">' + lzPortrait(r) + "</span>" + HOUSEHOLD[r] + '</button><span class="lz-is">is</span>' + pill + "</div>";
       }).join("");
       var m = marks[i];
-      return '<div class="lz-card' + (m === 1 ? " m-h" : m === 2 ? " m-l" : "") + '" id="lz-c' + i + '" data-i="' + i + '"' + (open ? ' role="button" tabindex="0" aria-label="' + HOUSEHOLD[role] + '. Tap to mark."' : "") + ">" +
-        '<div class="lz-who"><span class="lz-pic">' + lzPortrait(role, m === 1 ? "#35C2B0" : m === 2 ? "#FF5A4D" : null) + (m === 2 ? LZ_VISOR : "") + '<i class="lz-badge">' + (m === 1 ? LZ_HONEST : m === 2 ? LZ_LIAR : "") + "</i></span><b>" + HOUSEHOLD[role] + "</b></div>" +
+      return '<div class="lz-card' + (m === 1 ? " m-h" : m === 2 ? " m-l" : "") + '" id="lz-c' + i + '" data-i="' + i + '">' +
+        '<button type="button" class="lz-who" data-i="' + i + '"' + (open ? "" : " disabled") + ' aria-label="' + HOUSEHOLD[role] + (open ? ". Tap to mark." : "") + '">' +
+        '<span class="lz-pic">' + lzPortrait(role, ring(m, null)) + (m === 2 ? LZ_VISOR : "") + '<i class="lz-badge">' + (m === 1 ? LZ_HONEST : m === 2 ? LZ_LIAR : "") + "</i></span>" +
+        "<b>" + HOUSEHOLD[role] + '</b><small class="lz-state">' + (m === 1 ? "Human" : m === 2 ? "AI" : open ? "Tap the face" : "") + "</small></button>" +
         '<div class="lz-say">' + lines + "</div></div>";
     }).join("");
-    // the line-up: all ten at a glance, against a height chart, with the marks so far
-    var lineup = '<div class="lz-lineup"><span class="lz-lu-tag">Line-up</span><div class="lz-lu-row">' + d.cast.map(function (role, i) {
-      var m = marks[i];
-      return '<button type="button" class="lz-lu lz-ref' + (m === 1 ? " m-h" : m === 2 ? " m-l" : "") + '" data-to="' + i + '" aria-label="' + HOUSEHOLD[role] + '"><span class="lz-lu-pic">' + lzPortrait(role, m === 1 ? "#35C2B0" : m === 2 ? "#FF5A4D" : "#8d7a4e") + (m === 2 ? LZ_VISOR : "") + '</span><i>' + (m === 1 ? LZ_HONEST : m === 2 ? LZ_LIAR : "?") + "</i></button>";
-    }).join("") + "</div></div>";
     return '<div class="lz">' + lineup +
-      '<div class="lz-rules"><div class="lz-rule h">' + LZ_HONEST + "<b>6 humans</b><small>Everything they say is true.</small></div>" +
-      '<div class="lz-rule l">' + LZ_LIAR + "<b>4 AIs</b><small>Everything they say is false.</small></div></div>" +
-      (open ? '<p class="lz-how">Tap a person once: human. Twice: AI. Tap a name in a speech bubble to find that person.</p>' : '<p class="lz-how">The four AIs, exposed.</p>') +
-      '<div class="lz-list" id="lz-list">' + cards + "</div>" +
-      (open ? '<button type="button" class="link lz-again" id="lz-intro">How it works</button>' : "") +
+      '<div class="lz-rules"><div class="lz-rule h">' + LZ_HONEST + "<b>6 humans</b><small>Always tell the truth</small></div>" +
+      '<div class="lz-rule l">' + LZ_LIAR + "<b>4 AIs</b><small>Always lie</small></div></div>" +
+      '<div class="lz-deck" id="lz-list">' + cards + "</div>" +
+      '<div class="lz-nav"><button type="button" class="lz-step" id="lz-prev" aria-label="Previous">‹</button><span id="lz-pos">' + (at + 1) + " of 10</span>" +
+      '<button type="button" class="lz-step" id="lz-next" aria-label="Next">›</button></div>' +
+      (open ? '<button type="button" class="link lz-again" id="lz-intro">How it works</button>' : '<p class="lz-how">The four AIs, exposed.</p>') +
       (open ? '<div class="lz-bar"><div class="lz-tally"><span class="h' + (nH === 6 ? " full" : "") + '">' + LZ_HONEST + "<b>" + nH + "</b>/6</span>" +
         '<span class="l' + (nL === 4 ? " full" : "") + '">' + LZ_LIAR + "<b>" + nL + "</b>/4</span></div>" +
         '<button type="button" class="btn" id="lz-send"' + (ready ? "" : " disabled") + ">" + (ready ? "Expose the four AIs" : nL > 4 ? "Only four are AIs" : nH > 6 ? "Only six are human" : "Mark all ten") + "</button></div>" : "") +
       "</div>";
   }
   function bindLiars(p, send) {
-    var list = $("lz-list");
-    if (!list) return;
-    var top = list.parentNode.querySelector(".lz-lineup");
-    if (top) top.addEventListener("click", function (e) {
+    var deck = $("lz-list");
+    if (!deck) return;
+    var cards = deck.querySelectorAll(".lz-card");
+    function left(i) { var c = cards[i]; return c.offsetLeft - (deck.clientWidth - c.clientWidth) / 2; }
+    function go(i, smooth) {
+      i = Math.max(0, Math.min(cards.length - 1, i));
+      deck.scrollTo({ left: left(i), behavior: smooth && !reduced ? "smooth" : "auto" });
+      return cards[i];
+    }
+    function mark(i) {
+      ui.lzAt = i;
+      var pos = $("lz-pos"); if (pos) pos.textContent = (i + 1) + " of 10";
+      var lu = document.querySelectorAll(".lz-lu");
+      for (var k = 0; k < lu.length; k++) lu[k].classList.toggle("cur", k === i);
+    }
+    // where the deck was before this drawing
+    go(ui.lzAt || 0, false);
+    var t = null;
+    deck.addEventListener("scroll", function () {
+      clearTimeout(t);
+      t = setTimeout(function () {
+        var mid = deck.scrollLeft + deck.clientWidth / 2, best = 0, gap = 1e9;
+        for (var k = 0; k < cards.length; k++) { var g = Math.abs(cards[k].offsetLeft + cards[k].clientWidth / 2 - mid); if (g < gap) { gap = g; best = k; } }
+        mark(best);
+      }, 60);
+    }, { passive: true });
+    function jump(i) {
+      var c = go(i, true);
+      mark(i);
+      c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash");
+    }
+    var box = deck.parentNode;
+    box.addEventListener("click", function (e) {
       var ref = e.target.closest(".lz-ref[data-to]");
-      var to = ref && $("lz-c" + ref.getAttribute("data-to"));
-      if (to) { to.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" }); to.classList.remove("flash"); void to.offsetWidth; to.classList.add("flash"); }
-    });
-    list.addEventListener("click", function (e) {
-      var ref = e.target.closest(".lz-ref[data-to]");
-      if (ref) {
-        // a name in a speech: go to that person and make them glow for a moment
-        var to = $("lz-c" + ref.getAttribute("data-to"));
-        if (to) { to.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" }); to.classList.remove("flash"); void to.offsetWidth; to.classList.add("flash"); }
-        return;
-      }
-      var card = e.target.closest(".lz-card[role=button]");
-      if (!card) return;
-      var i = Number(card.getAttribute("data-i")), marks = lzMarks(p);
+      if (ref) { jump(Number(ref.getAttribute("data-to"))); return; }
+      if (e.target.closest("#lz-prev")) return jump((ui.lzAt || 0) - 1);
+      if (e.target.closest("#lz-next")) return jump((ui.lzAt || 0) + 1);
+      var who = e.target.closest(".lz-who[data-i]");
+      if (!who || who.disabled) return;
+      var i = Number(who.getAttribute("data-i")), marks = lzMarks(p);
       marks[i] = (marks[i] + 1) % 3;
       lzSave(p);
+      ui.lzAt = i;
       var y = window.scrollY;
       drawPuzzle();
       window.scrollTo(0, y);
       var again = $("lz-c" + i);
       if (again) again.classList.add("bump");
     });
-    var again = $("lz-intro");
-    if (again) again.addEventListener("click", function () { ui.lzIntro = 0; window.scrollTo(0, 0); drawPuzzle(); });
+    var intro = $("lz-intro");
+    if (intro) intro.addEventListener("click", function () { ui.lzIntro = 0; window.scrollTo(0, 0); drawPuzzle(); });
     var btn = $("lz-send");
     if (btn) btn.addEventListener("click", function () {
       var marks = lzMarks(p);
