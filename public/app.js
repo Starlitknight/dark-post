@@ -3122,6 +3122,7 @@
       '<div class="lz-rule l">' + LZ_LIAR + "<b>4 AIs</b><small>Everything they say is false.</small></div></div>" +
       (open ? '<p class="lz-how">Tap a person once: human. Twice: AI. Tap a name in a speech bubble to find that person.</p>' : '<p class="lz-how">The four AIs, exposed.</p>') +
       '<div class="lz-list" id="lz-list">' + cards + "</div>" +
+      (open ? '<button type="button" class="link lz-again" id="lz-intro">How it works</button>' : "") +
       (open ? '<div class="lz-bar"><div class="lz-tally"><span class="h' + (nH === 6 ? " full" : "") + '">' + LZ_HONEST + "<b>" + nH + "</b>/6</span>" +
         '<span class="l' + (nL === 4 ? " full" : "") + '">' + LZ_LIAR + "<b>" + nL + "</b>/4</span></div>" +
         '<button type="button" class="btn" id="lz-send"' + (ready ? "" : " disabled") + ">" + (ready ? "Expose the four AIs" : nL > 4 ? "Only four are AIs" : nH > 6 ? "Only six are human" : "Mark all ten") + "</button></div>" : "") +
@@ -3155,11 +3156,55 @@
       var again = $("lz-c" + i);
       if (again) again.classList.add("bump");
     });
+    var again = $("lz-intro");
+    if (again) again.addEventListener("click", function () { ui.lzIntro = 0; window.scrollTo(0, 0); drawPuzzle(); });
     var btn = $("lz-send");
     if (btn) btn.addEventListener("click", function () {
       var marks = lzMarks(p);
       send(p.data.cast.map(function (role, i) { return marks[i] === 2 ? HOUSEHOLD[role].toUpperCase() : ""; }).filter(Boolean).join(" "));
     });
+  }
+
+  // ----- AI among us: the intro, four short animated pictures -----
+  // Shown the first time a player opens the puzzle, and again from "How it works". The people in it are
+  // strangers, not the ten in the puzzle, so nothing here reads as a clue.
+  var LZI_FACES = [
+    { s: 1, h: 9, c: 8, e: 1, m: 1, o: 3, t: 2 }, { f: 1, s: 4, h: 0, c: 0, m: 1, o: 1, t: 0 }, { s: 5, h: 18, c: 0, e: 1, m: 3, o: 6, t: 1 },
+    { f: 1, s: 0, h: 20, c: 3, b: 1, m: 2, o: 2, t: 3 }, { s: 2, h: 16, c: 4, e: 1, m: 0, o: 0, t: 2 }, { f: 1, s: 3, h: 13, c: 8, b: 4, m: 1, o: 7, t: 1 },
+    { s: 0, h: 17, c: 2, e: 1, m: 2, o: 5, t: 0 }, { f: 1, s: 1, h: 11, c: 1, m: 0, o: 4, t: 2 }, { s: 3, h: 8, c: 6, e: 1, m: 3, o: 8, t: 3 },
+    { f: 1, s: 2, h: 21, c: 0, b: 2, m: 1, o: 3, t: 0 },
+  ];
+  function lziFace(i, cls) { return '<span class="lzi-face' + (cls ? " " + cls : "") + '">' + AV.draw(LZI_FACES[i], { label: "", ring: "#8d7a4e" }) + "</span>"; }
+  function lziSays(pillHuman, stamp) {
+    return '<span class="lzi-bub"><span class="lzi-arrow">→</span><span class="lz-pill ' + (pillHuman ? "h" : "l") + '">' + (pillHuman ? LZ_HONEST + "human" : LZ_LIAR + "an AI") + "</span>" +
+      '<b class="lzi-stamp ' + (stamp ? "t" : "f") + '">' + (stamp ? "True" : "False") + "</b></span>";
+  }
+  function lziScreens() {
+    var lineup = "";
+    for (var i = 0; i < 10; i++) {
+      var ai = [1, 4, 6, 9].indexOf(i);
+      lineup += '<span class="lzi-sub' + (ai >= 0 ? " ai" : "") + '" style="--d:' + (ai >= 0 ? ai * 0.7 : 0) + 's">' + AV.draw(LZI_FACES[i], { label: "", ring: "#8d7a4e" }) + (ai >= 0 ? LZ_VISOR : "") + "</span>";
+    }
+    return [
+      { line: "Ten people. Four are secretly AIs.", pic: '<div class="lzi-lineup">' + lineup + "</div>" },
+      { line: "Humans always tell the truth.", pic: '<div class="lzi-scene">' + lziFace(0, "speaker h") + '<div class="lzi-says">' + lziSays(true, true) + "</div>" + lziFace(3, "target h") + "</div>" },
+      { line: "AIs always lie.", pic: '<div class="lzi-scene">' + lziFace(1, "speaker l") + '<div class="lzi-says">' + lziSays(false, false) + "</div>" + lziFace(7, "target h") + "</div>" },
+      { line: "Tap once: human. Twice: AI.", pic: '<div class="lzi-tap"><span class="lzi-tapface">' + AV.draw(LZI_FACES[5], { label: "", ring: "#8d7a4e" }) + LZ_VISOR + '<i class="lzi-b h">' + LZ_HONEST + '</i><i class="lzi-b l">' + LZ_LIAR + '</i></span><span class="lzi-finger"></span></div>' },
+    ];
+  }
+  function lziHTML(step) {
+    var screens = lziScreens(), sc = screens[step], last = step === screens.length - 1;
+    return '<div class="s-card now lzi"><div class="lzi-top"><i>How it works</i><button type="button" class="link" id="lzi-skip">Skip</button></div>' +
+      '<div class="lzi-pic" key="' + step + '">' + sc.pic + "</div>" +
+      '<p class="lzi-line">' + esc(sc.line) + "</p>" +
+      '<div class="lzi-dots">' + screens.map(function (_, k) { return "<i" + (k === step ? ' class="on"' : "") + "></i>"; }).join("") + "</div>" +
+      '<button type="button" class="btn" id="lzi-next">' + (last ? "Find the four AIs" : "Next") + "</button></div>";
+  }
+  function bindIntro(p) {
+    function done() { ui.lzIntro = null; markHeard("aiIntro"); window.scrollTo(0, 0); drawPuzzle(); }
+    var next = $("lzi-next"), skip = $("lzi-skip");
+    if (next) next.addEventListener("click", function () { if (ui.lzIntro >= lziScreens().length - 1) return done(); ui.lzIntro += 1; drawPuzzle(); });
+    if (skip) skip.addEventListener("click", done);
   }
 
   function drawPuzzle() {
@@ -3168,6 +3213,13 @@
     if (!box || !p) return;
     var body = "";
     var open = !p.solved && p.left > 0;
+    // AI among us opens with its picture intro, once; "How it works" brings it back
+    if (p.type === "truth" && open && (ui.lzIntro != null || !heard("aiIntro"))) {
+      if (ui.lzIntro == null) ui.lzIntro = 0;
+      box.innerHTML = lziHTML(ui.lzIntro);
+      bindIntro(p);
+      return;
+    }
     if (p.type === "code") {
       body = '<p class="pz-hint">Each row is a wrong guess. Beside it: how close that guess was.</p>' +
         p.data.clues.map(function (c) {
