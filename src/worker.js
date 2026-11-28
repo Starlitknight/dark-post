@@ -823,7 +823,8 @@ export class Game extends DurableObject {
     const body = await readJson(request);
     const day = this.puzzleDay();
     if (body.next === true) {
-      // one puzzle forward, whether held or not
+      // one puzzle forward, whether held or not, of the kind the GM chose if they chose one
+      if (body.kind === "truth") { const kinds = JSON.parse(this.get("puzzle_kinds", "{}")); kinds[day + 1] = "truth"; this.set("puzzle_kinds", JSON.stringify(kinds)); }
       if (this.puzzleHeld()) this.set("puzzle_held_day", String(day + 1));
       else this.set("puzzle_lag", String(this.today() - (day + 1)));
     } else if (body.hold === true) {
@@ -886,7 +887,9 @@ export class Game extends DurableObject {
       this.set("puzzle_first", first);
     }
     const turn = Math.max(0, Math.round((start - first) / DAY_MS));
-    return makePuzzle(salt + ":" + day, turn);
+    // the GM can choose the kind of a puzzle they start (Four liars); otherwise the kinds take turns
+    const kind = JSON.parse(this.get("puzzle_kinds", "{}"))[day];
+    return makePuzzle(salt + ":" + day, turn, kind);
   }
 
   puzzleRow(number, day) {

@@ -3061,6 +3061,104 @@
     return '<div class="pz-tiles">' + String(text).split("").map(function (ch) { return "<b>" + esc(ch) + "</b>"; }).join("") + "</div>";
   }
 
+  // ----- Four liars: ten of the Crane household speak. Six are honest, four always lie. -----
+  var HOUSEHOLD = ["Butler", "Cook", "Maid", "Gardener", "Chauffeur", "Nurse", "Lawyer", "Doctor", "Painter", "Pianist"];
+  // what each of them looks like, drawn in the same hand as the players
+  var HOUSE_LOOKS = [
+    { f: 1, s: 0, h: 22, c: 5, b: 3, m: 1, o: 8, t: 0 },          // Butler: grey, bearded, grey coat
+    { s: 2, h: 15, c: 1, e: 1, m: 0, o: 7, t: 0 },                // Cook: kitchen whites
+    { s: 1, h: 4, c: 0, e: 1, m: 3, x: 7, o: 1, t: 0 },           // Maid: brass hair slides, red
+    { f: 1, s: 3, h: 23, c: 0, b: 4, m: 0, x: 3, o: 5, t: 2 },    // Gardener: peaked cap, green
+    { f: 1, s: 1, h: 1, c: 1, m: 1, x: 1, o: 3, t: 1 },           // Chauffeur: trilby, blue
+    { s: 0, h: 5, c: 3, e: 1, m: 0, g: 1, o: 2, t: 3 },           // Nurse: glasses, teal
+    { f: 1, s: 2, h: 14, c: 0, m: 2, g: 3, o: 4, t: 0 },          // Lawyer: glasses, purple
+    { s: 4, h: 6, c: 0, e: 1, m: 3, x: 6, o: 7, t: 0 },           // Doctor: loupe, white coat
+    { s: 3, h: 10, c: 7, e: 1, m: 0, x: 8, o: 6, t: 3 },          // Painter: headband, orange
+    { f: 1, s: 5, h: 19, c: 0, b: 2, m: 0, x: 5, o: 0, t: 3 },    // Pianist: hoops, gold
+  ];
+  var LZ_HONEST = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3l14 5v10c0 9-6 15-14 19C12 33 6 27 6 18V8z" fill="#35C2B0"/><path d="M20 3l14 5v10c0 9-6 15-14 19z" fill="#000" opacity=".12"/><path d="M13 20l5 5 9-10" fill="none" stroke="#0b2622" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var LZ_LIAR = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M2 15c6-4 12-4 18-.5 6-3.5 12-3.5 18 .5 0 9.5-4.5 14.5-10.5 14.5-4 0-6.3-2.6-7.5-5-1.2 2.4-3.5 5-7.5 5C6.5 29.5 2 24.5 2 15z" fill="#FF5A4D"/><path d="M2 15c6-4 12-4 18-.5V24.5c-1.2 2.4-3.5 5-7.5 5C6.5 29.5 2 24.5 2 15z" fill="#fff" opacity=".12"/><ellipse cx="11.5" cy="19.5" rx="4" ry="2.8" fill="#2A0E0C"/><ellipse cx="28.5" cy="19.5" rx="4" ry="2.8" fill="#2A0E0C"/></svg>';
+  function lzPortrait(role, ring) { return AV.draw(HOUSE_LOOKS[role], { label: "The " + HOUSEHOLD[role], ring: ring || "#D0BC8A" }); }
+  function lzKey(p) { return "dp_lz_" + (me ? me.number : 0) + "_" + p.no; }
+  function lzMarks(p) {
+    if (ui.lz && ui.lz.no === p.no) return ui.lz.marks;
+    var m = null;
+    try { m = JSON.parse(localStorage.getItem(lzKey(p)) || "null"); } catch (e) { m = null; }
+    ui.lz = { no: p.no, marks: Array.isArray(m) && m.length === 10 ? m : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
+    return ui.lz.marks;
+  }
+  function lzSave(p) { try { localStorage.setItem(lzKey(p), JSON.stringify(ui.lz.marks)); } catch (e) { /* private mode */ } }
+  // once the puzzle is over, the true marks: the four liars are named in the answer
+  function lzTruth(p) {
+    var names = String(p.answer || "").toUpperCase().split(/\s+/);
+    return p.data.cast.map(function (role) { return names.indexOf(HOUSEHOLD[role].toUpperCase()) >= 0 ? 2 : 1; });
+  }
+  function lzHTML(p, open) {
+    var d = p.data, marks = open ? lzMarks(p) : lzTruth(p);
+    var nH = marks.filter(function (m) { return m === 1; }).length, nL = marks.filter(function (m) { return m === 2; }).length;
+    var ready = nH === 6 && nL === 4;
+    var cards = d.cast.map(function (role, i) {
+      var lines = d.says[i].map(function (c) {
+        var pill = c.lie ? '<span class="lz-pill l">' + LZ_LIAR + "a liar</span>" : '<span class="lz-pill h">' + LZ_HONEST + "honest</span>";
+        if (c.who === i) return '<div class="lz-line"><span class="lz-ref me">I</span><span class="lz-is">am</span>' + pill + "</div>";
+        var r = d.cast[c.who];
+        return '<div class="lz-line"><button type="button" class="lz-ref" data-to="' + c.who + '"><span class="lz-mini">' + lzPortrait(r) + "</span>" + HOUSEHOLD[r] + '</button><span class="lz-is">is</span>' + pill + "</div>";
+      }).join("");
+      var m = marks[i];
+      return '<div class="lz-card' + (m === 1 ? " m-h" : m === 2 ? " m-l" : "") + '" id="lz-c' + i + '" data-i="' + i + '"' + (open ? ' role="button" tabindex="0" aria-label="The ' + HOUSEHOLD[role] + '. Tap to mark."' : "") + ">" +
+        '<div class="lz-who"><span class="lz-pic">' + lzPortrait(role, m === 1 ? "#35C2B0" : m === 2 ? "#FF5A4D" : null) + '<i class="lz-badge">' + (m === 1 ? LZ_HONEST : m === 2 ? LZ_LIAR : "") + "</i></span><b>" + HOUSEHOLD[role] + "</b></div>" +
+        '<div class="lz-say">' + lines + "</div></div>";
+    }).join("");
+    // the line-up: all ten at a glance, against a height chart, with the marks so far
+    var lineup = '<div class="lz-lineup"><span class="lz-lu-tag">Line-up</span><div class="lz-lu-row">' + d.cast.map(function (role, i) {
+      var m = marks[i];
+      return '<button type="button" class="lz-lu lz-ref' + (m === 1 ? " m-h" : m === 2 ? " m-l" : "") + '" data-to="' + i + '" aria-label="The ' + HOUSEHOLD[role] + '"><span class="lz-lu-pic">' + lzPortrait(role, m === 1 ? "#35C2B0" : m === 2 ? "#FF5A4D" : "#8d7a4e") + '</span><i>' + (m === 1 ? LZ_HONEST : m === 2 ? LZ_LIAR : "?") + "</i></button>";
+    }).join("") + "</div></div>";
+    return '<div class="lz">' + lineup +
+      '<div class="lz-rules"><div class="lz-rule h">' + LZ_HONEST + "<b>6 honest</b><small>Everything they say is true.</small></div>" +
+      '<div class="lz-rule l">' + LZ_LIAR + "<b>4 liars</b><small>Everything they say is false.</small></div></div>" +
+      (open ? '<p class="lz-how">Tap a person once: honest. Twice: liar. Tap a name in a speech bubble to find that person.</p>' : '<p class="lz-how">The four liars, unmasked.</p>') +
+      '<div class="lz-list" id="lz-list">' + cards + "</div>" +
+      (open ? '<div class="lz-bar"><div class="lz-tally"><span class="h' + (nH === 6 ? " full" : "") + '">' + LZ_HONEST + "<b>" + nH + "</b>/6</span>" +
+        '<span class="l' + (nL === 4 ? " full" : "") + '">' + LZ_LIAR + "<b>" + nL + "</b>/4</span></div>" +
+        '<button type="button" class="btn" id="lz-send"' + (ready ? "" : " disabled") + ">" + (ready ? "Accuse these four" : nL > 4 ? "Only four are liars" : nH > 6 ? "Only six are honest" : "Mark all ten") + "</button></div>" : "") +
+      "</div>";
+  }
+  function bindLiars(p, send) {
+    var list = $("lz-list");
+    if (!list) return;
+    var top = list.parentNode.querySelector(".lz-lineup");
+    if (top) top.addEventListener("click", function (e) {
+      var ref = e.target.closest(".lz-ref[data-to]");
+      var to = ref && $("lz-c" + ref.getAttribute("data-to"));
+      if (to) { to.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" }); to.classList.remove("flash"); void to.offsetWidth; to.classList.add("flash"); }
+    });
+    list.addEventListener("click", function (e) {
+      var ref = e.target.closest(".lz-ref[data-to]");
+      if (ref) {
+        // a name in a speech: go to that person and make them glow for a moment
+        var to = $("lz-c" + ref.getAttribute("data-to"));
+        if (to) { to.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" }); to.classList.remove("flash"); void to.offsetWidth; to.classList.add("flash"); }
+        return;
+      }
+      var card = e.target.closest(".lz-card[role=button]");
+      if (!card) return;
+      var i = Number(card.getAttribute("data-i")), marks = lzMarks(p);
+      marks[i] = (marks[i] + 1) % 3;
+      lzSave(p);
+      var y = window.scrollY;
+      drawPuzzle();
+      window.scrollTo(0, y);
+      var again = $("lz-c" + i);
+      if (again) again.classList.add("bump");
+    });
+    var btn = $("lz-send");
+    if (btn) btn.addEventListener("click", function () {
+      var marks = lzMarks(p);
+      send(p.data.cast.map(function (role, i) { return marks[i] === 2 ? HOUSEHOLD[role].toUpperCase() : ""; }).filter(Boolean).join(" "));
+    });
+  }
+
   function drawPuzzle() {
     var box = $("pz");
     var p = ui.pz;
@@ -3087,6 +3185,8 @@
         '<p class="pz-hint">' + (open ? "Tap the keys in the order they are used." : "The six keys.") + "</p>" +
         '<div class="pz-keys" id="pz-keys">' + [1, 2, 3, 4, 5, 6].map(function (k) { return '<button type="button" class="pz-disc" data-k="' + k + '"' + (open ? "" : " disabled") + ">" + k + "</button>"; }).join("") + "</div>" +
         '<div class="pz-order" id="pz-order"><span>First</span>' + [0, 1, 2, 3, 4, 5].map(function (i) { return '<button type="button" class="pz-slot" data-i="' + i + '"' + (open ? "" : " disabled") + ' aria-label="Place ' + (i + 1) + '"></button>'; }).join("") + "<span>Last</span></div>";
+    } else if (p.type === "truth") {
+      body = lzHTML(p, open);
     } else if (p.type === "cipher") {
       body = tiles(p.data.text) + '<p class="pz-hint">A B C D E F G H I J K L M N O P Q R S T U V W X Y Z</p>';
     } else {
@@ -3096,20 +3196,22 @@
       ? '<div class="pz-done ok"><b>Solved.</b> +' + plural(p.reward, "coin", "coins") + ", paid into your balance. One puzzle a day.</div>"
       : p.left <= 0
         ? '<div class="pz-done"><b>No tries left.</b> The answer was ' + esc(p.answer) + ". One puzzle a day.</div>"
+        : p.type === "truth" ? '<p class="pz-left">' + plural(p.left, "try", "tries") + " left</p>"
         : '<div class="composer pz-form" id="pz-form"><input type="text" id="pz-answer" maxlength="24" autocomplete="off" autocapitalize="characters" enterkeyhint="send" inputmode="' + (p.type === "cipher" ? "text" : "numeric") + '" placeholder="Your answer" aria-label="Your answer">' +
           '<button type="button" class="btn send" id="pz-send">Try</button></div><p class="pz-left">' + plural(p.left, "try", "tries") + " left today</p>";
     box.innerHTML =
-      '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + '</h2><div class="pz-body">' + body + "</div><p>" + esc(p.type === "keys" ? (open ? "Or type the six numbers in order." : "") : (p.data && p.data.ask) || p.ask) + "</p>" + end + "</div>" +
+      '<div class="s-card now"><i>Worth ' + plural(p.reward, "coin", "coins") + " · three tries</i><h2>" + esc(p.title) + "</h2>" + (p.type === "truth" ? '<p class="lz-intro">The household is lined up in the hall. Each of them says one thing.</p>' : "") + '<div class="pz-body">' + body + "</div>" + (p.type === "truth" ? "" : "<p>" + esc(p.type === "keys" ? (open ? "Or type the six numbers in order." : "") : (p.data && p.data.ask) || p.ask) + "</p>") + end + "</div>" +
       (p.held
         // the GM is holding this puzzle: it does not change at midnight, and nobody knows yet when it will
         ? '<div class="s-card"><i>Next puzzle</i><b class="s-count small">TBD</b><p>This puzzle stays open until the GM starts the next one. Every player gets the same puzzle.</p>'
         : '<div class="s-card"><i>Next puzzle in</i><b class="s-count small" id="pz-reset">' + span(Math.max(0, p.resetAt - Date.now())) + "</b><p>Every player gets the same puzzle.</p>") +
 "</div>";
     if (p.type === "keys") bindKeys();
-    var form = $("pz-form");
+    var form = $("pz-form") || (p.type === "truth" && open ? $("lz-list") : null);
+    if (p.type === "truth" && open) bindLiars(p, function (v) { tryNow(v); });
     if (form) {
-      var tryNow = function () {
-        var value = $("pz-answer").value.trim();
+      var tryNow = function (given) {
+        var value = typeof given === "string" ? given : $("pz-answer").value.trim();
         if (!value || ui.busy) return;
         ui.busy = true;
         api("POST", "/api/puzzle", { answer: value, no: p.no })
@@ -3134,8 +3236,8 @@
           })
           .then(function () { ui.busy = false; });
       };
-      $("pz-send").addEventListener("click", tryNow);
-      $("pz-answer").addEventListener("keydown", function (event) {
+      if ($("pz-send")) $("pz-send").addEventListener("click", tryNow);
+      if ($("pz-answer")) $("pz-answer").addEventListener("keydown", function (event) {
         if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); tryNow(); }
       });
     }
@@ -3446,7 +3548,8 @@
 
   // ----- the treasury: one passcode of sixteen letters, and a puzzle for every player -----
 
-  function treasOn() { return !!(hall && hall.treasury && hall.treasury.on); }
+  // the treasury holds the puzzle room until it is opened; then the room has its daily puzzle back
+  function treasOn() { return !!(hall && hall.treasury && hall.treasury.on && !hall.treasury.opened); }
   function trGuesses() { try { return JSON.parse(localStorage.getItem("dp_tr_guess_" + (me ? me.number : 0)) || "{}"); } catch (e) { return {}; } }
   function trSaveGuess(slot, ch) { try { var g = trGuesses(); if (ch) g[slot] = ch; else delete g[slot]; localStorage.setItem("dp_tr_guess_" + me.number, JSON.stringify(g)); } catch (e) {} }
 
@@ -4806,7 +4909,7 @@
     var pos = { 2: ["hall", 560, 470], 16: ["hall", 1250, 1140], 5: ["puzzle", 500, 420], 6: ["betting", 620, 700], 12: ["hall", 1180, 560], 13: ["gallery", 820, 380] };
     demoStore = {
       seats: seats, msgs: msgs, read: {}, next: msgs.length + 1, pos: pos, extra: 0,
-      pz: { tries: 0, solved: false, kind: query.get("pz") ? Math.max(0, ["code", "keys", "cipher"].indexOf(query.get("pz"))) : 1 },
+      pz: { tries: 0, solved: false, kind: query.get("pz") ? Math.max(0, ["code", "keys", "cipher", "truth"].indexOf(query.get("pz"))) : 1 },
       deals: { mine: null, incoming: [{ id: 1, from: 9 }], past: [], doneToday: false },
       doors: [],
     };
@@ -4913,6 +5016,7 @@
     { type: "code", title: "Crack the code", ask: "The code has three different digits, from 1 to 9. What is it?", data: { clues: [{ guess: "358", place: 1, digit: 1 }, { guess: "641", place: 0, digit: 1 }, { guess: "924", place: 0, digit: 0 }, { guess: "692", place: 0, digit: 1 }, { guess: "837", place: 0, digit: 1 }, { guess: "643", place: 0, digit: 2 }] }, answer: "365" },
     { type: "keys", title: "The six keys", ask: "Type the six numbers in the order the keys are used.", data: { ask: "Type the six numbers in the order the keys are used.", clues: [{ k: "before", a: 2, b: 6 }, { k: "gap", a: 3, b: 5, n: 2 }, { k: "before", a: 4, b: 2 }, { k: "gap", a: 3, b: 6, n: 3 }, { k: "next", a: 3, b: 2 }], lines: ["Key 2 is used before key 6.", "Exactly two keys are used between keys 3 and 5.", "Key 4 is used before key 2.", "Exactly three keys are used between keys 3 and 6.", "Key 2 is used right after key 3."] }, answer: "432156" },
     { type: "cipher", title: "Break the cipher", ask: "Every letter was moved the same number of places along the alphabet. What is the word?", data: { text: "THYISL" }, answer: "MARBLE" },
+    {"type":"truth","title":"Four liars","ask":"Six are honest: everything they say is true. Four are liars: everything they say is false. Mark the four liars.","data":{"cast":[6,9,3,0,5,2,1,4,7,8],"says":[[{"who":7,"lie":false},{"who":9,"lie":false}],[{"who":6,"lie":true}],[{"who":3,"lie":false}],[{"who":0,"lie":true}],[{"who":1,"lie":true},{"who":7,"lie":false}],[{"who":5,"lie":false},{"who":4,"lie":false}],[{"who":7,"lie":false},{"who":8,"lie":true}],[{"who":1,"lie":true},{"who":8,"lie":true}],[{"who":5,"lie":true},{"who":1,"lie":false}],[{"who":2,"lie":true},{"who":4,"lie":false}]],"liars":4},"answer":"PIANIST GARDENER BUTLER DOCTOR"},
   ];
 
   function demoPuzzle(method, body) {
@@ -4921,7 +5025,7 @@
     var right = false;
     if (method === "POST" && !d.pz.solved && d.pz.tries < 3) {
       d.pz.tries += 1;
-      right = String(body.answer).toUpperCase().replace(/[^A-Z0-9]/g, "") === sample.answer;
+      right = String(body.answer).toUpperCase().replace(/[^A-Z0-9]/g, "") === sample.answer.replace(/[^A-Z0-9]/g, "");
       if (right) { d.pz.solved = true; d.extra += 1; }
     }
     return {

@@ -349,6 +349,10 @@
     if (!window.confirm("Start the next puzzle now? The puzzle in play ends for everyone, and players who have not solved it lose the chance.")) return;
     run(api("POST", "/api/host/puzzle", { next: true }), "The next puzzle has started.");
   });
+  $("puzzle-liars").addEventListener("click", function () {
+    if (!window.confirm("Start Four liars now? The puzzle in play ends for everyone, and players who have not solved it lose the chance.")) return;
+    run(api("POST", "/api/host/puzzle", { next: true, kind: "truth" }), "Four liars has started.");
+  });
   $("betting-open").addEventListener("change", function () {
     run(api("POST", "/api/host/settings", { bettingOpen: this.checked }), this.checked ? "The betting room is open." : "The betting room is closed.");
   });

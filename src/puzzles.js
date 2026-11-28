@@ -234,10 +234,78 @@ function sequence(r) {
   return { type: "sequence", title: "What comes next", ask: "One rule makes this row. What is the next number?", data: { terms: terms.slice(0, 6) }, answer: String(terms[6]) };
 }
 
-const MAKERS = { code, keys, sums, cipher, sequence };
+// ----- four liars -----
+// Ten of the Crane household each say something. Six are honest: everything they say is true. Four are liars:
+// everything they say is false. Which four are lying? Exactly one answer fits.
 
-export function makePuzzle(seedText, day) {
-  const type = TYPES[((day % TYPES.length) + TYPES.length) % TYPES.length];
+export const HOUSEHOLD = ["Butler", "Cook", "Maid", "Gardener", "Chauffeur", "Nurse", "Lawyer", "Doctor", "Painter", "Pianist"];
+const LIARS = 4;
+
+// Does a way of marking the ten fit every statement? Honest speakers say only true things, liars only false ones.
+export function liarsFit(says, liar) {
+  for (let i = 0; i < says.length; i++) {
+    for (const c of says[i]) {
+      const claimTrue = c.lie === liar[c.who];
+      if (claimTrue === liar[i]) return false;
+    }
+  }
+  return true;
+}
+
+// Every way to pick four liars out of ten that fits the statements.
+export function liarsSolutions(says, cap = 2) {
+  const n = says.length, out = [];
+  for (let m = 0; m < 1 << n; m++) {
+    let k = 0;
+    for (let b = m; b; b &= b - 1) k++;
+    if (k !== LIARS) continue;
+    const liar = Array.from({ length: n }, (_, i) => !!(m & (1 << i)));
+    if (liarsFit(says, liar)) { out.push(liar); if (out.length >= cap) break; }
+  }
+  return out;
+}
+
+function truth(r) {
+  for (let attempt = 0; attempt < 400; attempt++) {
+    // who sits where on the screen, and who is lying
+    const cast = HOUSEHOLD.map((name, i) => [r(), i]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+    const liar = new Array(10).fill(false);
+    const order = [...Array(10).keys()].map((i) => [r(), i]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+    for (let k = 0; k < LIARS; k++) liar[order[k]] = true;
+    // each speaks about one or two others, and some begin by vouching for themselves
+    const says = [];
+    for (let i = 0; i < 10; i++) {
+      const many = r() < 0.45 ? 2 : 1;
+      const others = [...Array(10).keys()].filter((j) => j !== i).map((j) => [r(), j]).sort((a, b) => a[0] - b[0]).slice(0, many).map((x) => x[1]);
+      const claims = [];
+      if (many === 1 && r() < 0.4) claims.push(i);
+      claims.push(...others);
+      // a claim is "X lies" or "X is honest": true for an honest speaker, false for a liar
+      says.push(claims.map((who) => ({ who, lie: liar[i] ? !liar[who] : liar[who] })));
+    }
+    const sols = liarsSolutions(says);
+    if (sols.length !== 1) continue;
+    // not too easy: without knowing there are four liars, more than one answer must still fit
+    let loose = 0;
+    for (let m = 0; m < 1024 && loose < 2; m++) { const l = [...Array(10).keys()].map((b) => !!(m & (1 << b))); if (liarsFit(says, l)) loose++; }
+    if (loose < 2) continue;
+    const answer = liar.map((l, i) => (l ? HOUSEHOLD[cast[i]].toUpperCase() : "")).filter(Boolean).join(" ");
+    return {
+      type: "truth",
+      title: "Four liars",
+      ask: "Six are honest: everything they say is true. Four are liars: everything they say is false. Mark the four liars.",
+      data: { cast, says, liars: LIARS },
+      answer,
+    };
+  }
+  return cipher(r);
+}
+
+const MAKERS = { code, keys, sums, cipher, sequence, truth };
+
+// kind, when given, picks the kind of puzzle instead of the daily turn
+export function makePuzzle(seedText, day, kind) {
+  const type = kind && MAKERS[kind] ? kind : TYPES[((day % TYPES.length) + TYPES.length) % TYPES.length];
   return MAKERS[type](rng(seedOf(seedText)));
 }
 
